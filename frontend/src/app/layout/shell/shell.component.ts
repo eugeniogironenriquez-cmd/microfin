@@ -1,0 +1,114 @@
+import { Component, computed, inject } from '@angular/core';
+import { RouterOutlet, RouterLink, RouterLinkActive } from '@angular/router';
+import { CommonModule } from '@angular/common';
+import { MatSidenavModule } from '@angular/material/sidenav';
+import { MatListModule } from '@angular/material/list';
+import { MatIconModule } from '@angular/material/icon';
+import { MatToolbarModule } from '@angular/material/toolbar';
+import { MatButtonModule } from '@angular/material/button';
+import { MatMenuModule } from '@angular/material/menu';
+import { MatDividerModule } from '@angular/material/divider';
+import { BreakpointObserver, Breakpoints } from '@angular/cdk/layout';
+import { toSignal } from '@angular/core/rxjs-interop';
+import { map } from 'rxjs';
+import { AuthService } from '../../core/index';
+
+interface NavItem { label: string; icon: string; route: string; roles?: string[]; }
+
+@Component({
+  selector: 'app-shell',
+  standalone: true,
+  imports: [
+    CommonModule, RouterOutlet, RouterLink, RouterLinkActive,
+    MatSidenavModule, MatListModule, MatIconModule, MatToolbarModule,
+    MatButtonModule, MatMenuModule, MatDividerModule,
+  ],
+  template: `
+    <mat-sidenav-container class="sidenav-container">
+      <mat-sidenav #sidenav [mode]="isMobile() ? 'over' : 'side'"
+                   [opened]="!isMobile()" class="sidenav">
+        <div class="sidenav-header">
+          <div class="logo">
+            <mat-icon class="logo-icon">account_balance</mat-icon>
+            <span class="logo-text">Microcapital-Ixtepec</span>
+          </div>
+          <div class="user-chip">
+            <mat-icon style="color:#4ade80;font-size:18px">person</mat-icon>
+            <div class="user-info">
+              <span class="user-name">{{ auth.user()?.name }}</span>
+              <span class="user-role">{{ auth.user()?.role }}</span>
+            </div>
+          </div>
+        </div>
+        <mat-nav-list class="nav-list">
+          @for (item of visibleNavItems(); track item.route) {
+            <a mat-list-item [routerLink]="item.route" routerLinkActive="active"
+               (click)="isMobile() && sidenav.close()">
+              <mat-icon matListItemIcon>{{ item.icon }}</mat-icon>
+              <span matListItemTitle>{{ item.label }}</span>
+            </a>
+          }
+        </mat-nav-list>
+        <div class="sidenav-footer">
+          <button mat-button class="logout-btn" (click)="auth.logout()">
+            <mat-icon>logout</mat-icon> Cerrar sesión
+          </button>
+        </div>
+      </mat-sidenav>
+      <mat-sidenav-content class="main-content">
+        <mat-toolbar class="toolbar">
+          <button mat-icon-button (click)="sidenav.toggle()" style="color:#fff">
+            <mat-icon>menu</mat-icon>
+          </button>
+          <span class="toolbar-title">Microcapital-Ixtepec</span>
+          <span class="toolbar-spacer"></span>
+          <button mat-icon-button style="color:rgba(247,250,252,.7)" [matMenuTriggerFor]="profileMenu">
+            <mat-icon>account_circle</mat-icon>
+          </button>
+          <mat-menu #profileMenu="matMenu">
+            <button mat-menu-item disabled>
+              <mat-icon>person</mat-icon>{{ auth.user()?.email }}
+            </button>
+            <mat-divider></mat-divider>
+            <button mat-menu-item (click)="auth.logout()">
+              <mat-icon>logout</mat-icon>Cerrar sesión
+            </button>
+          </mat-menu>
+        </mat-toolbar>
+        <div class="content-area">
+          <router-outlet></router-outlet>
+        </div>
+      </mat-sidenav-content>
+    </mat-sidenav-container>
+  `,
+})
+export class ShellComponent {
+  readonly auth = inject(AuthService);
+  private breakpoint = inject(BreakpointObserver);
+  isMobile = toSignal(
+    this.breakpoint.observe([Breakpoints.Handset]).pipe(map(r => r.matches)),
+    { initialValue: false },
+  );
+  private readonly navItems: NavItem[] = [
+    { label: 'Dashboard',       icon: 'dashboard',              route: '/dashboard' },
+    { label: 'Cartera',         icon: 'account_balance_wallet', route: '/portfolio' },
+    { label: 'Clientes',        icon: 'people',                 route: '/customers' },
+    { label: 'Préstamos',       icon: 'attach_money',           route: '/loans' },
+    { label: 'Pagos',           icon: 'payment',                route: '/payments' },
+    { label: 'Reestructuración',icon: 'refresh',                route: '/restructuring', roles: ['ADMIN','AUTORIZADOR'] },
+    { label: 'Desembolso',      icon: 'payments',               route: '/disbursements', roles: ['ADMIN','CAJERO'] },
+    { label: 'Cobranza',        icon: 'directions_bike',        route: '/collection' },
+    { label: 'Caja',            icon: 'point_of_sale',          route: '/cash',          roles: ['ADMIN','CAJERO'] },
+    { label: 'Gastos',          icon: 'receipt_long',           route: '/expenses',      roles: ['ADMIN','CAJERO'] },
+    { label: 'Reportes',        icon: 'bar_chart',              route: '/reports' },
+    { label: 'Rpt. Ubicación',  icon: 'map',                    route: '/reports/location' },
+    { label: 'Configuración',   icon: 'settings',               route: '/settings',      roles: ['ADMIN'] },
+    { label: 'Empresa',         icon: 'business',               route: '/company',       roles: ['ADMIN'] },
+    { label: 'Moratorios',      icon: 'gavel',                  route: '/late-fee-rules',roles: ['ADMIN'] },
+    { label: 'Usuarios',        icon: 'manage_accounts',        route: '/users',         roles: ['ADMIN'] },
+  ];
+  visibleNavItems = computed(() => {
+    const role = this.auth.role();
+    return this.navItems.filter(item => !item.roles || !role || item.roles.includes(role));
+  });
+}

@@ -1,0 +1,158 @@
+import { Component, OnInit, inject, signal } from '@angular/core';
+import { CommonModule, CurrencyPipe, DatePipe } from '@angular/common';
+import { ActivatedRoute, RouterLink } from '@angular/router';
+import { MatCardModule } from '@angular/material/card';
+import { MatButtonModule } from '@angular/material/button';
+import { MatIconModule } from '@angular/material/icon';
+import { MatTableModule } from '@angular/material/table';
+import { MatProgressSpinnerModule } from '@angular/material/progress-spinner';
+import { MatTabsModule } from '@angular/material/tabs';
+import { MatChipsModule } from '@angular/material/chips';
+import { PdfDownloadService } from '../../core/pdf-download.service';
+import { ApiService, AuthService, Customer, Loan } from '../../core/index';
+
+@Component({
+  selector: 'app-customer-detail',
+  standalone: true,
+  imports: [
+    CommonModule, CurrencyPipe, DatePipe, RouterLink,
+    MatCardModule, MatButtonModule, MatIconModule, MatTableModule,
+    MatProgressSpinnerModule, MatTabsModule, MatChipsModule,
+  ],
+  template: `
+    @if (loading()) {
+      <div class="loading-overlay"><mat-spinner></mat-spinner></div>
+    } @else if (customer()) {
+      <div class="page-header">
+        <h1><mat-icon>person</mat-icon> {{ customer()!.fullName }}</h1>
+        <div class="header-actions">
+          <a mat-stroked-button routerLink="/customers">
+            <mat-icon>arrow_back</mat-icon> Clientes
+          </a>
+          <a mat-stroked-button [routerLink]="['/customers', customer()!.id, 'edit']"
+             *ngIf="auth.hasRole('ADMIN','CAJERO')">
+            <mat-icon>edit</mat-icon> Editar
+          </a>
+          <a mat-raised-button color="primary" routerLink="/loans/new"
+             *ngIf="auth.hasRole('ADMIN','CAJERO')">
+            <mat-icon>add</mat-icon> Nueva solicitud
+          </a>
+        </div>
+      </div>
+
+      <mat-tab-group>
+        <!-- Datos personales -->
+        <mat-tab label="Datos personales">
+          <div class="tab-content">
+            <div class="info-grid">
+              <div class="info-card">
+                <h3>Identificación</h3>
+                <div class="info-row"><span>CURP</span><code>{{ customer()!.curp }}</code></div>
+                <div class="info-row"><span>RFC</span><code>{{ customer()!.rfc || '—' }}</code></div>
+                <div class="info-row"><span>Teléfono</span><strong>{{ customer()!.phone }}</strong></div>
+                <div class="info-row"><span>Email</span><span>{{ customer()!.email || '—' }}</span></div>
+                <div class="info-row"><span>F. nacimiento</span><span>{{ customer()!.birthDate | date:'dd/MM/yyyy' }}</span></div>
+                <div class="info-row"><span>Estado</span>
+                  <span class="status-badge status-{{ customer()!.status | lowercase }}">{{ customer()!.status }}</span>
+                </div>
+              </div>
+
+              <div class="info-card">
+                <h3>Económicos</h3>
+                <div class="info-row"><span>Ocupación</span><span>{{ customer()!.occupation || '—' }}</span></div>
+                <div class="info-row">
+                  <span>Ingreso mensual</span>
+                  <span>{{ customer()!.monthlyIncome | currency:'MXN' }}</span>
+                </div>
+              </div>
+
+              @if (customer()!.address) {
+                <div class="info-card">
+                  <h3>Domicilio</h3>
+                  <div class="info-row"><span>Calle</span><span>{{ customer()!.address!.street }}</span></div>
+                  <div class="info-row"><span>Colonia</span><span>{{ customer()!.address!.colonia }}</span></div>
+                  <div class="info-row"><span>Municipio</span><span>{{ customer()!.address!.municipality }}</span></div>
+                  <div class="info-row"><span>Estado</span><span>{{ customer()!.address!.state }}</span></div>
+                  <div class="info-row"><span>CP</span><span>{{ customer()!.address!.zip }}</span></div>
+                </div>
+              }
+            </div>
+          </div>
+        </mat-tab>
+
+        <!-- Historial de créditos -->
+        <mat-tab label="Historial de créditos ({{ loans().length }})">
+          <div class="tab-content">
+            @if (loans().length === 0) {
+              <div class="empty-state">
+                <mat-icon>account_balance_wallet</mat-icon>
+                <p>El cliente no tiene créditos registrados</p>
+                <a mat-raised-button color="primary" routerLink="/loans/new">Crear primera solicitud</a>
+              </div>
+            } @else {
+              <table mat-table [dataSource]="loans()">
+                <ng-container matColumnDef="id">
+                  <th mat-header-cell *matHeaderCellDef>ID</th>
+                  <td mat-cell *matCellDef="let r"><code>{{ r.id | slice:0:8 }}...</code></td>
+                </ng-container>
+                <ng-container matColumnDef="amount">
+                  <th mat-header-cell *matHeaderCellDef>Monto</th>
+                  <td mat-cell *matCellDef="let r">{{ r.principalAmount | currency:'MXN' }}</td>
+                </ng-container>
+                <ng-container matColumnDef="type">
+                  <th mat-header-cell *matHeaderCellDef>Tipo</th>
+                  <td mat-cell *matCellDef="let r">{{ r.loanType?.name }}</td>
+                </ng-container>
+                <ng-container matColumnDef="status">
+                  <th mat-header-cell *matHeaderCellDef>Estado</th>
+                  <td mat-cell *matCellDef="let r">
+                    <span class="status-badge status-{{ r.status | lowercase }}">{{ r.status }}</span>
+                  </td>
+                </ng-container>
+                <ng-container matColumnDef="date">
+                  <th mat-header-cell *matHeaderCellDef>Fecha</th>
+                  <td mat-cell *matCellDef="let r">{{ r.createdAt | date:'dd/MM/yyyy' }}</td>
+                </ng-container>
+                <ng-container matColumnDef="actions">
+                  <th mat-header-cell *matHeaderCellDef></th>
+                  <td mat-cell *matCellDef="let r">
+                    <a mat-icon-button [routerLink]="['/loans', r.id]"><mat-icon>visibility</mat-icon></a>
+                  </td>
+                </ng-container>
+                <tr mat-header-row *matHeaderRowDef="loanCols"></tr>
+                <tr mat-row *matRowDef="let row; columns: loanCols;"></tr>
+              </table>
+            }
+          </div>
+        </mat-tab>
+      </mat-tab-group>
+    }
+  `
+})
+export class CustomerDetailComponent implements OnInit {
+  readonly auth = inject(AuthService);
+  private api = inject(ApiService);
+  private pdfSvc = inject(PdfDownloadService);
+  private route = inject(ActivatedRoute);
+
+  customer = signal<Customer | null>(null);
+  photoUrl = signal<string | null>(null);
+  loans = signal<Loan[]>([]);
+  loading = signal(true);
+  loanCols = ['id', 'amount', 'type', 'status', 'date', 'actions'];
+
+  ngOnInit() {
+    const id = this.route.snapshot.paramMap.get('id')!;
+    this.api.get<Customer>(`/customers/${id}`).subscribe({
+      next: (c) => {
+        this.customer.set(c);
+        if ((c as any).loans) this.loans.set((c as any).loans);
+        this.loading.set(false);
+      },
+      error: () => this.loading.set(false),
+    });
+    this.api.get<Loan[]>(`/customers/${id}/loans`).subscribe({
+      next: (l) => this.loans.set(l),
+    });
+  }
+}
