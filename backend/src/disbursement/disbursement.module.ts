@@ -24,7 +24,7 @@ export class DisbursementService {
       .where('l.status = :status', { status: LoanStatus.AUTORIZADO })
       .leftJoinAndSelect('l.customer', 'c')
       .leftJoinAndSelect('l.loanType', 'lt')
-      .orderBy('`l`.`autorizado_en`', 'ASC')
+      .addOrderBy('l.authorizedAt', 'ASC')
       .skip((page - 1) * limit).take(limit);
 
     if (filters.search) {
@@ -89,14 +89,14 @@ export class DisbursementService {
       .where('l.status IN (:...statuses)', {
         statuses: [LoanStatus.ACTIVO, LoanStatus.VENCIDO, LoanStatus.LIQUIDADO, LoanStatus.REESTRUCTURADO],
       })
-      .andWhere('l.desembolsado_en IS NOT NULL')
+      .andWhere('l.disbursedAt IS NOT NULL')
       .leftJoinAndSelect('l.customer', 'c')
       .leftJoinAndSelect('l.loanType', 'lt')
-      .orderBy('`l`.`desembolsado_en`', 'DESC')
+      .addOrderBy('l.disbursedAt', 'DESC')
       .skip((page - 1) * limit).take(limit);
 
-    if (filters.startDate) qb.andWhere('l.desembolsado_en >= :start', { start: filters.startDate });
-    if (filters.endDate)   qb.andWhere('l.desembolsado_en <= :end', { end: filters.endDate });
+    if (filters.startDate) qb.andWhere('l.disbursedAt >= :start', { start: filters.startDate });
+    if (filters.endDate)   qb.andWhere('l.disbursedAt <= :end', { end: filters.endDate });
 
     const [data, total] = await qb.getManyAndCount();
     return { data, total, page, limit };
