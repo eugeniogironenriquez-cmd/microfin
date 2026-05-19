@@ -1,7 +1,7 @@
 {
   "name": "microfin-backend",
   "version": "1.0.0",
-  "description": "API REST para sistema de gesti\u00f3n microfinanciera",
+  "description": "API REST para sistema de gestión microfinanciera",
   "author": "MicroFin",
   "private": true,
   "license": "MIT",
@@ -27,6 +27,7 @@
     "@nestjs/jwt": "^10.2.0",
     "@nestjs/passport": "^10.0.3",
     "@nestjs/platform-express": "^10.3.0",
+    "@nestjs/serve-static": "^4.0.2",
     "@nestjs/swagger": "^7.3.0",
     "@nestjs/typeorm": "^10.0.1",
     "bcrypt": "^5.1.1",
@@ -35,6 +36,8 @@
     "date-fns": "^3.3.1",
     "exceljs": "^4.4.0",
     "multer": "^1.4.5-lts.1",
+    "mysql2": "^3.9.4",
+    "nest-winston": "^1.9.4",
     "nodemailer": "^6.9.9",
     "passport": "^0.7.0",
     "passport-jwt": "^4.0.1",
@@ -44,9 +47,7 @@
     "rxjs": "^7.8.1",
     "typeorm": "^0.3.20",
     "uuid": "^9.0.1",
-    "winston": "^3.11.0",
-    "nest-winston": "^1.9.4",
-    "mysql2": "^3.9.4"
+    "winston": "^3.11.0"
   },
   "devDependencies": {
     "@nestjs/cli": "^10.3.0",
@@ -56,8 +57,8 @@
     "@types/express": "^4.17.21",
     "@types/jest": "^29.5.12",
     "@types/multer": "^1.4.11",
-    "@types/nodemailer": "^6.4.14",
     "@types/node": "^20.11.10",
+    "@types/nodemailer": "^6.4.14",
     "@types/passport-jwt": "^4.0.1",
     "@types/passport-local": "^1.0.38",
     "@types/pdfkit": "^0.13.4",

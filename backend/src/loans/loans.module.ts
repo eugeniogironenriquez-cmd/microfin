@@ -1,11 +1,10 @@
 import {
   Module, Controller, Injectable, Get, Post, Put, Patch,
   Body, Param, Query, Req, Res, NotFoundException, BadRequestException,
-  ForbiddenException,
 } from '@nestjs/common';
 import { TypeOrmModule, InjectRepository } from '@nestjs/typeorm';
 import { Repository, DataSource } from 'typeorm';
-import { ApiTags, ApiBearerAuth, ApiOperation } from '@nestjs/swagger';
+import { ApiTags, ApiBearerAuth } from '@nestjs/swagger';
 import { addDays } from 'date-fns';
 import { Response } from 'express';
 import {
@@ -17,6 +16,8 @@ import { PdfGeneratorService } from '../pdf-generator/pdf-generator.service';
 import { PdfGeneratorModule } from '../pdf-generator/pdf-generator.module';
 import { GuarantorModule } from '../guarantor/guarantor.module';
 import { GuarantorService } from '../guarantor/guarantor.module';
+import { CompanyModule } from '../company/company.module';
+import { CompanyService } from '../company/company.module';
 
 // ── FINANCIAL CALCULATOR ──────────────────────────────────────
 @Injectable()
@@ -79,6 +80,7 @@ export class LoansService {
     private dataSource: DataSource,
     private pdfService: PdfGeneratorService,
     private guarantorService: GuarantorService,
+    private companyService: CompanyService,
   ) {}
 
   async findAll(filters: {
@@ -90,16 +92,16 @@ export class LoansService {
     const qb = this.loanRepo.createQueryBuilder('l')
       .leftJoinAndSelect('l.customer', 'c')
       .leftJoinAndSelect('l.loanType', 'lt')
-      .orderBy('l.creado_en', 'DESC')
+      .orderBy('l.createdAt', 'DESC')
       .skip((page - 1) * limit).take(limit);
 
-    if (filters.status) qb.andWhere('l.estatus = :status', { status: filters.status });
-    if (filters.customerId) qb.andWhere('l.cliente_id = :cid', { cid: filters.customerId });
+    if (filters.status) qb.andWhere('l.status = :status', { status: filters.status });
+    if (filters.customerId) qb.andWhere('l.customerId = :cid', { cid: filters.customerId });
     if (filters.search) {
-      qb.andWhere('(c.nombre_completo LIKE :s OR c.telefono LIKE :s)', { s: `%${filters.search}%` });
+      qb.andWhere('(c.fullName LIKE :s OR c.phone LIKE :s)', { s: `%${filters.search}%` });
     }
-    if (filters.stateId) qb.andWhere('c.estado_id = :sid', { sid: filters.stateId });
-    if (filters.municipalityId) qb.andWhere('c.municipio_id = :mid', { mid: filters.municipalityId });
+    if (filters.stateId) qb.andWhere('c.stateId = :sid', { sid: filters.stateId });
+    if (filters.municipalityId) qb.andWhere('c.municipalityId = :mid', { mid: filters.municipalityId });
 
     const [data, total] = await qb.getManyAndCount();
     return { data, total, page, limit, pages: Math.ceil(total / limit) };
@@ -120,7 +122,9 @@ export class LoansService {
   }) {
     const freqDays = this.calculator.getFrequencyDays(dto.frequency);
     const periods = Math.round((dto.termWeeks * 7) / freqDays);
-    const periodic = this.calculator.calculatePeriodicPayment(dto.principalAmount, dto.interestRate, periods);
+    const periodic = this.calculator.calculatePeriodicPayment(
+      dto.principalAmount, dto.interestRate, periods,
+    );
     const table = this.calculator.generateAmortizationTable(
       dto.principalAmount, dto.interestRate, periods, new Date(), freqDays,
     );
@@ -219,10 +223,13 @@ export class LoansService {
 
   async generateSimulationPdf(dto: any, res: Response): Promise<void> {
     const sim = await this.simulate(dto);
+    const company = await this.companyService.get().catch(() => null);
     return this.pdfService.generateSimulationPdf({
       ...dto, ...sim,
       customerName: dto.customerName,
-      generatedAt: new Date(),
+      generatedAt:  new Date(),
+      companyName:  company?.name,
+      legalFooter:  company?.legalFooter,
     }, res);
   }
 
@@ -235,20 +242,21 @@ export class LoansService {
     if (!loan.disbursedAt) throw new BadRequestException('El préstamo no ha sido desembolsado');
 
     const guarantor = await this.guarantorService.findByLoan(id);
+    const company   = await this.companyService.get().catch(() => null);
     const schedules = (loan.paymentSchedules || []).sort((a, b) => a.periodNumber - b.periodNumber);
 
     return this.pdfService.generateLoanPdf({
       loan: {
-        id: loan.id,
-        principalAmount: Number(loan.principalAmount),
-        interestRate: Number(loan.interestRate),
-        termWeeks: loan.termWeeks,
-        frequency: loan.frequency,
-        periodicPayment: Number(loan.periodicPayment),
-        totalAmount: Number(loan.totalAmount),
-        disbursedAt: loan.disbursedAt,
-        disbursementMethod: loan.disbursementMethod || 'EFECTIVO',
-        restructureCount: loan.restructureCount,
+        id:                  loan.id,
+        principalAmount:     Number(loan.principalAmount),
+        interestRate:        Number(loan.interestRate),
+        termWeeks:           loan.termWeeks,
+        frequency:           loan.frequency,
+        periodicPayment:     Number(loan.periodicPayment),
+        totalAmount:         Number(loan.totalAmount),
+        disbursedAt:         loan.disbursedAt,
+        disbursementMethod:  loan.disbursementMethod || 'EFECTIVO',
+        restructureCount:    loan.restructureCount,
       },
       customer: {
         fullName: loan.customer?.fullName || '',
@@ -258,9 +266,9 @@ export class LoansService {
         email:    loan.customer?.email,
         address:  loan.customer?.address,
       },
-      loanType: { name: loan.loanType?.name || '' },
+      loanType:   { name: loan.loanType?.name || '' },
       schedules,
-      guarantor: guarantor ? {
+      guarantor:  guarantor ? {
         fullName:     guarantor.fullName,
         curp:         guarantor.curp,
         rfc:          guarantor.rfc,
@@ -268,6 +276,8 @@ export class LoansService {
         address:      guarantor.address,
         relationship: guarantor.relationship,
       } : undefined,
+      companyName: company?.name,
+      legalFooter: company?.legalFooter,
     }, res);
   }
 }
@@ -279,7 +289,7 @@ export class LoansService {
 export class LoansController {
   constructor(private loansService: LoansService) {}
 
-  @Get()    @Auth() findAll(@Query() q: any) { return this.loansService.findAll(q); }
+  @Get()      @Auth() findAll(@Query() q: any) { return this.loansService.findAll(q); }
   @Get(':id') @Auth() findOne(@Param('id') id: string) { return this.loansService.findOne(id); }
 
   @Post() @Auth()
@@ -324,6 +334,7 @@ export class LoansController {
     TypeOrmModule.forFeature([Loan, LoanType, PaymentSchedule, Customer]),
     PdfGeneratorModule,
     GuarantorModule,
+    CompanyModule,
   ],
   providers: [LoansService, FinancialCalculator],
   controllers: [LoansController],

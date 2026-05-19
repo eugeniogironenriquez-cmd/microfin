@@ -91,6 +91,7 @@ export class UsersModule {}
 
 // ============================================================
 // CASH MODULE - Caja
+// FIX: userId → cashierId, removed non-existent 'difference' field
 // ============================================================
 import { Module as CashMod, Controller as CashCtrl, Injectable as CashInj, Post as CashPost, Get as CashGet, Body as CashBody, BadRequestException as CashBad } from '@nestjs/common';
 import { CashSession, UserRole as UR } from '../common/entities';
@@ -99,31 +100,33 @@ import { CashSession, UserRole as UR } from '../common/entities';
 export class CashService {
   constructor(@InjectRepository(CashSession) private sessionRepo: Repository<CashSession>) {}
 
-  async open(userId: string, openingBalance: number) {
-    const open = await this.sessionRepo.findOne({ where: { userId, closedAt: null as any } });
+  async open(cashierId: string, openingBalance: number) {
+    // FIX: campo correcto es cashierId
+    const open = await this.sessionRepo.findOne({ where: { cashierId, closedAt: null as any } });
     if (open) throw new CashBad('Ya tienes una caja abierta');
-    const session = this.sessionRepo.create({ userId, openingBalance, openedAt: new Date() });
+    const session = this.sessionRepo.create({ cashierId, openingBalance, openedAt: new Date() });
     return this.sessionRepo.save(session);
   }
 
-  async close(userId: string, closingBalance: number, notes?: string) {
-    const session = await this.sessionRepo.findOne({ where: { userId, closedAt: null as any } });
+  async close(cashierId: string, closingBalance: number, notes?: string) {
+    // FIX: campo correcto es cashierId
+    const session = await this.sessionRepo.findOne({ where: { cashierId, closedAt: null as any } });
     if (!session) throw new CashBad('No hay caja abierta');
     session.closingBalance = closingBalance;
     session.closedAt = new Date();
     if (notes !== undefined) session.notes = notes;
-    // expectedBalance se calculará sumando movimientos del día
-    session.difference = this.round(closingBalance - Number(session.openingBalance));
+    // FIX: 'difference' no existe en CashSession — se elimina
     return this.sessionRepo.save(session);
   }
 
-  async getStatus(userId: string) {
-    return this.sessionRepo.findOne({ where: { userId, closedAt: null as any } });
+  async getStatus(cashierId: string) {
+    // FIX: campo correcto es cashierId
+    return this.sessionRepo.findOne({ where: { cashierId, closedAt: null as any } });
   }
 
-  async getHistory(userId?: string, limit = 20) {
+  async getHistory(cashierId?: string, limit = 20) {
     const qb = this.sessionRepo.createQueryBuilder('cs').orderBy('cs.openedAt', 'DESC').take(limit);
-    if (userId) qb.where('cs.userId = :userId', { userId });
+    if (cashierId) qb.where('cs.cajero_id = :cashierId', { cashierId });
     return qb.getMany();
   }
 
@@ -146,9 +149,11 @@ export class CashModule {}
 
 // ============================================================
 // COLLECTION MODULE
+// FIX: removed VisitType (no existe), assignedDate → assignedAt
 // ============================================================
 import { Module as ColMod, Controller as ColCtrl, Injectable as ColInj, Get as ColGet, Post as ColPost, Body as ColBody, Query as ColQuery, Param as ColParam } from '@nestjs/common';
-import { CollectorAssignment, CollectionVisit, Loan as LoanEntity, PaymentSchedule as PSEntity, ScheduleStatus as SS, LoanStatus as LS, VisitType } from '../common/entities';
+// FIX: eliminado VisitType que no existe en entities
+import { CollectorAssignment, CollectionVisit, Loan as LoanEntity, PaymentSchedule as PSEntity, ScheduleStatus as SS, LoanStatus as LS } from '../common/entities';
 
 @ColInj()
 export class CollectionService {
@@ -159,16 +164,28 @@ export class CollectionService {
   ) {}
 
   async assign(dto: { collectorId: string; loanIds: string[]; date: string }, assignedBy: string) {
-    const existing = await this.assignRepo.find({ where: { collectorId: dto.collectorId, assignedDate: new Date(dto.date) as any, isActive: true } });
-    // Desactivar asignaciones previas del día
+    // FIX: assignedDate → assignedAt
+    const existing = await this.assignRepo.find({
+      where: { collectorId: dto.collectorId, isActive: true },
+    });
     for (const a of existing) { a.isActive = false; await this.assignRepo.save(a); }
-    const assignments = dto.loanIds.map((loanId) => this.assignRepo.create({ collectorId: dto.collectorId, loanId, assignedDate: new Date(dto.date) as any, assignedBy, isActive: true }));
+
+    const assignments = dto.loanIds.map((loanId) =>
+      this.assignRepo.create({
+        collectorId: dto.collectorId,
+        loanId,
+        assignedAt: new Date(dto.date), // FIX: assignedAt en lugar de assignedDate
+        isActive: true,
+      })
+    );
     return this.assignRepo.save(assignments);
   }
 
   async getMyClients(collectorId: string) {
-    const today = new Date(); today.setHours(0, 0, 0, 0);
-    const assignments = await this.assignRepo.find({ where: { collectorId, assignedDate: today as any, isActive: true } });
+    // FIX: filtrar por collectorId sin assignedDate
+    const assignments = await this.assignRepo.find({
+      where: { collectorId, isActive: true },
+    });
     const loanIds = assignments.map((a) => a.loanId);
     if (!loanIds.length) return [];
     return this.loanRepo.createQueryBuilder('l')
@@ -179,16 +196,16 @@ export class CollectionService {
   }
 
   async registerVisit(dto: any, collectorId: string) {
-    const visit = this.visitRepo.create({ ...dto, collectorId, syncStatus: 'SYNCED', visitedAt: new Date() });
+    const visit = this.visitRepo.create({ ...dto, collectorId, visitedAt: new Date() });
     return this.visitRepo.save(visit);
   }
 
   async getOverdue(filters: { page?: number; limit?: number }) {
     const { page = 1, limit = 20 } = filters;
     return this.loanRepo.createQueryBuilder('l')
-      .where('l.status = :status', { status: LS.VENCIDO })
+      .where('l.estatus = :status', { status: LS.VENCIDO })
       .leftJoinAndSelect('l.customer', 'c')
-      .orderBy('l.updatedAt', 'ASC')
+      .orderBy('l.actualizado_en', 'ASC')
       .skip((page - 1) * limit).take(limit)
       .getManyAndCount()
       .then(([data, total]) => ({ data, total, page, limit }));
@@ -224,29 +241,35 @@ export class ReportsService {
   ) {}
 
   async getPortfolio() {
-    const [active, overdue, restructured, settled] = await Promise.all([
-      this.loanRepo.count({ where: { status: LS.ACTIVO } }),
-      this.loanRepo.count({ where: { status: LS.VENCIDO } }),
-      this.loanRepo.count({ where: { status: LS.REESTRUCTURADO } }),
-      this.loanRepo.count({ where: { status: LS.LIQUIDADO } }),
-    ]);
-
-    const totalActiveAmount = await this.loanRepo
-      .createQueryBuilder('l').select('SUM(l.principalAmount)', 'total')
-      .where('l.status IN (:...statuses)', { statuses: [LS.ACTIVO, LS.VENCIDO] })
-      .getRawOne();
-
-    return { active, overdue, restructured, settled, totalActiveAmount: Number(totalActiveAmount?.total || 0) };
+    // Usar raw SQL para evitar problemas con nombres de columnas en español
+    const [result] = await this.loanRepo.query(`
+      SELECT
+        COUNT(*) AS total,
+        SUM(CASE WHEN estatus = 'ACTIVO' THEN 1 ELSE 0 END) AS active,
+        SUM(CASE WHEN estatus = 'VENCIDO' THEN 1 ELSE 0 END) AS overdue,
+        SUM(CASE WHEN estatus = 'REESTRUCTURADO' THEN 1 ELSE 0 END) AS restructured,
+        SUM(CASE WHEN estatus = 'LIQUIDADO' THEN 1 ELSE 0 END) AS settled,
+        SUM(CASE WHEN estatus IN ('ACTIVO','VENCIDO') THEN monto_principal ELSE 0 END) AS totalActiveAmount
+      FROM prestamos
+    `);
+    return {
+      total:             Number(result?.total || 0),
+      active:            Number(result?.active || 0),
+      overdue:           Number(result?.overdue || 0),
+      restructured:      Number(result?.restructured || 0),
+      settled:           Number(result?.settled || 0),
+      totalActiveAmount: Number(result?.totalActiveAmount || 0),
+    };
   }
 
   async getCashFlow(startDate: string, endDate: string) {
     return this.loanRepo.createQueryBuilder('l')
-      .select("DATE(l.disbursedAt)", 'date')
-      .addSelect('SUM(l.principalAmount)', 'disbursed')
-      .where('l.disbursedAt BETWEEN :start AND :end', { start: startDate, end: endDate })
-      .andWhere('l.status != :s', { s: LS.RECHAZADO })
-      .groupBy("DATE(l.disbursedAt)")
-      .orderBy("DATE(l.disbursedAt)")
+      .select("DATE(l.desembolsado_en)", 'date')
+      .addSelect('SUM(l.monto_principal)', 'disbursed')
+      .where('l.desembolsado_en BETWEEN :start AND :end', { start: startDate, end: endDate })
+      .andWhere('l.estatus != :s', { s: LS.RECHAZADO })
+      .groupBy("DATE(l.desembolsado_en)")
+      .orderBy("DATE(l.desembolsado_en)")
       .getRawMany();
   }
 
@@ -258,7 +281,7 @@ export class ReportsService {
     });
 
     const workbook = new ExcelJS.Workbook();
-    workbook.creator = 'MicroFin';
+    workbook.creator = 'Microcapital-Ixtepec';
     workbook.created = new Date();
 
     const sheet = workbook.addWorksheet('Cartera Vigente', {
@@ -266,22 +289,20 @@ export class ReportsService {
     });
 
     sheet.columns = [
-      { header: 'ID', key: 'id', width: 36 },
-      { header: 'Cliente', key: 'cliente', width: 30 },
-      { header: 'CURP', key: 'curp', width: 20 },
-      { header: 'Monto', key: 'monto', width: 14, style: { numFmt: '"$"#,##0.00' } },
-      { header: 'Saldo', key: 'saldo', width: 14, style: { numFmt: '"$"#,##0.00' } },
-      { header: 'Plazo', key: 'plazo', width: 10 },
-      { header: 'Tipo', key: 'tipo', width: 15 },
-      { header: 'Tasa', key: 'tasa', width: 10, style: { numFmt: '0.00%' } },
-      { header: 'Cuota', key: 'cuota', width: 14, style: { numFmt: '"$"#,##0.00' } },
-      { header: 'Desembolso', key: 'desembolso', width: 14 },
-      { header: 'Estado', key: 'estado', width: 14 },
+      { header: 'ID',         key: 'id',         width: 36 },
+      { header: 'Cliente',    key: 'cliente',     width: 30 },
+      { header: 'CURP',       key: 'curp',        width: 20 },
+      { header: 'Monto',      key: 'monto',       width: 14, style: { numFmt: '"$"#,##0.00' } },
+      { header: 'Plazo',      key: 'plazo',       width: 10 },
+      { header: 'Tipo',       key: 'tipo',        width: 15 },
+      { header: 'Tasa',       key: 'tasa',        width: 10, style: { numFmt: '0.00%' } },
+      { header: 'Cuota',      key: 'cuota',       width: 14, style: { numFmt: '"$"#,##0.00' } },
+      { header: 'Desembolso', key: 'desembolso',  width: 14 },
+      { header: 'Estado',     key: 'estado',      width: 14 },
     ];
 
-    // Estilo cabecera
     sheet.getRow(1).eachCell((cell) => {
-      cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF1B4F72' } };
+      cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF1C4532' } };
       cell.font = { color: { argb: 'FFFFFFFF' }, bold: true };
       cell.alignment = { vertical: 'middle', horizontal: 'center' };
     });
@@ -289,21 +310,20 @@ export class ReportsService {
 
     loans.forEach((loan) => {
       sheet.addRow({
-        id: loan.id,
-        cliente: loan.customer?.fullName,
-        curp: loan.customer?.curp,
-        monto: Number(loan.principalAmount),
-        saldo: Number(loan.principalAmount), // simplificado
-        plazo: `${loan.termWeeks} sem`,
-        tipo: loan.loanType?.name,
-        tasa: Number(loan.interestRate),
-        cuota: Number(loan.periodicPayment),
-        desembolso: loan.disbursedAt?.toISOString().split('T')[0],
-        estado: loan.status,
+        id:          loan.id,
+        cliente:     loan.customer?.fullName,
+        curp:        loan.customer?.curp,
+        monto:       Number(loan.principalAmount),
+        plazo:       `${loan.termWeeks} sem`,
+        tipo:        loan.loanType?.name,
+        tasa:        Number(loan.interestRate),
+        cuota:       Number(loan.periodicPayment),
+        desembolso:  loan.disbursedAt?.toISOString().split('T')[0],
+        estado:      loan.status,
       });
     });
 
-    sheet.autoFilter = { from: 'A1', to: `K1` };
+    sheet.autoFilter = { from: 'A1', to: 'J1' };
 
     res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
     res.setHeader('Content-Disposition', `attachment; filename=cartera-vigente-${new Date().toISOString().split('T')[0]}.xlsx`);
