@@ -41,11 +41,11 @@ export class ExpenseService {
     const { page = 1, limit = 20 } = filters;
     const qb = this.expenseRepo.createQueryBuilder('g')
       .leftJoinAndSelect('g.category', 'cat')
-      .orderBy('g.creado_en', 'DESC')
+      .orderBy('g.createdAt', 'DESC')
       .skip((page - 1) * limit).take(limit);
-    if (filters.startDate) qb.andWhere('g.fecha_gasto >= :start', { start: filters.startDate });
-    if (filters.endDate)   qb.andWhere('g.fecha_gasto <= :end',   { end: filters.endDate });
-    if (filters.categoryId) qb.andWhere('g.categoria_id = :cat', { cat: filters.categoryId });
+    if (filters.startDate) qb.andWhere('g.expenseDate >= :start', { start: filters.startDate });
+    if (filters.endDate)   qb.andWhere('g.expenseDate <= :end',   { end: filters.endDate });
+    if (filters.categoryId) qb.andWhere('g.categoryId = :cat', { cat: filters.categoryId });
     const [data, total] = await qb.getManyAndCount();
     return { data, total, page, limit };
   }

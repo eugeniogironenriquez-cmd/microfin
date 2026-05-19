@@ -28,7 +28,7 @@ export class CustomersService {
   }) {
     const { page = 1, limit = 20, search, status, stateId, municipalityId } = filters;
     const qb = this.customerRepo.createQueryBuilder('c')
-      .orderBy('c.creado_en', 'DESC')
+      .orderBy('c.createdAt', 'DESC')
       .skip((page - 1) * limit)
       .take(limit);
 
@@ -38,9 +38,9 @@ export class CustomersService {
         { s: `%${search}%` },
       );
     }
-    if (status) qb.andWhere('c.estatus = :status', { status });
-    if (stateId) qb.andWhere('c.estado_id = :stateId', { stateId });
-    if (municipalityId) qb.andWhere('c.municipio_id = :municipalityId', { municipalityId });
+    if (status) qb.andWhere('c.status = :status', { status });
+    if (stateId) qb.andWhere('c.stateId = :stateId', { stateId });
+    if (municipalityId) qb.andWhere('c.municipalityId = :municipalityId', { municipalityId });
 
     const [data, total] = await qb.getManyAndCount();
     return { data, total, page, limit, pages: Math.ceil(total / limit) };
@@ -64,7 +64,7 @@ export class CustomersService {
       checks.push(qb.getOne().then((r) => r ? 'CURP ya registrada' : null));
     }
     if (dto.phone) {
-      const qb = this.customerRepo.createQueryBuilder('c').where('c.telefono = :phone', { phone: dto.phone });
+      const qb = this.customerRepo.createQueryBuilder('c').where('c.phone = :phone', { phone: dto.phone });
       checks.push(qb.getOne().then((r) => r ? 'Teléfono ya registrado' : null));
     }
 

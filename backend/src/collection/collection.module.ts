@@ -20,8 +20,8 @@ export class CollectionService {
     return this.loanRepo.createQueryBuilder('l')
       .leftJoinAndSelect('l.customer', 'c')
       .leftJoinAndSelect('l.loanType', 'lt')
-      .where('l.cobrador_id = :collectorId', { collectorId })
-      .andWhere('l.estatus IN (:...statuses)', { statuses: [LoanStatus.ACTIVO, LoanStatus.VENCIDO] })
+      .where('l.collectorId = :collectorId', { collectorId })
+      .andWhere('l.status IN (:...statuses)', { statuses: [LoanStatus.ACTIVO, LoanStatus.VENCIDO] })
       .getMany();
   }
 
