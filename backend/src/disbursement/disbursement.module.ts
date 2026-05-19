@@ -21,14 +21,14 @@ export class DisbursementService {
   async getPending(filters: { page?: number; limit?: number; search?: string }) {
     const { page = 1, limit = 20 } = filters;
     const qb = this.loanRepo.createQueryBuilder('l')
-      .where('l.estatus = :status', { status: LoanStatus.AUTORIZADO })
+      .where('l.status = :status', { status: LoanStatus.AUTORIZADO })
       .leftJoinAndSelect('l.customer', 'c')
       .leftJoinAndSelect('l.loanType', 'lt')
-      .orderBy('l.autorizado_en', 'ASC')
+      .orderBy('`l`.`autorizado_en`', 'ASC')
       .skip((page - 1) * limit).take(limit);
 
     if (filters.search) {
-      qb.andWhere('(c.nombre_completo LIKE :s OR c.telefono LIKE :s)', { s: `%${filters.search}%` });
+      qb.andWhere('(c.fullName LIKE :s OR c.phone LIKE :s)', { s: `%${filters.search}%` });
     }
     const [data, total] = await qb.getManyAndCount();
     return { data, total, page, limit };
@@ -86,17 +86,17 @@ export class DisbursementService {
   async getHistory(filters: { page?: number; limit?: number; startDate?: string; endDate?: string }) {
     const { page = 1, limit = 20 } = filters;
     const qb = this.loanRepo.createQueryBuilder('l')
-      .where('l.estatus IN (:...statuses)', {
+      .where('l.status IN (:...statuses)', {
         statuses: [LoanStatus.ACTIVO, LoanStatus.VENCIDO, LoanStatus.LIQUIDADO, LoanStatus.REESTRUCTURADO],
       })
       .andWhere('l.desembolsado_en IS NOT NULL')
       .leftJoinAndSelect('l.customer', 'c')
       .leftJoinAndSelect('l.loanType', 'lt')
-      .orderBy('l.desembolsado_en', 'DESC')
+      .orderBy('`l`.`desembolsado_en`', 'DESC')
       .skip((page - 1) * limit).take(limit);
 
     if (filters.startDate) qb.andWhere('l.desembolsado_en >= :start', { start: filters.startDate });
-    if (filters.endDate)   qb.andWhere('l.desembolsado_en <= :end',   { end: filters.endDate });
+    if (filters.endDate)   qb.andWhere('l.desembolsado_en <= :end', { end: filters.endDate });
 
     const [data, total] = await qb.getManyAndCount();
     return { data, total, page, limit };
