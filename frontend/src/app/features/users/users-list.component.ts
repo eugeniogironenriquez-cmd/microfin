@@ -1,4 +1,3 @@
-// users-list.component.ts
 import { Component, OnInit, inject, signal } from '@angular/core';
 import { CommonModule, DatePipe } from '@angular/common';
 import { RouterLink } from '@angular/router';
@@ -11,7 +10,7 @@ import { MatChipsModule } from '@angular/material/chips';
 import { MatTooltipModule } from '@angular/material/tooltip';
 import { MatSlideToggleModule } from '@angular/material/slide-toggle';
 import { MatSnackBar, MatSnackBarModule } from '@angular/material/snack-bar';
-import { ApiService, User, PagedResponse } from '../../core/index';
+import { ApiService } from '../../core/index';
 
 @Component({
   selector: 'app-users-list',
@@ -33,31 +32,37 @@ import { ApiService, User, PagedResponse } from '../../core/index';
     <mat-card>
       @if (loading()) {
         <div class="loading-overlay"><mat-spinner diameter="48"></mat-spinner></div>
+      } @else if (users().length === 0) {
+        <div class="empty-state">
+          <mat-icon>manage_accounts</mat-icon>
+          <p>Sin usuarios registrados</p>
+        </div>
       } @else {
         <table mat-table [dataSource]="users()">
           <ng-container matColumnDef="name">
             <th mat-header-cell *matHeaderCellDef>Usuario</th>
             <td mat-cell *matCellDef="let r">
-              <div>
-                <div class="font-500">{{ r.name }}</div>
-                <div class="text-muted text-xs">{{ r.email }}</div>
-              </div>
+              <div class="client-name">{{ r.name }}</div>
+              <div class="client-sub">{{ r.email }}</div>
             </td>
           </ng-container>
           <ng-container matColumnDef="role">
             <th mat-header-cell *matHeaderCellDef>Rol</th>
             <td mat-cell *matCellDef="let r">
-              <span class="role-chip role-{{ r.role | lowercase }}">{{ r.role }}</span>
+              <span class="badge badge-{{ r.role | lowercase }}">{{ r.role }}</span>
             </td>
           </ng-container>
           <ng-container matColumnDef="lastLogin">
             <th mat-header-cell *matHeaderCellDef>Último acceso</th>
-            <td mat-cell *matCellDef="let r">{{ r.lastLoginAt | date:'dd/MM/yyyy HH:mm' }}</td>
+            <td mat-cell *matCellDef="let r">
+              {{ r.lastLoginAt ? (r.lastLoginAt | date:'dd/MM/yyyy HH:mm') : '—' }}
+            </td>
           </ng-container>
           <ng-container matColumnDef="active">
             <th mat-header-cell *matHeaderCellDef>Activo</th>
             <td mat-cell *matCellDef="let r">
-              <mat-slide-toggle [checked]="r.isActive" (change)="toggleActive(r)"></mat-slide-toggle>
+              <mat-slide-toggle [checked]="r.isActive"
+                                (change)="toggleActive(r)"></mat-slide-toggle>
             </td>
           </ng-container>
           <ng-container matColumnDef="actions">
@@ -73,25 +78,43 @@ import { ApiService, User, PagedResponse } from '../../core/index';
         </table>
       }
     </mat-card>
-  `
+  `,
 })
 export class UsersListComponent implements OnInit {
-  private api = inject(ApiService);
+  private api     = inject(ApiService);
   private snackbar = inject(MatSnackBar);
-  users = signal<User[]>([]);
-  loading = signal(true);
-  cols = ['name', 'role', 'lastLogin', 'active', 'actions'];
 
-  ngOnInit() {
-    this.api.get<PagedResponse<User>>('/users').subscribe({
-      next: (r) => { this.users.set(r.data); this.loading.set(false); },
+  users   = signal<any[]>([]);
+  loading = signal(true);
+  cols    = ['name', 'role', 'lastLogin', 'active', 'actions'];
+
+  ngOnInit() { this.load(); }
+
+  load() {
+    this.loading.set(true);
+    this.api.get<any>('/users').subscribe({
+      next: (r) => {
+        // Handle both array and paged response formats
+        if (Array.isArray(r)) {
+          this.users.set(r);
+        } else if (r?.data && Array.isArray(r.data)) {
+          this.users.set(r.data);
+        } else {
+          this.users.set([]);
+        }
+        this.loading.set(false);
+      },
       error: () => this.loading.set(false),
     });
   }
 
-  toggleActive(user: User) {
-    this.api.put(`/users/${user.id}`, { isActive: !(user as any).isActive }).subscribe({
-      next: () => this.snackbar.open('Usuario actualizado', 'OK', { duration: 2000 }),
+  toggleActive(user: any) {
+    this.api.put(`/users/${user.id}`, { isActive: !user.isActive }).subscribe({
+      next: () => {
+        this.snackbar.open('Usuario actualizado', 'OK', { duration: 2000 });
+        this.load();
+      },
+      error: () => this.snackbar.open('Error al actualizar', 'Cerrar', { duration: 3000 }),
     });
   }
 }
