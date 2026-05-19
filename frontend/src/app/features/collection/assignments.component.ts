@@ -178,19 +178,31 @@ export class AssignmentsComponent implements OnInit {
     // Cargar cobradores
     this.api.get<any>('/users/collectors').subscribe({
       next: (r) => {
-        const list = Array.isArray(r) ? r : r?.data ?? [];
+        // Handle: array, { data: [] }, or nested { data: { data: [] } }
+        let list: any[] = [];
+        if (Array.isArray(r))            list = r;
+        else if (Array.isArray(r?.data)) list = r.data;
+        else if (Array.isArray(r?.data?.data)) list = r.data.data;
         this.collectors.set(list);
+        console.log('Cobradores cargados:', list.length, list);
       },
+      error: (e) => console.error('Error cargando cobradores:', e),
     });
 
     // Cargar créditos activos y vencidos
+    const extractList = (r: any): any[] => {
+      if (Array.isArray(r)) return r;
+      if (Array.isArray(r?.data)) return r.data;
+      if (Array.isArray(r?.data?.data)) return r.data.data;
+      return [];
+    };
+
     this.api.get<any>('/loans', { status: 'ACTIVO', limit: 100 }).subscribe({
       next: (r) => {
-        const activos  = Array.isArray(r) ? r : r?.data ?? [];
-        // También cargar vencidos
+        const activos = extractList(r);
         this.api.get<any>('/loans', { status: 'VENCIDO', limit: 100 }).subscribe({
           next: (r2) => {
-            const vencidos = Array.isArray(r2) ? r2 : r2?.data ?? [];
+            const vencidos = extractList(r2);
             this.loans.set([...vencidos, ...activos]);
             this.loading.set(false);
           },
