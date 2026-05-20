@@ -147,7 +147,18 @@ export class LoansService {
     termWeeks: number; frequency: string;
   }) {
     const freqDays = this.calculator.getFrequencyDays(dto.frequency);
-    const periods  = Math.round((dto.termWeeks * 7) / freqDays);
+    // termWeeks es el número de períodos directamente
+    // Para DIARIO: 30 días = 30 períodos (no 30*7/1)
+    // Para SEMANAL: 12 semanas = 12 períodos (no 12*7/7)
+    // La fórmula (termWeeks * 7 / freqDays) solo funciona para conversión entre unidades
+    // pero como el formulario ya muestra "días/semanas/etc", usamos directo
+    const periods = freqDays === 1
+      ? Math.round(dto.termWeeks)           // DIARIO: períodos = días
+      : freqDays === 7
+      ? Math.round(dto.termWeeks)           // SEMANAL: períodos = semanas
+      : freqDays === 15
+      ? Math.round(dto.termWeeks)           // QUINCENAL: períodos = quincenas
+      : Math.round(dto.termWeeks);          // MENSUAL: períodos = meses
 
     if (dto.totalRate !== undefined && Number(dto.totalRate) > 0) {
       const { totalAmount, totalInterest, periodicPayment } =
@@ -176,7 +187,8 @@ export class LoansService {
     if (!loanType) throw new NotFoundException('Tipo de préstamo no encontrado');
 
     const freqDays = this.calculator.getFrequencyDays(dto.frequency || loanType.frequency);
-    const periods  = Math.round((Number(dto.termWeeks) * 7) / freqDays);
+    // Períodos directos — el formulario ya envía días/semanas/quincenas/meses
+    const periods = Math.round(Number(dto.termWeeks));
 
     let periodicPayment: number;
     let totalAmount: number;
@@ -232,7 +244,8 @@ export class LoansService {
       await qr.manager.save(loan);
 
       const freqDays = this.calculator.getFrequencyDays(loan.frequency);
-      const periods  = Math.round((loan.termWeeks * 7) / freqDays);
+      // Períodos directos — no multiplicar por 7
+      const periods = Math.round(loan.termWeeks);
 
       // Detectar modelo según si tiene totalRate guardado
       let table: any[];
@@ -266,6 +279,88 @@ export class LoansService {
     }
   }
 
+  async restructure(id: string, dto: any, userId: string) {
+    const loan = await this.findOne(id);
+    if (!['ACTIVO', 'VENCIDO', 'REESTRUCTURADO'].includes(loan.status))
+      throw new BadRequestException('Solo se pueden reestructurar créditos ACTIVO o VENCIDO');
+
+    const qr = this.dataSource.createQueryRunner();
+    await qr.connect(); await qr.startTransaction();
+
+    try {
+      // Cerrar crédito anterior
+      loan.status = LoanStatus.REESTRUCTURADO;
+      await qr.manager.save(loan);
+
+      // Crear nuevo crédito
+      const periods = Math.round(Number(dto.termWeeks));
+      let periodicPayment: number;
+      let totalAmount: number;
+
+      if (dto.totalRate && Number(dto.totalRate) > 0) {
+        const calc = this.calculator.calculateSimple(
+          Number(dto.principalAmount), Number(dto.totalRate), periods,
+        );
+        periodicPayment = calc.periodicPayment;
+        totalAmount     = calc.totalAmount;
+      } else {
+        periodicPayment = this.calculator.calculatePeriodicPayment(
+          Number(dto.principalAmount), Number(dto.interestRate || 0), periods,
+        );
+        totalAmount = this.calculator.round(periodicPayment * periods);
+      }
+
+      const newLoan = this.loanRepo.create({
+        customerId:         loan.customerId,
+        loanTypeId:         dto.loanTypeId || loan.loanTypeId,
+        parentLoanId:       loan.id,
+        principalAmount:    Number(dto.principalAmount),
+        interestRate:       Number(dto.interestRate || 0),
+        termWeeks:          Number(dto.termWeeks),
+        frequency:          dto.frequency || loan.frequency,
+        status:             LoanStatus.ACTIVO,
+        disbursedAt:        new Date(),
+        disbursedBy:        userId,
+        disbursementMethod: 'REESTRUCTURA',
+        periodicPayment:    this.calculator.round(periodicPayment),
+        totalAmount:        this.calculator.round(totalAmount),
+        restructureCount:   (loan.restructureCount || 0) + 1,
+        restructureReason:  dto.restructureReason,
+        createdBy:          userId,
+      } as any);
+      const saved = await qr.manager.save(newLoan as any);
+
+      // Generar calendario del nuevo crédito
+      const freqDays = this.calculator.getFrequencyDays(dto.frequency || loan.frequency);
+      let table: any[];
+      if (dto.totalRate && Number(dto.totalRate) > 0) {
+        table = this.calculator.generateSimpleTable(
+          Number(dto.principalAmount), Number(dto.totalRate), periods, new Date(), freqDays,
+        );
+      } else {
+        table = this.calculator.generateAmortizationTable(
+          Number(dto.principalAmount), Number(dto.interestRate || 0), periods, new Date(), freqDays,
+        );
+      }
+
+      const schedules = table.map((row: any) =>
+        this.scheduleRepo.create({
+          loanId: saved.id, periodNumber: row.period, dueDate: row.dueDate,
+          principalDue: row.principal, interestDue: row.interest,
+          totalDue: row.payment, balanceDue: row.payment,
+          status: ScheduleStatus.PENDIENTE,
+        }),
+      );
+      await qr.manager.save(schedules);
+      await qr.commitTransaction();
+      return { loan: saved, schedulesGenerated: schedules.length };
+    } catch (err) {
+      await qr.rollbackTransaction(); throw err;
+    } finally {
+      await qr.release();
+    }
+  }
+
   async getSchedule(loanId: string): Promise<PaymentSchedule[]> {
     return this.scheduleRepo.find({ where: { loanId }, order: { periodNumber: 'ASC' } });
   }
@@ -274,11 +369,19 @@ export class LoansService {
     const sim     = await this.simulate(dto);
     const company = await this.companyService.get().catch(() => null);
     return this.pdfService.generateSimulationPdf({
-      ...dto, ...sim,
-      customerName: dto.customerName,
-      generatedAt:  new Date(),
-      companyName:  company?.name,
-      legalFooter:  company?.legalFooter,
+      principalAmount: dto.principalAmount,
+      interestRate:    dto.totalRate ? dto.totalRate : (dto.interestRate || 0),
+      termWeeks:       dto.termWeeks,
+      frequency:       dto.frequency,
+      totalRate:       dto.totalRate,
+      periodicPayment: sim.periodicPayment,
+      totalPayment:    sim.totalPayment,
+      totalInterest:   sim.totalInterest,
+      schedule:        sim.schedule,
+      customerName:    dto.customerName,
+      generatedAt:     new Date(),
+      companyName:     company?.name,
+      legalFooter:     company?.legalFooter,
     }, res);
   }
 
@@ -352,6 +455,11 @@ export class LoansController {
   @Post(':id/disburse') @Auth(UserRole.ADMIN, UserRole.CAJERO)
   disburse(@Param('id') id: string, @Body() dto: any, @CurrentUser('id') uid: string) {
     return this.loansService.disburse(id, dto, uid);
+  }
+
+  @Post(':id/restructure') @Auth(UserRole.ADMIN, UserRole.AUTORIZADOR)
+  restructure(@Param('id') id: string, @Body() dto: any, @CurrentUser('id') uid: string) {
+    return this.loansService.restructure(id, dto, uid);
   }
 }
 
