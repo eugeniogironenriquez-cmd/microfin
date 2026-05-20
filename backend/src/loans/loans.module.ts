@@ -200,8 +200,8 @@ export class LoansService {
       periodicPayment: this.calculator.round(periodicPayment),
       totalAmount:     this.calculator.round(totalAmount),
       createdBy:       userId,
-    });
-    return this.loanRepo.save(loan);
+    } as any);
+    return this.loanRepo.save(loan as any);
   }
 
   async authorize(id: string, decision: 'APPROVE' | 'REJECT', userId: string, rejectionReason?: string): Promise<Loan> {
