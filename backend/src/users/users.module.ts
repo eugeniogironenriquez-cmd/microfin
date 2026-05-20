@@ -51,6 +51,13 @@ export class UsersService {
     u.isActive = !u.isActive;
     return this.userRepo.save(u);
   }
+
+  async getCollectors(): Promise<User[]> {
+    return this.userRepo.find({
+      where: { role: UserRole.COBRADOR, isActive: true },
+      order: { name: 'ASC' },
+    });
+  }
 }
 
 @ApiTags('users')
@@ -61,6 +68,9 @@ export class UsersController {
 
   @Get() @Auth(UserRole.ADMIN)
   findAll() { return this.usersService.findAll(); }
+
+  @Get('collectors') @Auth()
+  getCollectors() { return this.usersService.getCollectors(); }
 
   @Get(':id') @Auth(UserRole.ADMIN)
   findOne(@Param('id') id: string) { return this.usersService.findOne(id); }

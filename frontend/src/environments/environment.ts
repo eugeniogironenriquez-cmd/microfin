@@ -1,4 +1,4 @@
 export const environment = {
   production: false,
-  apiUrl: 'https://microfin-production.up.railway.app/api/v1'
+  apiUrl: 'https://microcapital-ixtepec.com/api/v1'
 };
