@@ -372,3 +372,91 @@ export class SettingsController {
 
 @SetMod({ imports: [require('@nestjs/typeorm').TypeOrmModule.forFeature([LoanType])], providers: [SettingsService], controllers: [SettingsController], exports: [SettingsService] })
 export class SettingsModule {}
+
+// ============================================================
+// RATE RANGES MODULE — rangos_tasa (raw SQL)
+// ============================================================
+import { Module as RRMod, Controller as RRCtrl, Injectable as RRInj,
+  Get as RRGet, Post as RRPost, Delete as RRDel,
+  Param as RRParam, Body as RRBody, Query as RRQuery } from '@nestjs/common';
+import { DataSource as RRDS } from 'typeorm';
+
+@RRInj()
+export class RateRangesService {
+  constructor(private ds: RRDS) {}
+
+  async findAll(loanTypeId?: string) {
+    let sql = `SELECT rr.*, lt.nombre as loanTypeName
+      FROM rangos_tasa rr
+      LEFT JOIN tipos_prestamo lt ON lt.id = rr.tipo_prestamo_id
+      WHERE rr.activo = 1`;
+    const params: any[] = [];
+    if (loanTypeId) { sql += ' AND rr.tipo_prestamo_id = ?'; params.push(loanTypeId); }
+    sql += ' ORDER BY rr.monto_minimo ASC';
+    const rows = await this.ds.query(sql, params);
+    return rows.map((r: any) => ({
+      id:         r.id,
+      loanTypeId: r.tipo_prestamo_id,
+      loanType:   r.loanTypeName ? { name: r.loanTypeName } : null,
+      minAmount:  Number(r.monto_minimo),
+      maxAmount:  Number(r.monto_maximo),
+      totalRate:  Number(r.tasa_total),
+      periods:    typeof r.periodos === 'string' ? JSON.parse(r.periodos) : r.periodos,
+    }));
+  }
+
+  async findByAmount(loanTypeId: string, amount: number) {
+    const rows = await this.ds.query(
+      `SELECT * FROM rangos_tasa
+       WHERE tipo_prestamo_id = ? AND monto_minimo <= ? AND monto_maximo >= ? AND activo = 1
+       LIMIT 1`,
+      [loanTypeId, amount, amount]
+    );
+    if (!rows.length) return null;
+    const r = rows[0];
+    return {
+      id: r.id, loanTypeId: r.tipo_prestamo_id,
+      minAmount: Number(r.monto_minimo), maxAmount: Number(r.monto_maximo),
+      totalRate: Number(r.tasa_total),
+      periods: typeof r.periodos === 'string' ? JSON.parse(r.periodos) : r.periodos,
+    };
+  }
+
+  async create(dto: { loanTypeId: string; minAmount: number; maxAmount: number; totalRate: number; periods: number[] }) {
+    await this.ds.query(
+      `INSERT INTO rangos_tasa (id, tipo_prestamo_id, monto_minimo, monto_maximo, tasa_total, periodos)
+       VALUES (UUID(), ?, ?, ?, ?, ?)`,
+      [dto.loanTypeId, dto.minAmount, dto.maxAmount, dto.totalRate, JSON.stringify(dto.periods)]
+    );
+    return { success: true };
+  }
+
+  async remove(id: string) {
+    await this.ds.query('UPDATE rangos_tasa SET activo = 0 WHERE id = ?', [id]);
+    return { deleted: true };
+  }
+}
+
+@ApiTags('settings')
+@ApiBearerAuth()
+@RRCtrl('settings/rate-ranges')
+export class RateRangesController {
+  constructor(private svc: RateRangesService) {}
+
+  @RRGet() @Auth()
+  findAll(@RRQuery('loanTypeId') loanTypeId?: string) { return this.svc.findAll(loanTypeId); }
+
+  @RRGet('by-amount') @Auth()
+  findByAmount(@RRQuery('loanTypeId') ltId: string, @RRQuery('amount') amt: string) {
+    return this.svc.findByAmount(ltId, Number(amt));
+  }
+
+  @RRPost() @Auth(UserRole.ADMIN)
+  create(@RRBody() dto: any) { return this.svc.create(dto); }
+
+  @RRDel(':id') @Auth(UserRole.ADMIN)
+  remove(@RRParam('id') id: string) { return this.svc.remove(id); }
+}
+
+@RRMod({ providers: [RateRangesService], controllers: [RateRangesController], exports: [RateRangesService] })
+export class RateRangesModule {}

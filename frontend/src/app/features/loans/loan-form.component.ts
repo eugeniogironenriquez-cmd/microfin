@@ -44,11 +44,13 @@ function unidadPlazo(freq: string): string {
 
     <mat-stepper linear #stepper>
 
-      <!-- PASO 1: DATOS DEL CRÉDITO -->
+      <!-- PASO 1 -->
       <mat-step label="Datos del crédito" [completed]="!!createdLoan()">
         <mat-card>
           <mat-card-content>
             <form [formGroup]="form" (ngSubmit)="submit()">
+
+              <!-- CLIENTE -->
               <h3 class="section-title">Cliente</h3>
               <mat-form-field appearance="outline" class="w-full">
                 <mat-label>Buscar cliente por nombre, CURP o teléfono</mat-label>
@@ -59,9 +61,7 @@ function unidadPlazo(freq: string): string {
                 <mat-autocomplete #customerAuto="matAutocomplete"
                                   (optionSelected)="selectCustomer($event.option.value)">
                   @for (c of customers(); track c.id) {
-                    <mat-option [value]="c">
-                      {{ c.fullName }} — {{ c.curp }} | {{ c.phone }}
-                    </mat-option>
+                    <mat-option [value]="c">{{ c.fullName }} — {{ c.curp }} | {{ c.phone }}</mat-option>
                   }
                 </mat-autocomplete>
               </mat-form-field>
@@ -82,9 +82,7 @@ function unidadPlazo(freq: string): string {
                   </div>
                 } @else if (customerLoans().length > 0) {
                   <div class="loan-history">
-                    <h4 class="history-title">
-                      <mat-icon>history</mat-icon> Historial de créditos
-                    </h4>
+                    <h4 class="history-title"><mat-icon>history</mat-icon> Historial de créditos</h4>
                     <table mat-table [dataSource]="customerLoans()" class="history-table">
                       <ng-container matColumnDef="fecha">
                         <th mat-header-cell *matHeaderCellDef>Fecha</th>
@@ -96,22 +94,12 @@ function unidadPlazo(freq: string): string {
                       </ng-container>
                       <ng-container matColumnDef="plazo">
                         <th mat-header-cell *matHeaderCellDef>Plazo</th>
-                        <td mat-cell *matCellDef="let r">
-                          {{ r.termWeeks }} {{ getUnidad(r.frequency) }}
-                        </td>
+                        <td mat-cell *matCellDef="let r">{{ r.termWeeks }} {{ getUnidad(r.frequency) }}</td>
                       </ng-container>
                       <ng-container matColumnDef="estatus">
                         <th mat-header-cell *matHeaderCellDef>Estatus</th>
                         <td mat-cell *matCellDef="let r">
                           <span class="badge badge-{{ r.status | lowercase }}">{{ r.status }}</span>
-                        </td>
-                      </ng-container>
-                      <ng-container matColumnDef="reestructuras">
-                        <th mat-header-cell *matHeaderCellDef>Reestr.</th>
-                        <td mat-cell *matCellDef="let r">
-                          @if (r.restructureCount > 0) {
-                            <span style="color:#DC2626;font-weight:600">{{ r.restructureCount }}</span>
-                          } @else { 0 }
                         </td>
                       </ng-container>
                       <tr mat-header-row *matHeaderRowDef="historyCols"></tr>
@@ -130,7 +118,7 @@ function unidadPlazo(freq: string): string {
               <h3 class="section-title">Condiciones del crédito</h3>
 
               <div class="form-grid">
-                <!-- Tipo de crédito -->
+                <!-- Tipo -->
                 <mat-form-field appearance="outline">
                   <mat-label>Tipo de crédito *</mat-label>
                   <mat-select formControlName="loanTypeId" (selectionChange)="onTypeChange()">
@@ -140,48 +128,37 @@ function unidadPlazo(freq: string): string {
                   </mat-select>
                 </mat-form-field>
 
-                <!-- Frecuencia — bloqueada al tipo seleccionado -->
-                <mat-form-field appearance="outline">
-                  <mat-label>Frecuencia de pago *</mat-label>
-                  <mat-select formControlName="frequency" (selectionChange)="onFrequencyChange()">
-                    <mat-option value="DIARIO">Diario</mat-option>
-                    <mat-option value="SEMANAL">Semanal</mat-option>
-                    <mat-option value="QUINCENAL">Quincenal</mat-option>
-                    <mat-option value="MENSUAL">Mensual</mat-option>
-                  </mat-select>
-                </mat-form-field>
-
                 <!-- Monto -->
                 <mat-form-field appearance="outline">
                   <mat-label>Monto solicitado *</mat-label>
                   <input matInput type="number" formControlName="principalAmount"
                          (change)="onAmountChange()">
                   <span matPrefix>$&nbsp;</span>
-                  @if (selectedType()) {
+                  @if (currentRange()) {
                     <mat-hint>
-                      Rango: {{ typeMinAmount() }} – {{ typeMaxAmount() }}
+                      Tasa: {{ (currentRange()!.totalRate * 100).toFixed(0) }}% total
                     </mat-hint>
                   }
                 </mat-form-field>
 
-                <!-- Plazo — etiqueta dinámica según frecuencia -->
+                <!-- Período — solo los disponibles según el rango -->
                 <mat-form-field appearance="outline">
-                  <mat-label>Plazo ({{ unidadPlazoActual() }}) *</mat-label>
-                  <input matInput type="number" formControlName="termWeeks"
-                         (change)="simulate()">
-                  @if (selectedType()) {
-                    <mat-hint>
-                      Min: {{ typeMinTerm() }} / Max: {{ typeMaxTerm() }} {{ unidadPlazoActual() }}
+                  <mat-label>Plazo ({{ unidadActual() }}) *</mat-label>
+                  @if (periodsAvailable().length > 0) {
+                    <mat-select formControlName="termWeeks" (selectionChange)="simulate()">
+                      @for (p of periodsAvailable(); track p) {
+                        <mat-option [value]="p">{{ p }} {{ unidadActual() }}</mat-option>
+                      }
+                    </mat-select>
+                  } @else {
+                    <input matInput type="number" formControlName="termWeeks"
+                           (change)="simulate()">
+                  }
+                  @if (periodsAvailable().length === 0 && form.value.loanTypeId && form.value.principalAmount) {
+                    <mat-hint style="color:#DC2626">
+                      Sin rangos configurados para este monto
                     </mat-hint>
                   }
-                </mat-form-field>
-
-                <!-- Tasa -->
-                <mat-form-field appearance="outline">
-                  <mat-label>Tasa de interés periódica *</mat-label>
-                  <input matInput type="number" step="0.001" formControlName="interestRate"
-                         (change)="simulate()">
-                  <mat-hint>Ej: 0.05 = 5% por período</mat-hint>
                 </mat-form-field>
               </div>
 
@@ -189,7 +166,7 @@ function unidadPlazo(freq: string): string {
               @if (simResult()) {
                 <div class="sim-preview">
                   <div class="sim-item">
-                    <span>Cuota {{ form.value.frequency | lowercase }}</span>
+                    <span>Cuota {{ unidadActual() === 'días' ? 'diaria' : unidadActual() }}</span>
                     <strong>{{ simResult()!.periodicPayment | currency:'MXN' }}</strong>
                   </div>
                   <div class="sim-item">
@@ -233,13 +210,13 @@ function unidadPlazo(freq: string): string {
         <mat-card>
           <mat-card-header>
             <mat-card-title><mat-icon>people</mat-icon> Registro del aval</mat-card-title>
-            <mat-card-subtitle>Requerido para toda solicitud de crédito</mat-card-subtitle>
+            <mat-card-subtitle>Requerido para toda solicitud</mat-card-subtitle>
           </mat-card-header>
           <mat-card-content>
             @if (!createdLoan()) {
               <div class="alert-box warning">
                 <mat-icon>warning</mat-icon>
-                <span>Primero completa el paso 1 para registrar el aval.</span>
+                <span>Primero completa el paso 1.</span>
               </div>
             } @else {
               <form [formGroup]="avalForm" (ngSubmit)="saveAval()">
@@ -261,7 +238,7 @@ function unidadPlazo(freq: string): string {
                     <input matInput formControlName="phone" maxlength="10">
                   </mat-form-field>
                   <mat-form-field appearance="outline">
-                    <mat-label>Parentesco / Relación</mat-label>
+                    <mat-label>Parentesco</mat-label>
                     <mat-select formControlName="relationship">
                       <mat-option value="Cónyuge">Cónyuge</mat-option>
                       <mat-option value="Padre/Madre">Padre / Madre</mat-option>
@@ -297,7 +274,7 @@ function unidadPlazo(freq: string): string {
         </mat-card>
       </mat-step>
 
-      <!-- PASO 3: RESUMEN -->
+      <!-- PASO 3 -->
       <mat-step label="Resumen">
         <mat-card>
           <mat-card-header><mat-card-title>Solicitud enviada</mat-card-title></mat-card-header>
@@ -309,13 +286,13 @@ function unidadPlazo(freq: string): string {
               </div>
               <div class="summary-actions">
                 <button mat-raised-button color="primary" (click)="downloadSimPdf()">
-                  <mat-icon>picture_as_pdf</mat-icon> Descargar plan de pagos
+                  <mat-icon>picture_as_pdf</mat-icon> Plan de pagos
                 </button>
                 <a mat-stroked-button [routerLink]="['/loans', createdLoan()!.id]">
                   <mat-icon>visibility</mat-icon> Ver detalle
                 </a>
                 <a mat-stroked-button routerLink="/loans">
-                  <mat-icon>list</mat-icon> Volver a préstamos
+                  <mat-icon>list</mat-icon> Volver
                 </a>
               </div>
             }
@@ -327,17 +304,19 @@ function unidadPlazo(freq: string): string {
   `,
 })
 export class LoanFormComponent implements OnInit {
-  private api     = inject(ApiService);
-  private fb      = inject(FormBuilder);
-  private router  = inject(Router);
-  private snackbar= inject(MatSnackBar);
-  private pdfSvc  = inject(PdfDownloadService);
+  private api      = inject(ApiService);
+  private fb       = inject(FormBuilder);
+  private router   = inject(Router);
+  private snackbar = inject(MatSnackBar);
+  private pdfSvc   = inject(PdfDownloadService);
 
   customers        = signal<Customer[]>([]);
   loanTypes        = signal<LoanType[]>([]);
   customerLoans    = signal<Loan[]>([]);
   selectedCustomer = signal<Customer | null>(null);
   selectedType     = signal<LoanType | null>(null);
+  currentRange     = signal<any>(null);      // rango de tasa actual
+  periodsAvailable = signal<number[]>([]);   // períodos del rango
   simResult        = signal<any>(null);
   createdLoan      = signal<Loan | null>(null);
   saving           = signal(false);
@@ -346,17 +325,16 @@ export class LoanFormComponent implements OnInit {
   downloadingPdf   = signal(false);
   loadingHistory   = signal(false);
   customerSearch   = signal('');
-  unidadPlazoActual = signal('semanas');
-  historyCols = ['fecha', 'monto', 'plazo', 'estatus', 'reestructuras'];
+  unidadActual     = signal('días');
+  historyCols = ['fecha', 'monto', 'plazo', 'estatus'];
 
   private searchSubject = new Subject<string>();
 
   form = this.fb.group({
     loanTypeId:      ['', Validators.required],
-    frequency:       ['SEMANAL', Validators.required],
+    frequency:       ['DIARIO', Validators.required],
     principalAmount: [null as number | null, [Validators.required, Validators.min(1)]],
     termWeeks:       [null as number | null, [Validators.required, Validators.min(1)]],
-    interestRate:    [null as number | null, [Validators.required, Validators.min(0.001)]],
     notes:           [''],
   });
 
@@ -370,25 +348,25 @@ export class LoanFormComponent implements OnInit {
   });
 
   ngOnInit() {
-    this.api.get<LoanType[]>('/settings/loan-types').subscribe({
-      next: (t) => this.loanTypes.set(t),
+    this.api.get<any>('/settings/loan-types').subscribe({
+      next: (r) => {
+        const list = Array.isArray(r) ? r : r?.data ?? [];
+        this.loanTypes.set(list);
+      },
     });
     this.searchSubject.pipe(debounceTime(350), distinctUntilChanged()).subscribe((term) => {
       if (!term || term.length < 2) { this.customers.set([]); return; }
-      this.api.get<PagedResponse<Customer>>('/customers', { search: term, limit: 5 }).subscribe({
-        next: (r) => this.customers.set(r.data),
+      this.api.get<any>('/customers', { search: term, limit: 5 }).subscribe({
+        next: (r) => {
+          const data = Array.isArray(r) ? r : r?.data ?? [];
+          this.customers.set(data);
+        },
       });
     });
   }
 
-  typeMinAmount = () => (this.selectedType() as any)?.minAmount ?? '';
-  typeMaxAmount = () => (this.selectedType() as any)?.maxAmount ?? '';
-  typeMinTerm   = () => (this.selectedType() as any)?.minTermWeeks ?? '';
-  typeMaxTerm   = () => (this.selectedType() as any)?.maxTermWeeks ?? '';
-
   getUnidad(freq: string): string { return unidadPlazo(freq); }
 
-  // ── CLIENTE ──────────────────────────────────────────────────
   onCustomerSearch(event: Event) {
     const term = (event.target as HTMLInputElement).value;
     this.customerSearch.set(term);
@@ -398,13 +376,9 @@ export class LoanFormComponent implements OnInit {
   selectCustomer(c: Customer) {
     this.selectedCustomer.set(c);
     this.customerSearch.set(c.fullName);
-    this.loadCustomerHistory(c.id);
-  }
-
-  loadCustomerHistory(customerId: string) {
     this.loadingHistory.set(true);
-    this.api.get<any>('/loans', { customerId, limit: 10 }).subscribe({
-      next: (r) => { this.customerLoans.set(r.data || []); this.loadingHistory.set(false); },
+    this.api.get<any>('/loans', { customerId: c.id, limit: 10 }).subscribe({
+      next: (r) => { this.customerLoans.set(r?.data ?? []); this.loadingHistory.set(false); },
       error: () => this.loadingHistory.set(false),
     });
   }
@@ -415,107 +389,110 @@ export class LoanFormComponent implements OnInit {
     this.customerLoans.set([]);
   }
 
-  // ── TIPO DE CRÉDITO ──────────────────────────────────────────
   onTypeChange() {
     const type = this.loanTypes().find((t) => t.id === this.form.value.loanTypeId);
     if (!type) return;
     this.selectedType.set(type);
-    this.unidadPlazoActual.set(unidadPlazo(type.frequency));
-    this.form.patchValue({
-      frequency:       type.frequency,
-      interestRate:    type.defaultRate || null,
-      principalAmount: type.minAmount,
-      termWeeks:       type.maxTermWeeks, // pre-llenar con el plazo máximo
-    });
-    this.simulate();
+    this.unidadActual.set(unidadPlazo(type.frequency));
+    this.form.patchValue({ frequency: type.frequency, termWeeks: null });
+    this.currentRange.set(null);
+    this.periodsAvailable.set([]);
+    this.simResult.set(null);
+    // Si hay monto, cargar rango
+    if (this.form.value.principalAmount) this.loadRange();
   }
 
-  // ── FRECUENCIA ───────────────────────────────────────────────
-  onFrequencyChange() {
-    const freq = this.form.value.frequency || 'SEMANAL';
-    this.unidadPlazoActual.set(unidadPlazo(freq));
-    // Pre-llenar plazo máximo del tipo seleccionado
-    const type = this.selectedType();
-    if (type) {
-      this.form.patchValue({ termWeeks: type.maxTermWeeks });
-    }
-    this.simulate();
-  }
-
-  // ── MONTO: pre-llenar plazo máximo según rango ───────────────
   onAmountChange() {
-    const amount = Number(this.form.value.principalAmount);
-    const type   = this.selectedType();
-    if (type && amount > 0) {
-      // Si el monto está dentro del rango, usar plazo máximo del tipo
-      if (amount >= type.minAmount && amount <= type.maxAmount) {
-        this.form.patchValue({ termWeeks: type.maxTermWeeks });
-      }
-    }
-    this.simulate();
+    if (this.form.value.loanTypeId) this.loadRange();
   }
 
-  // ── SIMULACIÓN ───────────────────────────────────────────────
+  loadRange() {
+    const loanTypeId = this.form.value.loanTypeId;
+    const amount     = Number(this.form.value.principalAmount);
+    if (!loanTypeId || !amount) return;
+
+    this.api.get<any>('/settings/rate-ranges/by-amount', { loanTypeId, amount }).subscribe({
+      next: (r) => {
+        if (r) {
+          this.currentRange.set(r);
+          const periods = Array.isArray(r.periods) ? r.periods : [];
+          this.periodsAvailable.set(periods);
+          // Pre-seleccionar el período máximo
+          if (periods.length > 0) {
+            const maxP = Math.max(...periods);
+            this.form.patchValue({ termWeeks: maxP });
+            this.simulate();
+          }
+        } else {
+          this.currentRange.set(null);
+          this.periodsAvailable.set([]);
+        }
+      },
+      error: () => { this.currentRange.set(null); this.periodsAvailable.set([]); },
+    });
+  }
+
   simulate() {
-    const { principalAmount, termWeeks, interestRate, frequency } = this.form.value;
-    if (!principalAmount || !termWeeks || !interestRate) return;
+    const { principalAmount, termWeeks, frequency } = this.form.value;
+    if (!principalAmount || !termWeeks) return;
+    const range = this.currentRange();
     this.api.post<any>('/loans/simulate', {
-      principalAmount, termWeeks, interestRate, frequency,
+      principalAmount,
+      termWeeks,
+      frequency,
+      totalRate:    range ? range.totalRate : undefined,
+      interestRate: range ? undefined : 0,
     }).subscribe({ next: (r) => this.simResult.set(r) });
   }
 
   downloadSimPdf() {
-    const { principalAmount, termWeeks, interestRate, frequency } = this.form.value;
-    if (!principalAmount || !termWeeks || !interestRate) return;
+    const { principalAmount, termWeeks, frequency } = this.form.value;
+    if (!principalAmount || !termWeeks) return;
+    const range = this.currentRange();
     this.downloadingPdf.set(true);
-    this.pdfSvc.downloadPost('/loans/simulate/pdf', 'plan-pagos-simulacion.pdf', {
-      principalAmount, termWeeks, interestRate, frequency,
+    this.pdfSvc.downloadPost('/loans/simulate/pdf', 'plan-pagos.pdf', {
+      principalAmount, termWeeks, frequency,
+      totalRate:    range ? range.totalRate : undefined,
+      interestRate: range ? undefined : 0,
       customerName: this.selectedCustomer()?.fullName,
     });
     setTimeout(() => this.downloadingPdf.set(false), 2000);
   }
 
-  // ── ENVIAR SOLICITUD ─────────────────────────────────────────
   submit() {
     if (this.form.invalid || !this.selectedCustomer()) {
       this.form.markAllAsTouched(); return;
     }
     this.saving.set(true);
+    const range = this.currentRange();
     this.api.post<Loan>('/loans', {
       ...this.form.value,
-      customerId: this.selectedCustomer()!.id,
+      customerId:  this.selectedCustomer()!.id,
+      totalRate:   range ? range.totalRate : undefined,
+      interestRate: range ? 0 : 0,
     }).subscribe({
       next: (loan) => {
         this.createdLoan.set(loan);
-        this.snackbar.open('Solicitud creada. Ahora registra el aval.', 'OK', { duration: 5000 });
+        this.snackbar.open('Solicitud creada. Registra el aval.', 'OK', { duration: 5000 });
         this.saving.set(false);
       },
       error: (err) => {
-        this.snackbar.open(err.error?.message?.[0] || 'Error al enviar', 'Cerrar', { duration: 5000 });
+        this.snackbar.open(err.error?.message?.[0] || 'Error', 'Cerrar', { duration: 5000 });
         this.saving.set(false);
       },
     });
   }
 
-  // ── AVAL ─────────────────────────────────────────────────────
   saveAval() {
     if (this.avalForm.invalid || !this.createdLoan()) return;
     this.savingAval.set(true);
-    const dto = {
+    this.api.post('/loans/' + this.createdLoan()!.id + '/guarantor', {
       ...this.avalForm.value,
       curp: (this.avalForm.value.curp || '').toUpperCase(),
       rfc:  (this.avalForm.value.rfc  || '').toUpperCase(),
-    };
-    this.api.post('/loans/' + this.createdLoan()!.id + '/guarantor', dto).subscribe({
-      next: () => {
-        this.snackbar.open('Aval registrado', 'OK', { duration: 3000 });
-        this.avalSaved.set(true);
-        this.savingAval.set(false);
-      },
-      error: (err: any) => {
-        this.snackbar.open(err.error?.message?.[0] || 'Error al guardar aval', 'Cerrar', { duration: 5000 });
-        this.savingAval.set(false);
-      },
+    }).subscribe({
+      next: () => { this.snackbar.open('Aval registrado', 'OK', { duration: 3000 }); this.avalSaved.set(true); this.savingAval.set(false); },
+      error: (err: any) => { this.snackbar.open(err.error?.message?.[0] || 'Error', 'Cerrar', { duration: 5000 }); this.savingAval.set(false); },
     });
   }
 }

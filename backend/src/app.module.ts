@@ -18,6 +18,7 @@ import { CashModule }        from './cash/cash.module';
 import { CollectionModule }  from './collection/collection.module';
 import { ReportsModule }     from './reports/reports.module';
 import { SettingsModule }    from './settings/settings.module';
+import { RateRangesModule }  from './common/modules';
 import { CompanyModule }     from './company/company.module';
 import { LateFeeRulesModule }from './late-fee-rules/late-fee-rules.module';
 import { LocationModule }    from './location/location.module';
@@ -49,7 +50,7 @@ import { ExpensesModule }    from './expenses/expenses.module';
       }),
     }),
     AuthModule, UsersModule, CustomersModule, LoansModule, PaymentsModule,
-    CashModule, CollectionModule, ReportsModule, SettingsModule,
+    CashModule, CollectionModule, ReportsModule, SettingsModule, RateRangesModule,
     CompanyModule, LateFeeRulesModule, LocationModule, GuarantorModule,
     DisbursementModule, ExpensesModule,
   ],
