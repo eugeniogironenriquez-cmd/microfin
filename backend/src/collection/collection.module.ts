@@ -45,6 +45,35 @@ export class CollectionService {
   async getVisits(loanId: string) {
     return this.visitRepo.find({ where: { loanId }, order: { visitedAt: 'DESC' } });
   }
+
+  async getOverdue(filters: { page?: number; limit?: number }) {
+    const { page = 1, limit = 20 } = filters;
+    const qb = this.loanRepo.createQueryBuilder('l')
+      .leftJoinAndSelect('l.customer', 'c')
+      .leftJoinAndSelect('l.loanType', 'lt')
+      .where('l.status = :status', { status: LoanStatus.VENCIDO })
+      .orderBy('l.updatedAt', 'ASC')
+      .skip((page - 1) * limit)
+      .take(limit);
+    const [data, total] = await qb.getManyAndCount();
+    return { data, total, page, limit };
+  }
+
+  async bulkAssign(dto: { collectorId: string; loanIds: string[]; date: string }) {
+    const results = [];
+    for (const loanId of dto.loanIds) {
+      await this.assignRepo.update({ loanId, isActive: true }, { isActive: false });
+      await this.loanRepo.update(loanId, { collectorId: dto.collectorId });
+      const assignment = this.assignRepo.create({
+        loanId,
+        collectorId: dto.collectorId,
+        assignedAt: new Date(dto.date),
+        isActive: true,
+      });
+      results.push(await this.assignRepo.save(assignment));
+    }
+    return { assigned: results.length };
+  }
 }
 
 @ApiTags('collection')
@@ -75,6 +104,21 @@ export class CollectionController {
   @Auth(UserRole.ADMIN)
   assign(@Body() dto: { loanId: string; collectorId: string }) {
     return this.collectionService.assign(dto.loanId, dto.collectorId);
+  }
+
+  @Get('overdue')
+  @Auth()
+  getOverdue(@Query() q: any) {
+    return this.collectionService.getOverdue({
+      page:  q.page  ? Number(q.page)  : 1,
+      limit: q.limit ? Number(q.limit) : 20,
+    });
+  }
+
+  @Post('assignments')
+  @Auth(UserRole.ADMIN)
+  bulkAssign(@Body() dto: { collectorId: string; loanIds: string[]; date: string }) {
+    return this.collectionService.bulkAssign(dto);
   }
 }
 
