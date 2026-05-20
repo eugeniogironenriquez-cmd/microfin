@@ -136,6 +136,21 @@ export class PaymentsService {
     });
   }
 
+  async getTodayPayments() {
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const tomorrow = new Date(today);
+    tomorrow.setDate(tomorrow.getDate() + 1);
+
+    return this.paymentRepo.createQueryBuilder('p')
+      .leftJoinAndSelect('p.loan', 'l')
+      .leftJoinAndSelect('l.customer', 'c')
+      .where('p.paymentDate >= :today', { today })
+      .andWhere('p.paymentDate < :tomorrow', { tomorrow })
+      .orderBy('p.paymentDate', 'DESC')
+      .getMany();
+  }
+
   async generateReceipt(paymentId: string, res: Response): Promise<void> {
     const payment = await this.paymentRepo.findOne({ where: { id: paymentId } });
     if (!payment) throw new NotFoundException('Pago no encontrado');
@@ -159,6 +174,9 @@ export class PaymentsController {
   register(@Body() dto: any, @CurrentUser('id') userId: string) {
     return this.paymentsService.register(dto, userId);
   }
+
+  @Get('today') @Auth()
+  today() { return this.paymentsService.getTodayPayments(); }
 
   @Get('history/:loanId') @Auth()
   history(@Param('loanId') loanId: string) {
