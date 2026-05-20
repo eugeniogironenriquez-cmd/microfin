@@ -1,4 +1,4 @@
-import { Component, OnInit, OnDestroy, inject, signal } from '@angular/core';
+import { Component, OnInit, inject, signal } from '@angular/core';
 import { CommonModule, CurrencyPipe, DatePipe } from '@angular/common';
 import { FormBuilder, Validators, ReactiveFormsModule } from '@angular/forms';
 import { MatCardModule } from '@angular/material/card';
@@ -11,10 +11,9 @@ import { MatProgressSpinnerModule } from '@angular/material/progress-spinner';
 import { MatSnackBar, MatSnackBarModule } from '@angular/material/snack-bar';
 import { MatTableModule } from '@angular/material/table';
 import { MatDividerModule } from '@angular/material/divider';
-import { MatTabsModule } from '@angular/material/tabs';
 import { MatBadgeModule } from '@angular/material/badge';
 import { MatTooltipModule } from '@angular/material/tooltip';
-import { debounceTime, distinctUntilChanged, Subject, interval, Subscription } from 'rxjs';
+import { debounceTime, distinctUntilChanged, Subject } from 'rxjs';
 import { PdfDownloadService } from '../../core/pdf-download.service';
 import { ApiService, Loan, PaymentSchedule } from '../../core/index';
 
@@ -26,18 +25,14 @@ import { ApiService, Loan, PaymentSchedule } from '../../core/index';
     MatCardModule, MatFormFieldModule, MatInputModule, MatSelectModule,
     MatButtonModule, MatIconModule, MatProgressSpinnerModule,
     MatSnackBarModule, MatTableModule, MatDividerModule,
-    MatTabsModule, MatBadgeModule, MatTooltipModule,
+    MatBadgeModule, MatTooltipModule,
   ],
   template: `
     <div class="page-header">
       <h1><mat-icon>payment</mat-icon> Pagos</h1>
     </div>
 
-    <mat-tab-group (selectedIndexChange)="onTabChange($event)">
-
-      <!-- ── TAB 1: REGISTRAR PAGO ─────────────────────────── -->
-      <mat-tab label="Registrar pago">
-        <div class="tab-content">
+    <div>
           <div class="payment-layout">
 
             <!-- Panel izquierdo -->
@@ -227,120 +222,8 @@ import { ApiService, Loan, PaymentSchedule } from '../../core/index';
 
           </div>
         </div>
-      </mat-tab>
 
-      <!-- ── TAB 2: MONITOR DE PAGOS ──────────────────────── -->
-      <mat-tab>
-        <ng-template mat-tab-label>
-          <mat-icon style="margin-right:6px">monitor</mat-icon>
-          Monitor del día
-          @if (todayPayments().length > 0) {
-            <span class="monitor-count">{{ todayPayments().length }}</span>
-          }
-        </ng-template>
 
-        <div class="tab-content">
-          <!-- KPIs del día -->
-          <div class="monitor-kpis">
-            <div class="mkpi mkpi-green">
-              <div class="mkpi-val">{{ todayPayments().length }}</div>
-              <div class="mkpi-label">Pagos registrados</div>
-            </div>
-            <div class="mkpi mkpi-blue">
-              <div class="mkpi-val">{{ totalCollected() | currency:'MXN':'symbol':'1.0-0' }}</div>
-              <div class="mkpi-label">Total cobrado</div>
-            </div>
-            <div class="mkpi mkpi-amber">
-              <div class="mkpi-val">{{ totalLateInterest() | currency:'MXN':'symbol':'1.0-0' }}</div>
-              <div class="mkpi-label">Moratorios cobrados</div>
-            </div>
-            <div class="mkpi mkpi-purple">
-              <div class="mkpi-val">{{ uniqueCustomers() }}</div>
-              <div class="mkpi-label">Clientes atendidos</div>
-            </div>
-          </div>
-
-          <!-- Refresh indicator -->
-          <div class="refresh-bar">
-            <mat-icon style="font-size:16px;width:16px;height:16px;color:#718096">autorenew</mat-icon>
-            <span>Actualiza cada 30 seg · Último: {{ lastRefresh() | date:'HH:mm:ss' }}</span>
-            <button mat-icon-button (click)="loadTodayPayments()" matTooltip="Actualizar ahora">
-              <mat-icon>refresh</mat-icon>
-            </button>
-          </div>
-
-          <!-- Tabla de pagos del día -->
-          @if (loadingMonitor()) {
-            <div class="loading-overlay"><mat-spinner diameter="40"></mat-spinner></div>
-          } @else if (todayPayments().length === 0) {
-            <div class="empty-state">
-              <mat-icon>payments</mat-icon>
-              <p>Sin pagos registrados hoy</p>
-            </div>
-          } @else {
-            <mat-card>
-              <mat-card-content>
-                <table mat-table [dataSource]="todayPayments()">
-                  <ng-container matColumnDef="hora">
-                    <th mat-header-cell *matHeaderCellDef>Hora</th>
-                    <td mat-cell *matCellDef="let r">
-                      <strong>{{ r.paymentDate | date:'HH:mm' }}</strong>
-                    </td>
-                  </ng-container>
-                  <ng-container matColumnDef="cliente">
-                    <th mat-header-cell *matHeaderCellDef>Cliente</th>
-                    <td mat-cell *matCellDef="let r">
-                      <div class="client-name">{{ r.loan?.customer?.fullName || '—' }}</div>
-                      <div class="client-sub">{{ r.loan?.customer?.phone }}</div>
-                    </td>
-                  </ng-container>
-                  <ng-container matColumnDef="monto">
-                    <th mat-header-cell *matHeaderCellDef>Monto</th>
-                    <td mat-cell *matCellDef="let r">
-                      <strong style="color:#1C4532">{{ r.amountPaid | currency:'MXN' }}</strong>
-                    </td>
-                  </ng-container>
-                  <ng-container matColumnDef="capital">
-                    <th mat-header-cell *matHeaderCellDef>Capital</th>
-                    <td mat-cell *matCellDef="let r">{{ r.capitalApplied | currency:'MXN' }}</td>
-                  </ng-container>
-                  <ng-container matColumnDef="interes">
-                    <th mat-header-cell *matHeaderCellDef>Interés</th>
-                    <td mat-cell *matCellDef="let r">{{ r.interestApplied | currency:'MXN' }}</td>
-                  </ng-container>
-                  <ng-container matColumnDef="moratorio">
-                    <th mat-header-cell *matHeaderCellDef>Moratorio</th>
-                    <td mat-cell *matCellDef="let r">
-                      @if (r.lateInterestApplied > 0) {
-                        <span style="color:#DC2626;font-weight:600">
-                          {{ r.lateInterestApplied | currency:'MXN' }}
-                        </span>
-                      } @else { — }
-                    </td>
-                  </ng-container>
-                  <ng-container matColumnDef="forma">
-                    <th mat-header-cell *matHeaderCellDef>Forma</th>
-                    <td mat-cell *matCellDef="let r">{{ r.method }}</td>
-                  </ng-container>
-                  <ng-container matColumnDef="ticket">
-                    <th mat-header-cell *matHeaderCellDef></th>
-                    <td mat-cell *matCellDef="let r">
-                      <button mat-icon-button (click)="downloadReceiptById(r.id)"
-                              matTooltip="Descargar ticket">
-                        <mat-icon>receipt</mat-icon>
-                      </button>
-                    </td>
-                  </ng-container>
-                  <tr mat-header-row *matHeaderRowDef="monitorCols"></tr>
-                  <tr mat-row *matRowDef="let row; columns: monitorCols;"></tr>
-                </table>
-              </mat-card-content>
-            </mat-card>
-          }
-        </div>
-      </mat-tab>
-
-    </mat-tab-group>
   `,
   styles: [`
     .tab-content { padding: 16px 0; }
@@ -428,7 +311,7 @@ import { ApiService, Loan, PaymentSchedule } from '../../core/index';
     .mt-16 { margin-top:16px; }
   `],
 })
-export class PaymentsRegisterComponent implements OnInit, OnDestroy {
+export class PaymentsRegisterComponent implements OnInit {
   private api      = inject(ApiService);
   private fb       = inject(FormBuilder);
   private snackbar = inject(MatSnackBar);
@@ -449,21 +332,12 @@ export class PaymentsRegisterComponent implements OnInit, OnDestroy {
   paymentResult = signal<any>(null);
   lastPaymentId = signal<string | null>(null);
 
-  // Monitor
-  todayPayments   = signal<any[]>([]);
-  loadingMonitor  = signal(false);
-  lastRefresh     = signal<Date>(new Date());
-  private monitorSub?: Subscription;
 
   scheduleCols = ['period', 'dueDate', 'balance', 'status'];
   monitorCols  = ['hora', 'cliente', 'monto', 'capital', 'interes', 'moratorio', 'forma', 'ticket'];
 
   private searchSubject = new Subject<string>();
 
-  // Computed KPIs del monitor
-  totalCollected    = () => this.todayPayments().reduce((s, p) => s + Number(p.amountPaid), 0);
-  totalLateInterest = () => this.todayPayments().reduce((s, p) => s + Number(p.lateInterestApplied || 0), 0);
-  uniqueCustomers   = () => new Set(this.todayPayments().map(p => p.loan?.customer?.id)).size;
 
   paymentForm = this.fb.group({
     amountPaid: [null as number | null, [Validators.required, Validators.min(0.01)]],
@@ -487,15 +361,9 @@ export class PaymentsRegisterComponent implements OnInit, OnDestroy {
       });
     });
 
-    // Monitor: actualizar cada 30 segundos
-    this.monitorSub = interval(30000).subscribe(() => this.loadTodayPayments());
   }
 
-  ngOnDestroy() { this.monitorSub?.unsubscribe(); }
 
-  onTabChange(idx: number) {
-    if (idx === 1) this.loadTodayPayments();
-  }
 
   onSearch(event: Event) {
     const term = (event.target as HTMLInputElement).value;
@@ -582,16 +450,4 @@ export class PaymentsRegisterComponent implements OnInit, OnDestroy {
     this.paymentForm.reset({ method: 'EFECTIVO' });
   }
 
-  loadTodayPayments() {
-    this.loadingMonitor.set(true);
-    const today = new Date().toISOString().split('T')[0];
-    this.api.get<any>('/payments/today').subscribe({
-      next: (r) => {
-        this.todayPayments.set(Array.isArray(r) ? r : r?.data ?? []);
-        this.lastRefresh.set(new Date());
-        this.loadingMonitor.set(false);
-      },
-      error: () => this.loadingMonitor.set(false),
-    });
-  }
 }

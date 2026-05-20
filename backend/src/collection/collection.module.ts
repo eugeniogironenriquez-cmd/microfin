@@ -88,6 +88,12 @@ export class CollectionController {
     return this.collectionService.getMyLoans(userId);
   }
 
+  @Get('my-clients')
+  @Auth(UserRole.COBRADOR, UserRole.ADMIN)
+  getMyClients(@CurrentUser('id') userId: string) {
+    return this.collectionService.getMyLoans(userId);
+  }
+
   @Post('visits')
   @Auth(UserRole.COBRADOR, UserRole.ADMIN)
   registerVisit(@Body() dto: any, @CurrentUser('id') userId: string) {

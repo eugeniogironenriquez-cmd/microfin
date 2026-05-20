@@ -228,7 +228,36 @@ export class CollectionDashboardComponent implements OnInit {
   pageActivos = 0; pageSizeActivos = 20;
   cols = ['customer', 'amount', 'payment', 'cobrador', 'actions'];
 
-  ngOnInit() { this.loadVencidos(); this.loadActivos(); }
+  ngOnInit() {
+    const role = this.auth.role();
+    if (role === 'COBRADOR') {
+      this.loadMyClients();
+    } else {
+      this.loadVencidos();
+      this.loadActivos();
+    }
+  }
+
+  loadMyClients() {
+    // Cobrador: solo ve sus créditos asignados
+    this.loading.set(true);
+    this.loadingActivos.set(true);
+    this.api.get<any>('/collection/my-clients').subscribe({
+      next: (r) => {
+        const all = Array.isArray(r) ? r : (r as any)?.data ?? [];
+        const vencidos = all.filter((l: any) => l.status === 'VENCIDO');
+        const activos  = all.filter((l: any) => l.status === 'ACTIVO');
+        this.vencidos.set(vencidos);
+        this.activos.set(activos);
+        this.totalVencidos.set(vencidos.length);
+        this.totalActivos.set(activos.length);
+        this.loading.set(false);
+        this.loadingActivos.set(false);
+        this.updateKpis();
+      },
+      error: () => { this.loading.set(false); this.loadingActivos.set(false); },
+    });
+  }
 
   loadVencidos() {
     this.loading.set(true);

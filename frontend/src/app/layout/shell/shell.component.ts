@@ -13,7 +13,7 @@ import { toSignal } from '@angular/core/rxjs-interop';
 import { map } from 'rxjs';
 import { AuthService } from '../../core/index';
 
-interface NavItem { label: string; icon: string; route: string; roles?: string[]; }
+interface NavItem { label: string; icon: string; route: string; roles?: string[]; exact?: boolean; }
 
 @Component({
   selector: 'app-shell',
@@ -43,6 +43,7 @@ interface NavItem { label: string; icon: string; route: string; roles?: string[]
         <mat-nav-list class="nav-list">
           @for (item of visibleNavItems(); track item.route) {
             <a mat-list-item [routerLink]="item.route" routerLinkActive="active"
+               [routerLinkActiveOptions]="{ exact: item.exact ?? false }"
                (click)="isMobile() && sidenav.close()">
               <mat-icon matListItemIcon>{{ item.icon }}</mat-icon>
               <span matListItemTitle>{{ item.label }}</span>
@@ -90,22 +91,23 @@ export class ShellComponent {
     { initialValue: false },
   );
   private readonly navItems: NavItem[] = [
-    { label: 'Dashboard',       icon: 'dashboard',              route: '/dashboard' },
-    { label: 'Cartera',         icon: 'account_balance_wallet', route: '/portfolio' },
-    { label: 'Clientes',        icon: 'people',                 route: '/customers' },
-    { label: 'Préstamos',       icon: 'attach_money',           route: '/loans' },
-    { label: 'Pagos',           icon: 'payment',                route: '/payments' },
-    { label: 'Reestructuración',icon: 'refresh',                route: '/restructuring', roles: ['ADMIN','AUTORIZADOR'] },
-    { label: 'Desembolso',      icon: 'payments',               route: '/disbursements', roles: ['ADMIN','CAJERO'] },
-    { label: 'Cobranza',        icon: 'directions_bike',        route: '/collection' },
-    { label: 'Caja',            icon: 'point_of_sale',          route: '/cash',          roles: ['ADMIN','CAJERO'] },
-    { label: 'Gastos',          icon: 'receipt_long',           route: '/expenses',      roles: ['ADMIN','CAJERO'] },
-    { label: 'Reportes',        icon: 'bar_chart',              route: '/reports' },
-    { label: 'Rpt. Ubicación',  icon: 'map',                    route: '/reports/location' },
-    { label: 'Configuración',   icon: 'settings',               route: '/settings',      roles: ['ADMIN'] },
-    { label: 'Empresa',         icon: 'business',               route: '/company',       roles: ['ADMIN'] },
-    { label: 'Moratorios',      icon: 'gavel',                  route: '/late-fee-rules',roles: ['ADMIN'] },
-    { label: 'Usuarios',        icon: 'manage_accounts',        route: '/users',         roles: ['ADMIN'] },
+    { label: 'Dashboard',        icon: 'dashboard',              route: '/dashboard' },
+    { label: 'Cartera',          icon: 'account_balance_wallet', route: '/portfolio',       roles: ['ADMIN','CAJERO','AUTORIZADOR'] },
+    { label: 'Clientes',         icon: 'people',                 route: '/customers',       roles: ['ADMIN','CAJERO','AUTORIZADOR'] },
+    { label: 'Préstamos',        icon: 'attach_money',           route: '/loans',           roles: ['ADMIN','CAJERO','AUTORIZADOR'] },
+    { label: 'Pagos',            icon: 'payment',                route: '/payments',        exact: true },
+    { label: 'Monitor de pagos', icon: 'monitor',                route: '/payments/monitor',roles: ['ADMIN','CAJERO'] },
+    { label: 'Reestructuración', icon: 'refresh',                route: '/restructuring',   roles: ['ADMIN','AUTORIZADOR'] },
+    { label: 'Desembolso',       icon: 'payments',               route: '/disbursements',   roles: ['ADMIN','CAJERO'] },
+    { label: 'Cobranza',         icon: 'directions_bike',        route: '/collection' },
+    { label: 'Caja',             icon: 'point_of_sale',          route: '/cash',            roles: ['ADMIN','CAJERO'] },
+    { label: 'Gastos',           icon: 'receipt_long',           route: '/expenses',        roles: ['ADMIN','CAJERO'] },
+    { label: 'Reportes',         icon: 'bar_chart',              route: '/reports',         roles: ['ADMIN','CAJERO','AUTORIZADOR'] },
+    { label: 'Rpt. Ubicación',   icon: 'map',                    route: '/reports/location',roles: ['ADMIN','AUTORIZADOR'] },
+    { label: 'Configuración',    icon: 'settings',               route: '/settings',        roles: ['ADMIN'] },
+    { label: 'Empresa',          icon: 'business',               route: '/company',         roles: ['ADMIN'] },
+    { label: 'Moratorios',       icon: 'gavel',                  route: '/late-fee-rules',  roles: ['ADMIN'] },
+    { label: 'Usuarios',         icon: 'manage_accounts',        route: '/users',           roles: ['ADMIN'] },
   ];
   visibleNavItems = computed(() => {
     const role = this.auth.role();
