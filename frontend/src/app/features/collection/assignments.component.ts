@@ -12,6 +12,7 @@ import { MatProgressSpinnerModule } from '@angular/material/progress-spinner';
 import { MatSnackBar, MatSnackBarModule } from '@angular/material/snack-bar';
 import { MatTableModule } from '@angular/material/table';
 import { MatCheckboxModule } from '@angular/material/checkbox';
+import { FormsModule } from '@angular/forms';
 import { MatChipsModule } from '@angular/material/chips';
 import { ApiService } from '../../core/index';
 
@@ -22,7 +23,7 @@ import { ApiService } from '../../core/index';
     CommonModule, ReactiveFormsModule, RouterLink,
     MatCardModule, MatFormFieldModule, MatInputModule, MatSelectModule,
     MatButtonModule, MatIconModule, MatProgressSpinnerModule, MatSnackBarModule,
-    MatTableModule, MatCheckboxModule, MatChipsModule,
+    FormsModule, MatTableModule, MatCheckboxModule, MatChipsModule,
   ],
   template: `
     <div class="page-header">
@@ -90,16 +91,18 @@ import { ApiService } from '../../core/index';
           } @else {
             <table mat-table [dataSource]="loans()">
               <ng-container matColumnDef="select">
-                <th mat-header-cell *matHeaderCellDef>
-                  <mat-checkbox [checked]="allSelected()"
-                                [indeterminate]="someSelected()"
-                                (change)="toggleAll($event.checked)">
-                  </mat-checkbox>
+                <th mat-header-cell *matHeaderCellDef style="width:48px">
+                  <input type="checkbox"
+                         [checked]="allSelected()"
+                         (change)="toggleAll($any($event.target).checked)"
+                         style="width:16px;height:16px;cursor:pointer;accent-color:#1C4532">
                 </th>
-                <td mat-cell *matCellDef="let r">
-                  <mat-checkbox [checked]="isSelected(r.id)"
-                                (change)="toggleLoan(r.id)">
-                  </mat-checkbox>
+                <td mat-cell *matCellDef="let r" style="width:48px">
+                  <input type="checkbox"
+                         [checked]="isSelected(r.id)"
+                         (change)="toggleLoan(r.id)"
+                         (click)="$event.stopPropagation()"
+                         style="width:16px;height:16px;cursor:pointer;accent-color:#1C4532">
                 </td>
               </ng-container>
 
@@ -135,7 +138,8 @@ import { ApiService } from '../../core/index';
               <tr mat-header-row *matHeaderRowDef="cols"></tr>
               <tr mat-row *matRowDef="let row; columns: cols;"
                   [class.selected-row]="isSelected(row.id)"
-                  (click)="toggleLoan(row.id)" style="cursor:pointer">
+                  (click)="toggleLoan(row.id)"
+                  style="cursor:pointer">
               </tr>
             </table>
           }
