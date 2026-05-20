@@ -41,6 +41,7 @@ export class PdfGeneratorService {
     totalPayment: number;
     totalInterest: number;
     schedule: Array<{ period: number; dueDate: Date | string; payment: number; principal: number; interest: number; balance: number }>;
+    totalRate?: number;
     customerName?: string;
     guarantorName?: string;
     generatedAt?: Date;
@@ -199,7 +200,7 @@ export class PdfGeneratorService {
 
     const cols = [
       ['Monto',      this.currency(data.principalAmount)],
-      ['Tasa',       `${(data.interestRate * 100).toFixed(2)}%`],
+      ['Tasa', data.totalRate ? `${(data.totalRate * 100).toFixed(0)}%` : `${(data.interestRate * 100).toFixed(2)}%`],
       ['Plazo',      `${data.termWeeks} ${unidad}`],
       ['Frecuencia', freq],
       ['Cuota',      this.currency(data.periodicPayment)],
