@@ -11,7 +11,7 @@ async function bootstrap() {
   app.setGlobalPrefix('api/v1');
   app.enableCors({
   origin: [
-    'https://microfin-chi.vercel.app',
+    'https://microcapital-ixtepec.com',
     'http://localhost:4200'
   ],
   methods: 'GET,HEAD,PUT,PATCH,POST,DELETE,OPTIONS',
