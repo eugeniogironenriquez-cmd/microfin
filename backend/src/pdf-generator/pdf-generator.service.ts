@@ -262,12 +262,9 @@ export class PdfGeneratorService {
   private drawScheduleTable(doc: PDFKit.PDFDocument, y: number, schedule: any[]): number {
     y = this.drawSectionTitle(doc, y, 'TABLA DE AMORTIZACIÓN');
     const cols = [
-      {label:'#',      w:28,  align:'center' as const},
-      {label:'Vence',  w:72,  align:'center' as const},
-      {label:'Cuota',  w:72,  align:'right'  as const},
-      {label:'Capital',w:72,  align:'right'  as const},
-      {label:'Interés',w:72,  align:'right'  as const},
-      {label:'Saldo',  w:80,  align:'right'  as const},
+      {label:'#',      w:50,  align:'center' as const},
+      {label:'Fecha de pago', w:200, align:'center' as const},
+      {label:'Monto',  w:150, align:'right'  as const},
     ];
     const tW = cols.reduce((s,c)=>s+c.w,0);
     const tX = (PW-tW)/2;
@@ -297,8 +294,9 @@ export class PdfGeneratorService {
 
       doc.rect(tX, y, tW, rH).fill(idx%2===1 ? ALT : WHITE);
       const cells = [
-        String(row.period), fdate(row.dueDate),
-        cur(row.payment), cur(row.principal), cur(row.interest), cur(row.balance),
+        String(row.period),
+        fdate(row.dueDate),
+        cur(row.payment),
       ];
       let cx = tX;
       cells.forEach((cell, ci) => {

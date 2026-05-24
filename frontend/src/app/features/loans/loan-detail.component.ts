@@ -10,6 +10,7 @@ import { MatProgressSpinnerModule } from '@angular/material/progress-spinner';
 import { MatSnackBar, MatSnackBarModule } from '@angular/material/snack-bar';
 import { MatDividerModule } from '@angular/material/divider';
 import { MatChipsModule } from '@angular/material/chips';
+import { MatTooltipModule } from '@angular/material/tooltip';
 import { ApiService, AuthService, Loan, PaymentSchedule } from '../../core/index';
 import { PdfDownloadService } from '../../core/pdf-download.service';
 import { GuarantorFormComponent } from './guarantor-form.component';
@@ -21,7 +22,7 @@ import { GuarantorFormComponent } from './guarantor-form.component';
     CommonModule, CurrencyPipe, DatePipe, RouterLink,
     MatCardModule, MatButtonModule, MatIconModule, MatTabsModule,
     MatTableModule, MatProgressSpinnerModule, MatSnackBarModule,
-    MatDividerModule, MatChipsModule, GuarantorFormComponent,
+    MatDividerModule, MatChipsModule, MatTooltipModule, GuarantorFormComponent,
   ],
   template: `
     <div class="page-header">
@@ -50,6 +51,9 @@ import { GuarantorFormComponent } from './guarantor-form.component';
           <button mat-stroked-button (click)="downloadContractPdf()">
             <mat-icon>description</mat-icon> Contrato PDF
           </button>
+          <button mat-stroked-button (click)="downloadControlCard()">
+            <mat-icon>credit_card</mat-icon> Tarjeta
+          </button>
         }
       </div>
     </div>
@@ -59,7 +63,7 @@ import { GuarantorFormComponent } from './guarantor-form.component';
     } @else if (loan()) {
       <mat-tab-group>
 
-        <!-- TAB: INFORMACIÓN GENERAL -->
+        <!-- TAB: INFORMACIÓN -->
         <mat-tab label="Información">
           <div class="tab-content">
             <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px">
@@ -73,8 +77,7 @@ import { GuarantorFormComponent } from './guarantor-form.component';
                     </div>
                     <div class="info-row"><span>Tipo</span><strong>{{ loan()!.loanType?.name }}</strong></div>
                     <div class="info-row"><span>Monto</span><strong>{{ loan()!.principalAmount | currency:'MXN' }}</strong></div>
-                    <div class="info-row"><span>Tasa</span><strong>{{ (loan()!.interestRate * 100).toFixed(2) }}%</strong></div>
-                    <div class="info-row"><span>Plazo</span><strong>{{ loan()!.termWeeks }} semanas</strong></div>
+                    <div class="info-row"><span>Plazo</span><strong>{{ loan()!.termWeeks }} {{ freq2unit(loan()!.frequency) }}</strong></div>
                     <div class="info-row"><span>Frecuencia</span><strong>{{ loan()!.frequency }}</strong></div>
                     <div class="info-row"><span>Cuota</span><strong>{{ loan()!.periodicPayment | currency:'MXN' }}</strong></div>
                     <div class="info-row"><span>Total a pagar</span><strong>{{ loan()!.totalAmount | currency:'MXN' }}</strong></div>
@@ -105,55 +108,78 @@ import { GuarantorFormComponent } from './guarantor-form.component';
           </div>
         </mat-tab>
 
-        <!-- TAB: CALENDARIO DE PAGOS -->
+        <!-- TAB: CALENDARIO -->
         <mat-tab label="Calendario de pagos">
           <div class="tab-content">
-            @if (schedules().length === 0 && loan()!.disbursedAt) {
-              <div class="empty-state"><mat-icon>calendar_today</mat-icon><p>Sin calendario generado</p></div>
-            } @else if (!loan()!.disbursedAt) {
+            @if (!loan()!.disbursedAt) {
               <div class="alert-box info">
                 <mat-icon>info</mat-icon>
                 <span>El calendario se genera al desembolsar el préstamo.</span>
               </div>
+            } @else if (schedules().length === 0) {
+              <div class="empty-state"><mat-icon>calendar_today</mat-icon><p>Sin calendario generado</p></div>
             } @else {
               <mat-card>
                 <table mat-table [dataSource]="schedules()">
+
                   <ng-container matColumnDef="periodo">
                     <th mat-header-cell *matHeaderCellDef>#</th>
                     <td mat-cell *matCellDef="let s">{{ s.periodNumber }}</td>
                   </ng-container>
+
                   <ng-container matColumnDef="vence">
                     <th mat-header-cell *matHeaderCellDef>Vence</th>
-                    <td mat-cell *matCellDef="let s">{{ s.dueDate | date:'dd/MM/yyyy' }}</td>
+                    <td mat-cell *matCellDef="let s">
+                      <div>{{ s.dueDate | date:'dd/MM/yyyy' }}</div>
+                      @if (daysOverdue(s) > 0 && s.status !== 'PAGADO') {
+                        <div class="overdue-badge">{{ daysOverdue(s) }} días vencido</div>
+                      }
+                    </td>
                   </ng-container>
+
                   <ng-container matColumnDef="total">
                     <th mat-header-cell *matHeaderCellDef>Cuota</th>
                     <td mat-cell *matCellDef="let s">{{ s.totalDue | currency:'MXN' }}</td>
                   </ng-container>
+
                   <ng-container matColumnDef="capital">
                     <th mat-header-cell *matHeaderCellDef>Capital</th>
                     <td mat-cell *matCellDef="let s">{{ s.principalDue | currency:'MXN' }}</td>
                   </ng-container>
+
                   <ng-container matColumnDef="interes">
                     <th mat-header-cell *matHeaderCellDef>Interés</th>
                     <td mat-cell *matCellDef="let s">{{ s.interestDue | currency:'MXN' }}</td>
                   </ng-container>
+
                   <ng-container matColumnDef="moratorio">
                     <th mat-header-cell *matHeaderCellDef>Moratorio</th>
                     <td mat-cell *matCellDef="let s">
-                      @if (s.lateInterest > 0) {
-                        <span style="color:#DC2626">{{ s.lateInterest | currency:'MXN' }}</span>
+                      @if (mora(s) > 0) {
+                        <span style="color:#DC2626;font-weight:600"
+                              [matTooltip]="'$' + latePerDay() + '/día × ' + daysOverdue(s) + ' días'">
+                          {{ mora(s) | currency:'MXN' }}
+                        </span>
                       } @else { — }
                     </td>
                   </ng-container>
+
                   <ng-container matColumnDef="estatus">
                     <th mat-header-cell *matHeaderCellDef>Estatus</th>
                     <td mat-cell *matCellDef="let s">
-                      <span class="badge badge-{{ s.status | lowercase }}">{{ s.status }}</span>
+                      @if (daysOverdue(s) > 0 && s.status === 'PENDIENTE') {
+                        <span class="badge badge-vencido">VENCIDO</span>
+                      } @else {
+                        <span class="badge badge-{{ s.status | lowercase }}">{{ s.status }}</span>
+                      }
                     </td>
                   </ng-container>
+
                   <tr mat-header-row *matHeaderRowDef="scheduleCols"></tr>
-                  <tr mat-row *matRowDef="let row; columns: scheduleCols;"></tr>
+                  <tr mat-row *matRowDef="let row; columns: scheduleCols;"
+                      [class.overdue-row]="daysOverdue(row) > 0 && row.status === 'PENDIENTE'"
+                      [class.paid-row]="row.status === 'PAGADO'">
+                  </tr>
                 </table>
               </mat-card>
             }
@@ -170,19 +196,57 @@ import { GuarantorFormComponent } from './guarantor-form.component';
       </mat-tab-group>
     }
   `,
+  styles: [`
+    .overdue-badge {
+      font-size: 10px; color: #DC2626; font-weight: 600;
+      background: #FEE2E2; border-radius: 4px;
+      padding: 1px 5px; margin-top: 2px; display: inline-block;
+    }
+    .overdue-row { background: #FFF5F5 !important; }
+    .paid-row    { opacity: .55; }
+  `],
 })
 export class LoanDetailComponent implements OnInit {
   readonly auth = inject(AuthService);
-  private route = inject(ActivatedRoute);
-  private api = inject(ApiService);
+  private route    = inject(ActivatedRoute);
+  private api      = inject(ApiService);
   private snackbar = inject(MatSnackBar);
-  private pdfSvc = inject(PdfDownloadService);
+  private pdfSvc   = inject(PdfDownloadService);
 
-  loan = signal<Loan | null>(null);
+  loan      = signal<Loan | null>(null);
   schedules = signal<PaymentSchedule[]>([]);
-  loading = signal(true);
-
+  loading   = signal(true);
   scheduleCols = ['periodo', 'vence', 'total', 'capital', 'interes', 'moratorio', 'estatus'];
+
+  freq2unit(f: string): string {
+    return {DIARIO:'días',SEMANAL:'semanas',QUINCENAL:'quincenas',MENSUAL:'meses'}[f] ?? 'períodos';
+  }
+
+  // Días de atraso de una cuota
+  daysOverdue(s: any): number {
+    if (s.status === 'PAGADO') return 0;
+    const due  = new Date(s.dueDate);
+    const today = new Date();
+    today.setHours(0,0,0,0);
+    due.setHours(0,0,0,0);
+    const diff = Math.floor((today.getTime() - due.getTime()) / (1000*60*60*24));
+    return Math.max(0, diff);
+  }
+
+  // Monto fijo por día del tipo de préstamo
+  latePerDay(): number {
+    return Number((this.loan()?.loanType as any)?.lateFeeFixedAmount || 0);
+  }
+
+  // Moratorio calculado
+  mora(s: any): number {
+    const days = this.daysOverdue(s);
+    if (days <= 0) return 0;
+    // Respetar días de gracia
+    const grace = Number((this.loan()?.loanType as any)?.graceDays || 0);
+    const chargeable = Math.max(0, days - grace);
+    return chargeable * this.latePerDay();
+  }
 
   ngOnInit() { this.load(); }
 
@@ -200,8 +264,8 @@ export class LoanDetailComponent implements OnInit {
   }
 
   loadSchedule(id: string) {
-    this.api.get<PaymentSchedule[]>('/loans/' + id + '/schedule').subscribe({
-      next: (s) => this.schedules.set(s),
+    this.api.get<any>('/loans/' + id + '/schedule').subscribe({
+      next: (s) => this.schedules.set(Array.isArray(s) ? s : s?.data ?? []),
     });
   }
 
@@ -210,8 +274,7 @@ export class LoanDetailComponent implements OnInit {
     const rejectionReason = decision === 'REJECT' ? prompt('Motivo de rechazo:') : undefined;
     this.api.post<any>('/loans/' + id + '/authorize', { decision, rejectionReason }).subscribe({
       next: () => {
-        const msg = decision === 'APPROVE' ? 'Préstamo autorizado' : 'Préstamo rechazado';
-        this.snackbar.open(msg, 'OK', { duration: 4000 });
+        this.snackbar.open(decision === 'APPROVE' ? 'Préstamo autorizado' : 'Rechazado', 'OK', { duration: 4000 });
         this.load();
         if (decision === 'APPROVE') setTimeout(() => this.downloadPlanPdf(), 1000);
       },
@@ -234,7 +297,7 @@ export class LoanDetailComponent implements OnInit {
   downloadPlanPdf() {
     const l = this.loan();
     if (!l) return;
-    this.pdfSvc.downloadPost('/loans/simulate/pdf', 'plan-pagos-' + l.id.substring(0, 8) + '.pdf', {
+    this.pdfSvc.downloadPost('/loans/simulate/pdf', 'plan-pagos-' + l.id.substring(0,8) + '.pdf', {
       principalAmount: l.principalAmount,
       interestRate:    l.interestRate,
       termWeeks:       l.termWeeks,
@@ -247,5 +310,11 @@ export class LoanDetailComponent implements OnInit {
     const l = this.loan();
     if (!l?.id) return;
     this.pdfSvc.open('/loans/' + l.id + '/pdf');
+  }
+
+  downloadControlCard() {
+    const l = this.loan();
+    if (!l?.id) return;
+    this.pdfSvc.open('/loans/' + l.id + '/control-card');
   }
 }
