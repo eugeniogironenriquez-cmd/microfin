@@ -59,6 +59,9 @@ export class PdfGeneratorService {
     this.drawScheduleTable(doc, data.schedule);
     this.drawFooter(doc, data.generatedAt || new Date(),
       data.companyName || 'Microcapital-Ixtepec', data.legalFooter);
+    // Volver a la última página real para evitar página en blanco al cerrar
+    const simRange = (doc as any).bufferedPageRange();
+    doc.switchToPage(simRange.start + simRange.count - 1);
     doc.end();
   }
 
@@ -90,6 +93,8 @@ export class PdfGeneratorService {
     this.drawSignatureSection(doc, data.customer.fullName, data.guarantor?.fullName);
     this.drawFooter(doc, new Date(),
       data.companyName || 'Microcapital-Ixtepec', data.legalFooter);
+    const loanRange = (doc as any).bufferedPageRange();
+    doc.switchToPage(loanRange.start + loanRange.count - 1);
     doc.end();
   }
 
@@ -332,7 +337,7 @@ export class PdfGeneratorService {
     drawTableHeader();
 
     schedule.forEach((row, idx) => {
-      if (doc.y + rowH > doc.page.height - 80) {
+      if (doc.y + rowH > doc.page.height - 60) {
         doc.addPage();
         drawTableHeader();
       }
@@ -359,7 +364,7 @@ export class PdfGeneratorService {
          .strokeColor(COLORS.border).lineWidth(0.3).stroke();
       doc.y = rowY + rowH;
     });
-    doc.moveDown(1.5);
+    // No moveDown al final — evita espacio extra que causa páginas en blanco
   }
 
   // ── FIRMAS ────────────────────────────────────────────────
@@ -402,14 +407,14 @@ export class PdfGeneratorService {
 
   // ── TÍTULO DE SECCIÓN ─────────────────────────────────────
   private drawSectionTitle(doc: PDFKit.PDFDocument, title: string) {
-    doc.moveDown(0.5);
+    doc.moveDown(0.3);
     const y = doc.y;
     doc.rect(50, y, 4, 14).fill(COLORS.accent);
     doc.font(FONT.bold).fontSize(9).fillColor(COLORS.accentDark).text(title, 60, y + 1);
-    doc.moveDown(0.3);
+    doc.moveDown(0.2);
     doc.moveTo(50, doc.y).lineTo(doc.page.width - 50, doc.y)
        .strokeColor(COLORS.border).lineWidth(0.5).stroke();
-    doc.moveDown(0.4);
+    doc.moveDown(0.3);
   }
 
   // ── PIE DE PÁGINA ─────────────────────────────────────────
