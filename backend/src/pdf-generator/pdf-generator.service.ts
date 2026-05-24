@@ -43,6 +43,7 @@ export class PdfGeneratorService {
     res.setHeader('Content-Disposition',`attachment; filename="plan-pagos-${Date.now()}.pdf"`);
     doc.pipe(res);
     this.buildSimPdf(doc, data);
+    (doc as any).flushPages?.();
     this.addFootersToAllPages(doc, data.companyName||'Microcapital-Ixtepec', data.legalFooter, data.generatedAt||new Date());
     doc.end();
   }
@@ -54,6 +55,8 @@ export class PdfGeneratorService {
     res.setHeader('Content-Disposition',`attachment; filename="contrato-${data.loan.id.substring(0,8)}.pdf"`);
     doc.pipe(res);
     this.buildLoanPdf(doc, data);
+    // Flush buffer to get accurate page count, then add footers
+    (doc as any).flushPages?.();
     this.addFootersToAllPages(doc, data.companyName||'Microcapital-Ixtepec', data.legalFooter, new Date());
     doc.end();
   }
@@ -338,20 +341,27 @@ export class PdfGeneratorService {
   // ── FOOTER EN TODAS LAS PÁGINAS ───────────────────────────
   private addFootersToAllPages(doc: PDFKit.PDFDocument, company: string, legal: string|undefined, date: Date) {
     const range = (doc as any).bufferedPageRange();
-    for (let i = 0; i < range.count; i++) {
+    const total = range.count;
+    const fy = PH - FOOTER_H;
+
+    for (let i = 0; i < total; i++) {
       doc.switchToPage(range.start + i);
-      const fy = PH - FOOTER_H;
+
+      // Dibujar footer con coordenadas absolutas fijas
+      doc.save();
       doc.rect(0, fy, PW, FOOTER_H).fill(LGRAY);
+
       if (legal) {
         doc.font(RB).fontSize(6.5).fillColor(GRAY)
-           .text(legal, ML, fy+4, {width:PW-ML*2, align:'center', lineBreak:false});
+           .text(legal, ML, fy + 4, { width: PW - ML*2, align: 'center', lineBreak: false });
       }
+
       const infoY = fy + (legal ? 16 : 10);
+      const label = `${company} | ${fdate(date)} | Pág. ${i+1}/${total}`;
       doc.font(RB).fontSize(7).fillColor(GRAY)
-         .text(`${company} | ${fdate(date)}`, ML, infoY, {lineBreak:false});
-      doc.font(RB).fontSize(7).fillColor(GRAY)
-         .text(`Pág. ${i+1} de ${range.count}`, 0, infoY,
-           {width:PW-MR, align:'right', lineBreak:false});
+         .text(label, ML, infoY, { lineBreak: false });
+
+      doc.restore();
     }
   }
 }
