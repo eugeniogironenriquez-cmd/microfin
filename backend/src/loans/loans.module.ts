@@ -365,6 +365,45 @@ export class LoansService {
     return this.scheduleRepo.find({ where: { loanId }, order: { periodNumber: 'ASC' } });
   }
 
+  async generateControlCard(id: string, res: Response): Promise<void> {
+    const loan = await this.loanRepo.findOne({
+      where: { id }, relations: ['customer', 'loanType'],
+    });
+    if (!loan) throw new NotFoundException('Préstamo no encontrado');
+    if (!loan.disbursedAt) throw new BadRequestException('El préstamo no ha sido desembolsado');
+
+    const guarantor = await this.guarantorService.findByLoan(id);
+    const company   = await this.companyService.get().catch(() => null);
+
+    // Número de crédito del cliente (cuántos créditos previos tiene)
+    const loanCount = await this.loanRepo.count({ where: { customerId: loan.customerId } });
+
+    return this.pdfService.generateControlCard({
+      loan: {
+        id:             loan.id,
+        principalAmount: Number(loan.principalAmount),
+        interestRate:   Number(loan.interestRate),
+        totalRate:      Number((loan as any).totalRate || 0),
+        termWeeks:      loan.termWeeks,
+        frequency:      loan.frequency,
+        periodicPayment: Number(loan.periodicPayment),
+        totalAmount:    Number(loan.totalAmount),
+        disbursedAt:    loan.disbursedAt,
+      },
+      customer: {
+        fullName: loan.customer?.fullName || '',
+        phone:    loan.customer?.phone    || '',
+        curp:     loan.customer?.curp     || '',
+      },
+      guarantor: guarantor ? {
+        fullName: guarantor.fullName,
+        phone:    guarantor.phone,
+      } : undefined,
+      companyName: company?.name,
+      loanNumber:  loanCount,
+    }, res);
+  }
+
   async generateSimulationPdf(dto: any, res: Response): Promise<void> {
     const sim     = await this.simulate(dto);
     const company = await this.companyService.get().catch(() => null);
@@ -444,6 +483,7 @@ export class LoansController {
   @Post('simulate/pdf') @Auth() simulatePdf(@Body() dto: any, @Res() res: Response) { return this.loansService.generateSimulationPdf(dto, res); }
   @Get(':id/pdf')       @Auth() loanPdf(@Param('id') id: string, @Res() res: Response) { return this.loansService.generateLoanPdf(id, res); }
   @Get(':id/schedule')  @Auth() getSchedule(@Param('id') id: string) { return this.loansService.getSchedule(id); }
+  @Get(':id/control-card') @Auth() controlCard(@Param('id') id: string, @Res() res: Response) { return this.loansService.generateControlCard(id, res); }
 
   @Post(':id/authorize') @Auth(UserRole.AUTORIZADOR, UserRole.ADMIN)
   authorize(

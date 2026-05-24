@@ -244,7 +244,7 @@ export class PdfGeneratorService {
     doc.rect(ML, y, PW-ML*2, H).fillAndStroke(LGRAY, BORDER);
     const fields = [
       ['Tipo', loanType.name], ['Monto', cur(loan.principalAmount)],
-      ['Tasa', `${(Number(loan.interestRate)*100).toFixed(2)}%`],
+      ['Tasa', loan.totalRate && Number(loan.totalRate) > 0 ? `${(Number(loan.totalRate)*100).toFixed(0)}% total` : `${(Number(loan.interestRate)*100).toFixed(2)}%`],
       ['Plazo', `${loan.termWeeks} ${freq2unit(freq)}`],
       ['Frecuencia', freq], ['Cuota', cur(loan.periodicPayment)],
       ['Total', cur(loan.totalAmount)], ['Desembolso', fdate(loan.disbursedAt)],
@@ -336,6 +336,117 @@ export class PdfGeneratorService {
     } else {
       doc.font(RB).fontSize(7).fillColor(GRAY).text('FIRMA DEL EJECUTIVO / SELLO', rx, y+14, {width:sigW,align:'center',lineBreak:false});
     }
+  }
+
+  // ── TARJETA DE CONTROL DE PAGOS ──────────────────────────
+  async generateControlCard(data: {
+    loan: any;
+    customer: any;
+    guarantor?: any;
+    companyName?: string;
+    loanNumber?: number;
+  }, res: Response): Promise<void> {
+    // Tamaño tarjeta: 3.5" x 2" = 252 x 144 puntos aprox, usamos un poco más grande
+    const W = 360, H = 200;
+    const doc = new PDFDocument({ size: [W, H], margin: 0, bufferPages: true });
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition',
+      `attachment; filename="tarjeta-${data.loan.id.substring(0,8)}.pdf"`);
+    doc.pipe(res);
+
+    const { loan, customer, guarantor, companyName, loanNumber } = data;
+    const company = companyName || 'MICROCAPITAL - IXTEPEC';
+    const freq    = loan.frequency || 'DIARIO';
+    const unit    = freq2unit(freq).toUpperCase();
+    const tipoPago = freq === 'DIARIO' ? 'DIARIO' : freq;
+
+    // Borde exterior
+    doc.rect(2, 2, W-4, H-4).stroke('#000000');
+
+    // Encabezado verde
+    doc.rect(2, 2, W-4, 28).fill(GREEN);
+    doc.font(BB).fontSize(11).fillColor(WHITE)
+       .text(company.toUpperCase(), 0, 8, { width: W, align: 'center', lineBreak: false });
+    doc.font(RB).fontSize(7).fillColor('rgba(255,255,255,0.85)')
+       .text('TARJETA DE CONTROL DE PAGOS', 0, 20, { width: W, align: 'center', lineBreak: false });
+
+    // Cuerpo
+    let y = 36;
+    const lpad = 10;
+    const col2 = W / 2;
+    const lh = 14; // line height
+
+    const line = (label: string, value: string, yy: number, full = false) => {
+      doc.font(BB).fontSize(6.5).fillColor(GRAY)
+         .text(label + ':', lpad, yy, { lineBreak: false });
+      const labelW = doc.widthOfString(label + ':') + 4;
+      doc.font(BB).fontSize(7.5).fillColor(TEXT)
+         .text(value, lpad + labelW, yy, { width: (full ? W - lpad*2 : col2 - lpad) - labelW, lineBreak: false });
+    };
+
+    const lineTwo = (
+      label1: string, val1: string,
+      label2: string, val2: string,
+      yy: number,
+    ) => {
+      line(label1, val1, yy);
+      // right column
+      doc.font(BB).fontSize(6.5).fillColor(GRAY)
+         .text(label2 + ':', col2, yy, { lineBreak: false });
+      const lw = doc.widthOfString(label2 + ':') + 4;
+      doc.font(BB).fontSize(7.5).fillColor(TEXT)
+         .text(val2, col2 + lw, yy, { width: W - col2 - lpad - lw, lineBreak: false });
+    };
+
+    // Calcular fecha de término
+    const freqDays = { DIARIO:1, SEMANAL:7, QUINCENAL:15, MENSUAL:30 }[freq] ?? 1;
+    const disbDate = loan.disbursedAt ? new Date(loan.disbursedAt) : new Date();
+    const endDate  = new Date(disbDate.getTime() + loan.termWeeks * freqDays * 24*60*60*1000);
+
+    line('CLIENTE', (customer.fullName || '—').toUpperCase(), y, true); y += lh;
+
+    lineTwo(
+      'AVAL', (guarantor?.fullName || '—').toUpperCase(),
+      'CEL', guarantor?.phone || '—',
+      y
+    ); y += lh;
+
+    line('TIPO DE CRÉDITO', 'INDIVIDUAL - AVAL', y, true); y += lh;
+
+    lineTwo(
+      'MONTO AUTORIZADO', cur(loan.principalAmount),
+      '# DE CRÉDITO', loanNumber ? String(loanNumber).padStart(3,'0') : loan.id.substring(0,6).toUpperCase(),
+      y
+    ); y += lh;
+
+    lineTwo(
+      'PLAZO', `${loan.termWeeks} ${unit} HÁBILES`,
+      'TIPO DE PAGO', tipoPago,
+      y
+    ); y += lh;
+
+    lineTwo(
+      'CUOTA', cur(loan.periodicPayment),
+      'CEL', customer.phone || '—',
+      y
+    ); y += lh;
+
+    lineTwo(
+      'FECHA DE TÉRMINO', fdate(endDate),
+      'TOTAL', cur(loan.totalAmount),
+      y
+    ); y += lh;
+
+    // Línea separadora
+    doc.moveTo(lpad, y+2).lineTo(W-lpad, y+2).strokeColor(BORDER).lineWidth(0.3).stroke();
+    y += 8;
+
+    // Pie
+    doc.font(RB).fontSize(6).fillColor(GRAY)
+       .text('Este documento es una tarjeta de control de pagos.', 0, y,
+         { width: W, align: 'center', lineBreak: false });
+
+    doc.end();
   }
 
   // ── FOOTER EN TODAS LAS PÁGINAS ───────────────────────────
