@@ -57,13 +57,19 @@ export class PdfGeneratorService {
     const simDate    = data.generatedAt || new Date();
     const simFooter  = data.legalFooter;
 
-    // Auto-footer en cada página nueva
+    // Auto-footer en cada página nueva (con guardia anti-recursión)
+    let simDrawingFooter = false;
     doc.on('pageAdded', () => {
+      if (simDrawingFooter) return;
+      simDrawingFooter = true;
       this.drawFooter(doc, simDate, simCompany, simFooter);
+      simDrawingFooter = false;
     });
 
     this.drawHeader(doc, simCompany, 'PLAN DE PAGOS', 'Documento informativo, no constituye contrato');
+    simDrawingFooter = true;
     this.drawFooter(doc, simDate, simCompany, simFooter); // footer página 1
+    simDrawingFooter = false;
     this.drawSummaryBox(doc, data);
     this.drawScheduleTable(doc, data.schedule);
     doc.end();
@@ -88,13 +94,19 @@ export class PdfGeneratorService {
     const loanDate    = new Date();
     const loanFooter  = data.legalFooter;
 
-    // Auto-footer en cada página nueva
+    // Auto-footer en cada página nueva (con guardia anti-recursión)
+    let loanDrawingFooter = false;
     doc.on('pageAdded', () => {
+      if (loanDrawingFooter) return;
+      loanDrawingFooter = true;
       this.drawFooter(doc, loanDate, loanCompany, loanFooter);
+      loanDrawingFooter = false;
     });
 
     this.drawHeader(doc, loanCompany, 'CONTRATO DE CRÉDITO', `Folio: ${data.loan.id.substring(0,8).toUpperCase()}`);
+    loanDrawingFooter = true;
     this.drawFooter(doc, loanDate, loanCompany, loanFooter); // footer página 1
+    loanDrawingFooter = false;
     this.drawCustomerInfo(doc, data.customer);
     if (data.guarantor) this.drawGuarantorInfo(doc, data.guarantor);
     this.drawLoanInfo(doc, data.loan, data.loanType);
@@ -433,26 +445,21 @@ export class PdfGeneratorService {
     companyName: string,
     legalFooter?: string,
   ) {
-    // Dibuja el pie en la página actual únicamente
+    // Dibuja el pie en la página actual — sin text() que desborde
     const footerY = doc.page.height - 44;
-    doc.rect(0, footerY - 4, doc.page.width, 48).fill(COLORS.lightGray);
+    const w = doc.page.width;
+    doc.rect(0, footerY - 4, w, 52).fill(COLORS.lightGray);
+
     if (legalFooter) {
       doc.font(FONT.regular).fontSize(6.5).fillColor(COLORS.gray)
          .text(legalFooter, 50, footerY + 2,
-           { width: doc.page.width - 100, align: 'center', lineBreak: false });
+           { width: w - 100, align: 'center', lineBreak: false });
     }
+
+    const textY = footerY + (legalFooter ? 16 : 8);
+    const label = `${companyName} | ${this.formatDate(date)}`;
     doc.font(FONT.regular).fontSize(7).fillColor(COLORS.gray)
-       .text(
-         `${companyName} | Generado el ${this.formatDate(date)}`,
-         50, footerY + (legalFooter ? 14 : 6),
-         { align: 'left', lineBreak: false }
-       );
-    doc.font(FONT.regular).fontSize(7).fillColor(COLORS.gray)
-       .text(
-         `Microcapital-Ixtepec`,
-         0, footerY + (legalFooter ? 14 : 6),
-         { align: 'right', width: doc.page.width - 50, lineBreak: false }
-       );
+       .text(label, 50, textY, { lineBreak: false });
   }
 
   // ── UTILIDADES ────────────────────────────────────────────
