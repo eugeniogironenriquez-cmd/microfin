@@ -225,7 +225,7 @@ export class PdfGeneratorService {
       doc.font(FONT.regular).fontSize(8).fillColor(COLORS.gray)
          .text(`Cliente: ${data.customerName}`, 65, y + 78);
     }
-    doc.y = y + 106;
+    doc.y = y + 100;
   }
 
   // ── DATOS DEL CLIENTE ─────────────────────────────────────
@@ -251,7 +251,7 @@ export class PdfGeneratorService {
       doc.font(FONT.bold).fontSize(8).fillColor(COLORS.text)
          .text(f[1], cx, cy + 9, { width: cw - 10, lineBreak: false });
     });
-    doc.y = y + 82;
+    doc.y = y + 76;
   }
 
   // ── AVAL ──────────────────────────────────────────────────
@@ -274,7 +274,7 @@ export class PdfGeneratorService {
       doc.font(FONT.bold).fontSize(8).fillColor(COLORS.text)
          .text(f[1], cx, cy + 9, { width: cw - 10, lineBreak: false });
     });
-    doc.y = y + 66;
+    doc.y = y + 62;
   }
 
   // ── INFO DEL PRÉSTAMO ─────────────────────────────────────
@@ -302,7 +302,7 @@ export class PdfGeneratorService {
       doc.font(FONT.regular).fontSize(7).fillColor(COLORS.gray).text(f[0], cx, cy);
       doc.font(FONT.bold).fontSize(9).fillColor(COLORS.text).text(f[1], cx, cy + 11);
     });
-    doc.y = y + 82;
+    doc.y = y + 76;
   }
 
   // ── TABLA DE AMORTIZACIÓN ─────────────────────────────────
@@ -328,10 +328,10 @@ export class PdfGeneratorService {
       doc.rect(tableX, hy, tableW, headerH).fill(COLORS.tableHead);
       cols.forEach(col => {
         doc.font(FONT.bold).fontSize(7.5).fillColor(COLORS.white)
-           .text(col.label, cx + 3, hy + 6, { width: col.width - 6, align: col.align });
+           .text(col.label, cx + 3, hy + 6, { width: col.width - 6, align: col.align, lineBreak: false });
         cx += col.width;
       });
-      doc.y = hy + headerH + 2;
+      doc.y = hy + headerH + 2;  // posición exacta tras cabecera
     };
 
     drawTableHeader();
@@ -356,7 +356,7 @@ export class PdfGeneratorService {
       let cx = tableX;
       cells.forEach((cell, ci) => {
         doc.font(FONT.regular).fontSize(7.5).fillColor(COLORS.text)
-           .text(cell, cx + 3, rowY + 4, { width: cols[ci].width - 6, align: cols[ci].align });
+           .text(cell, cx + 3, rowY + 4, { width: cols[ci].width - 6, align: cols[ci].align, lineBreak: false });
         cx += cols[ci].width;
       });
       doc.moveTo(tableX, rowY + rowH)
@@ -407,14 +407,14 @@ export class PdfGeneratorService {
 
   // ── TÍTULO DE SECCIÓN ─────────────────────────────────────
   private drawSectionTitle(doc: PDFKit.PDFDocument, title: string) {
-    doc.moveDown(0.3);
-    const y = doc.y;
+    const y = doc.y + 8;
     doc.rect(50, y, 4, 14).fill(COLORS.accent);
-    doc.font(FONT.bold).fontSize(9).fillColor(COLORS.accentDark).text(title, 60, y + 1);
-    doc.moveDown(0.2);
-    doc.moveTo(50, doc.y).lineTo(doc.page.width - 50, doc.y)
+    doc.font(FONT.bold).fontSize(9).fillColor(COLORS.accentDark)
+       .text(title, 60, y + 2, { lineBreak: false });
+    const lineY = y + 16;
+    doc.moveTo(50, lineY).lineTo(doc.page.width - 50, lineY)
        .strokeColor(COLORS.border).lineWidth(0.5).stroke();
-    doc.moveDown(0.3);
+    doc.y = lineY + 6;  // posición exacta después del título
   }
 
   // ── PIE DE PÁGINA ─────────────────────────────────────────
