@@ -1,7 +1,8 @@
-import { Module } from '@nestjs/common';
+import { Module, OnApplicationBootstrap } from '@nestjs/common';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { ServeStaticModule } from '@nestjs/serve-static';
+import { ModuleRef } from '@nestjs/core';
 import { join } from 'path';
 import {
   User, Customer, CustomerDocument, LoanType, Loan,
@@ -25,6 +26,7 @@ import { LocationModule }    from './location/location.module';
 import { GuarantorModule }   from './guarantor/guarantor.module';
 import { DisbursementModule }from './disbursement/disbursement.module';
 import { ExpensesModule }    from './expenses/expenses.module';
+import { OverdueJobModule, OverdueJobService } from './jobs/overdue-job.module';
 
 @Module({
   imports: [
@@ -52,7 +54,19 @@ import { ExpensesModule }    from './expenses/expenses.module';
     AuthModule, UsersModule, CustomersModule, LoansModule, PaymentsModule,
     CashModule, CollectionModule, ReportsModule, SettingsModule, RateRangesModule,
     CompanyModule, LateFeeRulesModule, LocationModule, GuarantorModule,
-    DisbursementModule, ExpensesModule,
+    DisbursementModule, ExpensesModule, OverdueJobModule,
   ],
 })
-export class AppModule {}
+export class AppModule implements OnApplicationBootstrap {
+  constructor(private moduleRef: ModuleRef) {}
+
+  async onApplicationBootstrap() {
+    try {
+      const svc = this.moduleRef.get(OverdueJobService, { strict: false });
+      const result = await svc.markOverdueLoans();
+      console.log(`[OverdueJob] Inicio: ${result.marked} marcados vencidos, ${result.restored} restaurados`);
+    } catch (e: any) {
+      console.warn('[OverdueJob] Error al iniciar:', e.message);
+    }
+  }
+}
