@@ -48,20 +48,24 @@ export class PdfGeneratorService {
     companyName?: string;
     legalFooter?: string;
   }, res: Response): Promise<void> {
-    const doc = new PDFDocument({ size: 'LETTER', margin: 50, bufferPages: true });
+    const doc = new PDFDocument({ size: 'LETTER', margin: 50, autoFirstPage: true });
     res.setHeader('Content-Type', 'application/pdf');
     res.setHeader('Content-Disposition', `attachment; filename="plan-pagos-${Date.now()}.pdf"`);
     doc.pipe(res);
 
-    this.drawHeader(doc, data.companyName || 'Microcapital-Ixtepec',
-      'PLAN DE PAGOS', 'Documento informativo, no constituye contrato');
+    const simCompany = data.companyName || 'Microcapital-Ixtepec';
+    const simDate    = data.generatedAt || new Date();
+    const simFooter  = data.legalFooter;
+
+    // Auto-footer en cada página nueva
+    doc.on('pageAdded', () => {
+      this.drawFooter(doc, simDate, simCompany, simFooter);
+    });
+
+    this.drawHeader(doc, simCompany, 'PLAN DE PAGOS', 'Documento informativo, no constituye contrato');
+    this.drawFooter(doc, simDate, simCompany, simFooter); // footer página 1
     this.drawSummaryBox(doc, data);
     this.drawScheduleTable(doc, data.schedule);
-    this.drawFooter(doc, data.generatedAt || new Date(),
-      data.companyName || 'Microcapital-Ixtepec', data.legalFooter);
-    // Volver a la última página real para evitar página en blanco al cerrar
-    const simRange = (doc as any).bufferedPageRange();
-    doc.switchToPage(simRange.start + simRange.count - 1);
     doc.end();
   }
 
@@ -75,13 +79,22 @@ export class PdfGeneratorService {
     companyName?: string;
     legalFooter?: string;
   }, res: Response): Promise<void> {
-    const doc = new PDFDocument({ size: 'LETTER', margin: 50, bufferPages: true });
+    const doc = new PDFDocument({ size: 'LETTER', margin: 50, autoFirstPage: true });
     res.setHeader('Content-Type', 'application/pdf');
     res.setHeader('Content-Disposition', `attachment; filename="contrato-${data.loan.id.substring(0,8)}.pdf"`);
     doc.pipe(res);
 
-    this.drawHeader(doc, data.companyName || 'Microcapital-Ixtepec',
-      'CONTRATO DE CRÉDITO', `Folio: ${data.loan.id.substring(0,8).toUpperCase()}`);
+    const loanCompany = data.companyName || 'Microcapital-Ixtepec';
+    const loanDate    = new Date();
+    const loanFooter  = data.legalFooter;
+
+    // Auto-footer en cada página nueva
+    doc.on('pageAdded', () => {
+      this.drawFooter(doc, loanDate, loanCompany, loanFooter);
+    });
+
+    this.drawHeader(doc, loanCompany, 'CONTRATO DE CRÉDITO', `Folio: ${data.loan.id.substring(0,8).toUpperCase()}`);
+    this.drawFooter(doc, loanDate, loanCompany, loanFooter); // footer página 1
     this.drawCustomerInfo(doc, data.customer);
     if (data.guarantor) this.drawGuarantorInfo(doc, data.guarantor);
     this.drawLoanInfo(doc, data.loan, data.loanType);
@@ -91,10 +104,6 @@ export class PdfGeneratorService {
       interest: Number(s.interestDue), balance: Number(s.balanceDue),
     })));
     this.drawSignatureSection(doc, data.customer.fullName, data.guarantor?.fullName);
-    this.drawFooter(doc, new Date(),
-      data.companyName || 'Microcapital-Ixtepec', data.legalFooter);
-    const loanRange = (doc as any).bufferedPageRange();
-    doc.switchToPage(loanRange.start + loanRange.count - 1);
     doc.end();
   }
 
@@ -424,33 +433,26 @@ export class PdfGeneratorService {
     companyName: string,
     legalFooter?: string,
   ) {
-    const range = (doc as any).bufferedPageRange();
-    const count = range.count;
-    for (let i = 0; i < count; i++) {
-      doc.switchToPage(i);
-      const footerY = doc.page.height - 44;
-      doc.rect(0, footerY - 4, doc.page.width, 48).fill(COLORS.lightGray);
-
-      // Texto legal (pie de página de empresa) si existe
-      if (legalFooter) {
-        doc.font(FONT.regular).fontSize(6.5).fillColor(COLORS.gray)
-           .text(legalFooter, 50, footerY + 2,
-             { width: doc.page.width - 100, align: 'center' });
-      }
-
-      // Línea inferior: empresa | fecha | página
-      doc.font(FONT.regular).fontSize(7).fillColor(COLORS.gray)
-         .text(
-           `${companyName} | Generado el ${this.formatDate(date)}`,
-           50, footerY + (legalFooter ? 14 : 6),
-           { align: 'left' }
-         )
-         .text(
-           `Página ${i + 1} de ${count}`,
-           0, footerY + (legalFooter ? 14 : 6),
-           { align: 'right', width: doc.page.width - 50 }
-         );
+    // Dibuja el pie en la página actual únicamente
+    const footerY = doc.page.height - 44;
+    doc.rect(0, footerY - 4, doc.page.width, 48).fill(COLORS.lightGray);
+    if (legalFooter) {
+      doc.font(FONT.regular).fontSize(6.5).fillColor(COLORS.gray)
+         .text(legalFooter, 50, footerY + 2,
+           { width: doc.page.width - 100, align: 'center', lineBreak: false });
     }
+    doc.font(FONT.regular).fontSize(7).fillColor(COLORS.gray)
+       .text(
+         `${companyName} | Generado el ${this.formatDate(date)}`,
+         50, footerY + (legalFooter ? 14 : 6),
+         { align: 'left', lineBreak: false }
+       );
+    doc.font(FONT.regular).fontSize(7).fillColor(COLORS.gray)
+       .text(
+         `Microcapital-Ixtepec`,
+         0, footerY + (legalFooter ? 14 : 6),
+         { align: 'right', width: doc.page.width - 50, lineBreak: false }
+       );
   }
 
   // ── UTILIDADES ────────────────────────────────────────────
