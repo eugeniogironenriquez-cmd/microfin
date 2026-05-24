@@ -4,475 +4,354 @@ import * as PDFDocument from 'pdfkit';
 import { format } from 'date-fns';
 import { es } from 'date-fns/locale';
 
-const COLORS = {
-  primary:    '#1C4532',
-  accent:     '#1C4532',
-  accentDark: '#0d2b1e',
-  success:    '#16A34A',
-  danger:     '#DC2626',
-  gray:       '#718096',
-  lightGray:  '#F7FAFC',
-  border:     '#CBD5E0',
-  white:      '#FFFFFF',
-  text:       '#171923',
-  tableHead:  '#1C4532',
-  tableAlt:   '#F0FFF4',
-};
-const FONT = { regular: 'Helvetica', bold: 'Helvetica-Bold' };
+const GREEN  = '#1C4532';
+const GREEN2 = '#0d2b1e';
+const GRAY   = '#718096';
+const LGRAY  = '#F7FAFC';
+const BORDER = '#CBD5E0';
+const WHITE  = '#FFFFFF';
+const TEXT   = '#171923';
+const ALT    = '#F0FFF4';
+const RB     = 'Helvetica';
+const BB     = 'Helvetica-Bold';
 
-// Unidad de plazo según frecuencia
-function unidadPlazo(freq: string): string {
-  const map: Record<string, string> = {
-    DIARIO: 'días', SEMANAL: 'semanas', QUINCENAL: 'quincenas', MENSUAL: 'meses',
-  };
-  return map[freq] ?? 'períodos';
+function freq2unit(f: string) {
+  return { DIARIO:'días', SEMANAL:'semanas', QUINCENAL:'quincenas', MENSUAL:'meses' }[f] ?? 'períodos';
 }
+function cur(v: any) {
+  return '$' + (Number(v)||0).toLocaleString('es-MX',{minimumFractionDigits:2,maximumFractionDigits:2});
+}
+function fdate(d: any) {
+  if (!d) return '—';
+  try { return format(typeof d==='string'?new Date(d):d,'dd/MM/yyyy',{locale:es}); }
+  catch { return String(d); }
+}
+
+// Page dimensions (LETTER)
+const PW = 612, PH = 792;
+const ML = 50, MR = 50, MT = 50;
+const FOOTER_H = 36;
+const USABLE_H = PH - MT - FOOTER_H - 10; // content area height per page
 
 @Injectable()
 export class PdfGeneratorService {
 
-  // ── PLAN DE PAGOS (SIMULACIÓN) ────────────────────────────
-  async generateSimulationPdf(data: {
-    principalAmount: number;
-    interestRate: number;
-    termWeeks: number;
-    frequency: string;
-    periodicPayment: number;
-    totalPayment: number;
-    totalInterest: number;
-    schedule: Array<{ period: number; dueDate: Date | string; payment: number; principal: number; interest: number; balance: number }>;
-    totalRate?: number;
-    customerName?: string;
-    guarantorName?: string;
-    generatedAt?: Date;
-    companyName?: string;
-    legalFooter?: string;
-  }, res: Response): Promise<void> {
-    const doc = new PDFDocument({ size: 'LETTER', margin: 50, autoFirstPage: true });
-    res.setHeader('Content-Type', 'application/pdf');
-    res.setHeader('Content-Disposition', `attachment; filename="plan-pagos-${Date.now()}.pdf"`);
+  // ── PLAN DE PAGOS ─────────────────────────────────────────
+  async generateSimulationPdf(data: any, res: Response): Promise<void> {
+    const doc = new PDFDocument({ size:'LETTER', margin: MT, bufferPages: true });
+    res.setHeader('Content-Type','application/pdf');
+    res.setHeader('Content-Disposition',`attachment; filename="plan-pagos-${Date.now()}.pdf"`);
     doc.pipe(res);
-
-    const simCompany = data.companyName || 'Microcapital-Ixtepec';
-    const simDate    = data.generatedAt || new Date();
-    const simFooter  = data.legalFooter;
-
-    // Auto-footer en cada página nueva (con guardia anti-recursión)
-    let simDrawingFooter = false;
-    doc.on('pageAdded', () => {
-      if (simDrawingFooter) return;
-      simDrawingFooter = true;
-      this.drawFooter(doc, simDate, simCompany, simFooter);
-      simDrawingFooter = false;
-    });
-
-    this.drawHeader(doc, simCompany, 'PLAN DE PAGOS', 'Documento informativo, no constituye contrato');
-    simDrawingFooter = true;
-    this.drawFooter(doc, simDate, simCompany, simFooter); // footer página 1
-    simDrawingFooter = false;
-    this.drawSummaryBox(doc, data);
-    this.drawScheduleTable(doc, data.schedule);
+    this.buildSimPdf(doc, data);
+    this.addFootersToAllPages(doc, data.companyName||'Microcapital-Ixtepec', data.legalFooter, data.generatedAt||new Date());
     doc.end();
   }
 
-  // ── CONTRATO OFICIAL ──────────────────────────────────────
-  async generateLoanPdf(data: {
-    loan: any;
-    customer: any;
-    loanType: any;
-    schedules: any[];
-    guarantor?: any;
-    companyName?: string;
-    legalFooter?: string;
-  }, res: Response): Promise<void> {
-    const doc = new PDFDocument({ size: 'LETTER', margin: 50, autoFirstPage: true });
-    res.setHeader('Content-Type', 'application/pdf');
-    res.setHeader('Content-Disposition', `attachment; filename="contrato-${data.loan.id.substring(0,8)}.pdf"`);
+  // ── CONTRATO ──────────────────────────────────────────────
+  async generateLoanPdf(data: any, res: Response): Promise<void> {
+    const doc = new PDFDocument({ size:'LETTER', margin: MT, bufferPages: true });
+    res.setHeader('Content-Type','application/pdf');
+    res.setHeader('Content-Disposition',`attachment; filename="contrato-${data.loan.id.substring(0,8)}.pdf"`);
+    doc.pipe(res);
+    this.buildLoanPdf(doc, data);
+    this.addFootersToAllPages(doc, data.companyName||'Microcapital-Ixtepec', data.legalFooter, new Date());
+    doc.end();
+  }
+
+  // ── COMPROBANTE ───────────────────────────────────────────
+  async generatePaymentReceipt(data: any, res: Response): Promise<void> {
+    const { payment, loan, company } = data;
+    const doc = new PDFDocument({ size:[PW, 380], margin: 40, bufferPages: true });
+    res.setHeader('Content-Type','application/pdf');
+    res.setHeader('Content-Disposition',`attachment; filename="comprobante-${payment.id.substring(0,8)}.pdf"`);
     doc.pipe(res);
 
-    const loanCompany = data.companyName || 'Microcapital-Ixtepec';
-    const loanDate    = new Date();
-    const loanFooter  = data.legalFooter;
+    const cName = company?.name||'Microcapital-Ixtepec';
+    const customer = loan?.customer;
 
-    // Auto-footer en cada página nueva (con guardia anti-recursión)
-    let loanDrawingFooter = false;
-    doc.on('pageAdded', () => {
-      if (loanDrawingFooter) return;
-      loanDrawingFooter = true;
-      this.drawFooter(doc, loanDate, loanCompany, loanFooter);
-      loanDrawingFooter = false;
+    // Header
+    doc.rect(0,0,PW,60).fill(GREEN);
+    doc.font(BB).fontSize(15).fillColor(WHITE).text(cName, 40, 16, {lineBreak:false});
+    doc.font(RB).fontSize(7).fillColor('rgba(255,255,255,0.7)')
+       .text(`RFC: ${company?.rfc||'—'}  Tel: ${company?.phone||'—'}`, 40, 36, {lineBreak:false});
+    doc.font(BB).fontSize(12).fillColor(WHITE)
+       .text('COMPROBANTE DE PAGO', 300, 18, {width:272,align:'right',lineBreak:false});
+    doc.font(RB).fontSize(7.5).fillColor('rgba(255,255,255,0.75)')
+       .text(`Folio: ${(payment.receiptNumber||payment.id?.substring(0,8)||'—').toUpperCase()}`, 300, 34, {width:272,align:'right',lineBreak:false})
+       .text(`Fecha: ${fdate(payment.paymentDate||new Date())}`, 300, 46, {width:272,align:'right',lineBreak:false});
+
+    // Bloques
+    const y1 = 70, half = (PW-80)/2;
+    doc.rect(40,y1,half-4,72).fillAndStroke(LGRAY,BORDER);
+    doc.font(BB).fontSize(7.5).fillColor(GREEN2).text('CLIENTE', 50, y1+8, {lineBreak:false});
+    doc.font(RB).fontSize(8.5).fillColor(TEXT).text(customer?.fullName||'—', 50, y1+22, {lineBreak:false});
+    doc.font(RB).fontSize(7).fillColor(GRAY)
+       .text(`CURP: ${customer?.curp||'—'}`, 50, y1+36, {lineBreak:false})
+       .text(`Tel: ${customer?.phone||'—'}`, 50, y1+48, {lineBreak:false});
+
+    const x2 = 40+half+4;
+    doc.rect(x2,y1,half-4,72).fillAndStroke(LGRAY,BORDER);
+    doc.font(BB).fontSize(7.5).fillColor(GREEN2).text('CRÉDITO', x2+10, y1+8, {lineBreak:false});
+    doc.font(RB).fontSize(7.5).fillColor(TEXT)
+       .text(`ID: ${loan?.id?.substring(0,8).toUpperCase()||'—'}`, x2+10, y1+22, {lineBreak:false})
+       .text(`Tipo: ${loan?.loanType?.name||'—'}`, x2+10, y1+34, {lineBreak:false})
+       .text(`Cuota: ${cur(loan?.periodicPayment)}`, x2+10, y1+46, {lineBreak:false});
+
+    const y2 = y1+80;
+    doc.rect(40,y2,PW-80,48).fillAndStroke('#F0FFF4','#BBF7D0');
+    doc.font(BB).fontSize(8.5).fillColor('#16A34A').text('DETALLE DEL PAGO', 50, y2+8, {lineBreak:false});
+    const cw = (PW-100)/4;
+    [['Capital',cur(payment.capitalApplied)],['Interés',cur(payment.interestApplied)],
+     ['Moratorio',cur(payment.lateInterestApplied||0)],['Forma',payment.method||'EFECTIVO']]
+    .forEach(([l,v],i) => {
+      const cx = 50+i*cw;
+      doc.font(RB).fontSize(7).fillColor(GRAY).text(l, cx, y2+24, {lineBreak:false});
+      doc.font(BB).fontSize(8.5).fillColor(TEXT).text(v, cx, y2+34, {lineBreak:false});
     });
 
-    this.drawHeader(doc, loanCompany, 'CONTRATO DE CRÉDITO', `Folio: ${data.loan.id.substring(0,8).toUpperCase()}`);
-    loanDrawingFooter = true;
-    this.drawFooter(doc, loanDate, loanCompany, loanFooter); // footer página 1
-    loanDrawingFooter = false;
-    this.drawCustomerInfo(doc, data.customer);
-    if (data.guarantor) this.drawGuarantorInfo(doc, data.guarantor);
-    this.drawLoanInfo(doc, data.loan, data.loanType);
-    this.drawScheduleTable(doc, data.schedules.map((s: any) => ({
+    const y3 = y2+56;
+    doc.rect(40,y3,PW-80,36).fill(GREEN);
+    doc.font(RB).fontSize(10).fillColor(WHITE).text('TOTAL RECIBIDO:', 50, y3+11, {lineBreak:false});
+    doc.font(BB).fontSize(15).fillColor(WHITE)
+       .text(cur(payment.amountPaid), 200, y3+9, {width:PW-250,align:'right',lineBreak:false});
+
+    doc.font(RB).fontSize(7).fillColor(GRAY)
+       .text(company?.legalFooter||'Este comprobante es un documento válido de pago.',
+         40, y3+46, {width:PW-80,align:'center',lineBreak:false});
+
+    doc.end();
+  }
+
+  // ── BUILDERS ─────────────────────────────────────────────
+  private buildSimPdf(doc: PDFKit.PDFDocument, data: any) {
+    let y = this.drawHeader(doc, data.companyName||'Microcapital-Ixtepec',
+      'PLAN DE PAGOS', 'Documento informativo, no constituye contrato');
+    y = this.drawSummaryBox(doc, y, data);
+    this.drawScheduleTable(doc, y, data.schedule);
+  }
+
+  private buildLoanPdf(doc: PDFKit.PDFDocument, data: any) {
+    let y = this.drawHeader(doc, data.companyName||'Microcapital-Ixtepec',
+      'CONTRATO DE CRÉDITO', `Folio: ${data.loan.id.substring(0,8).toUpperCase()}`);
+    y = this.drawCustomerInfo(doc, y, data.customer);
+    if (data.guarantor) y = this.drawGuarantorInfo(doc, y, data.guarantor);
+    y = this.drawLoanInfo(doc, y, data.loan, data.loanType);
+    y = this.drawScheduleTable(doc, y, data.schedules.map((s:any) => ({
       period: s.periodNumber, dueDate: s.dueDate,
       payment: Number(s.totalDue), principal: Number(s.principalDue),
       interest: Number(s.interestDue), balance: Number(s.balanceDue),
     })));
-    this.drawSignatureSection(doc, data.customer.fullName, data.guarantor?.fullName);
-    doc.end();
+    this.drawSignatureSection(doc, y, data.customer.fullName, data.guarantor?.fullName);
   }
 
-  // ── COMPROBANTE DE PAGO ───────────────────────────────────
-  async generatePaymentReceipt(data: {
-    payment: any; loan: any; company: any;
-  }, res: Response): Promise<void> {
-    const doc = new PDFDocument({ size: [612, 420], margin: 40, bufferPages: true });
-    res.setHeader('Content-Type', 'application/pdf');
-    res.setHeader('Content-Disposition', `attachment; filename="comprobante-${data.payment.id.substring(0,8)}.pdf"`);
-    doc.pipe(res);
-
-    const { payment, loan, company } = data;
-    const customer = loan?.customer;
-    const companyName = company?.name || 'Microcapital-Ixtepec';
-
-    // Encabezado verde
-    doc.rect(0, 0, doc.page.width, 65).fill(COLORS.tableHead);
-    doc.font(FONT.bold).fontSize(16).fillColor('#FFFFFF').text(companyName, 40, 18);
-    doc.font(FONT.regular).fontSize(7.5).fillColor('rgba(255,255,255,0.75)')
-       .text(`RFC: ${company?.rfc || '—'}  |  Tel: ${company?.phone || '—'}`, 40, 40)
-       .text(company?.address || '', 40, 52);
-    doc.font(FONT.bold).fontSize(13).fillColor('#FFFFFF')
-       .text('COMPROBANTE DE PAGO', 0, 22, { align: 'right', width: doc.page.width - 40 });
-    doc.font(FONT.regular).fontSize(8).fillColor('rgba(255,255,255,0.75)')
-       .text(`Folio: ${(payment.receiptNumber || payment.id?.substring(0,8) || '—').toUpperCase()}`, 0, 38, { align: 'right', width: doc.page.width - 40 })
-       .text(`Fecha: ${this.formatDate(payment.paymentDate || new Date())}`, 0, 50, { align: 'right', width: doc.page.width - 40 });
-
-    const y1 = 80;
-    const half = (doc.page.width - 80) / 2;
-
-    doc.rect(40, y1, half - 4, 80).fillAndStroke('#F7FAFC', COLORS.border);
-    doc.font(FONT.bold).fontSize(8).fillColor(COLORS.accentDark).text('CLIENTE', 50, y1 + 8);
-    doc.font(FONT.regular).fontSize(9).fillColor(COLORS.text)
-       .text(customer?.fullName || '—', 50, y1 + 22)
-       .fontSize(7.5).fillColor(COLORS.gray)
-       .text(`CURP: ${customer?.curp || '—'}`, 50, y1 + 36)
-       .text(`Tel: ${customer?.phone || '—'}`, 50, y1 + 48);
-
-    const x2 = 40 + half + 4;
-    doc.rect(x2, y1, half - 4, 80).fillAndStroke('#F7FAFC', COLORS.border);
-    doc.font(FONT.bold).fontSize(8).fillColor(COLORS.accentDark).text('CRÉDITO', x2 + 10, y1 + 8);
-    doc.font(FONT.regular).fontSize(8).fillColor(COLORS.text)
-       .text(`ID: ${loan?.id?.substring(0,8).toUpperCase() || '—'}`, x2 + 10, y1 + 22)
-       .text(`Tipo: ${loan?.loanType?.name || '—'}`, x2 + 10, y1 + 34)
-       .text(`Cuota: ${this.currency(loan?.periodicPayment)}`, x2 + 10, y1 + 46);
-
-    const y2 = y1 + 90;
-    doc.rect(40, y2, doc.page.width - 80, 50).fillAndStroke('#F0FFF4', '#BBF7D0');
-    doc.font(FONT.bold).fontSize(9).fillColor(COLORS.success).text('DETALLE DEL PAGO', 50, y2 + 8);
-    const colW = (doc.page.width - 100) / 4;
-    const cols = [
-      ['Capital',   this.currency(payment.capitalApplied)],
-      ['Interés',   this.currency(payment.interestApplied)],
-      ['Moratorio', this.currency(payment.lateInterestApplied || 0)],
-      ['Forma',     payment.method || 'EFECTIVO'],
-    ];
-    cols.forEach(([label, val], i) => {
-      const cx = 50 + i * colW;
-      doc.font(FONT.regular).fontSize(7).fillColor(COLORS.gray).text(label, cx, y2 + 24);
-      doc.font(FONT.bold).fontSize(9).fillColor(COLORS.text).text(val, cx, y2 + 34);
-    });
-
-    const y3 = y2 + 60;
-    doc.rect(40, y3, doc.page.width - 80, 38).fill(COLORS.tableHead);
-    doc.font(FONT.regular).fontSize(11).fillColor(COLORS.white).text('TOTAL RECIBIDO:', 50, y3 + 12);
-    doc.font(FONT.bold).fontSize(16).fillColor('#FFFFFF')
-       .text(this.currency(payment.amountPaid), 0, y3 + 10, { align: 'right', width: doc.page.width - 50 });
-
-    doc.font(FONT.regular).fontSize(7).fillColor(COLORS.gray)
-       .text(company?.legalFooter || 'Este comprobante es un documento válido de pago.', 40, y3 + 56, {
-         width: doc.page.width - 80, align: 'center',
-       });
-
-    doc.end();
+  // ── DRAW FUNCTIONS (return next Y) ───────────────────────
+  private drawHeader(doc: PDFKit.PDFDocument, company: string, title: string, sub: string): number {
+    doc.rect(0,0,PW,76).fill(GREEN);
+    doc.font(BB).fontSize(15).fillColor(WHITE).text(company, ML, 20, {lineBreak:false});
+    doc.font(RB).fontSize(7.5).fillColor('rgba(255,255,255,0.65)')
+       .text('Sistema de Gestión Microfinanciera', ML, 42, {lineBreak:false});
+    doc.font(BB).fontSize(12).fillColor(WHITE)
+       .text(title, 0, 24, {width:PW-ML,align:'right',lineBreak:false});
+    doc.font(RB).fontSize(7.5).fillColor('rgba(255,255,255,0.75)')
+       .text(sub, 0, 42, {width:PW-ML,align:'right',lineBreak:false});
+    return 90; // fixed Y after header
   }
 
-  // ── HEADER ────────────────────────────────────────────────
-  private drawHeader(
-    doc: PDFKit.PDFDocument,
-    companyName: string,
-    title: string,
-    subtitle: string,
-  ) {
-    doc.rect(0, 0, doc.page.width, 78).fill(COLORS.tableHead);
-    // Nombre de la empresa (izquierda)
-    doc.font(FONT.bold).fontSize(16).fillColor('#FFFFFF').text(companyName, 50, 20);
-    doc.font(FONT.regular).fontSize(7.5).fillColor('rgba(255,255,255,0.65)')
-       .text('Sistema de Gestión Microfinanciera', 50, 42);
-    // Título del documento (derecha)
-    doc.font(FONT.bold).fontSize(13).fillColor('#FFFFFF')
-       .text(title, 0, 24, { align: 'right', width: doc.page.width - 50 });
-    doc.font(FONT.regular).fontSize(8).fillColor('rgba(255,255,255,0.75)')
-       .text(subtitle, 0, 42, { align: 'right', width: doc.page.width - 50 });
-    // Línea separadora
-    doc.moveDown(0.5);
-    doc.y = 90; // posición fija después del header para evitar solapamiento
-  }
+  private drawSummaryBox(doc: PDFKit.PDFDocument, y: number, data: any): number {
+    const H = 98;
+    doc.rect(ML, y, PW-ML*2, H).fillAndStroke(LGRAY, BORDER);
+    doc.font(BB).fontSize(8.5).fillColor(GREEN2).text('RESUMEN DEL CRÉDITO', ML+14, y+10, {lineBreak:false});
 
-  // ── RESUMEN ───────────────────────────────────────────────
-  private drawSummaryBox(doc: PDFKit.PDFDocument, data: any) {
-    const y = doc.y;
-    const freq = data.frequency || 'SEMANAL';
-    const unidad = unidadPlazo(freq);
-
-    doc.rect(50, y, doc.page.width - 100, 96).fillAndStroke(COLORS.lightGray, COLORS.border);
-    doc.font(FONT.bold).fontSize(9).fillColor(COLORS.accentDark).text('RESUMEN DEL CRÉDITO', 65, y + 10);
-
-    const cols = [
-      ['Monto',      this.currency(data.principalAmount)],
-      ['Tasa', data.totalRate ? `${(data.totalRate * 100).toFixed(0)}%` : `${(data.interestRate * 100).toFixed(2)}%`],
-      ['Plazo',      `${data.termWeeks} ${unidad}`],
+    const freq = data.frequency||'SEMANAL';
+    const items = [
+      ['Monto',   cur(data.principalAmount)],
+      ['Tasa',    data.totalRate ? `${(data.totalRate*100).toFixed(0)}%` : `${(data.interestRate*100).toFixed(2)}%`],
+      ['Plazo',   `${data.termWeeks} ${freq2unit(freq)}`],
       ['Frecuencia', freq],
-      ['Cuota',      this.currency(data.periodicPayment)],
-      ['Total',      this.currency(data.totalPayment)],
-      ['Intereses',  this.currency(data.totalInterest)],
+      ['Cuota',   cur(data.periodicPayment)],
+      ['Total',   cur(data.totalPayment)],
+      ['Intereses',cur(data.totalInterest)],
     ];
-
-    const cw = (doc.page.width - 120) / 4;
-    cols.forEach((col, i) => {
-      const cx = 65 + (i % 4) * cw;
-      const cy = y + 28 + Math.floor(i / 4) * 30;
-      doc.font(FONT.regular).fontSize(7).fillColor(COLORS.gray).text(col[0], cx, cy);
-      doc.font(FONT.bold).fontSize(9).fillColor(COLORS.text).text(col[1], cx, cy + 11);
+    const cw = (PW-ML*2-28)/4;
+    items.forEach((item, i) => {
+      const cx = ML+14 + (i%4)*cw;
+      const cy = y + 28 + Math.floor(i/4)*30;
+      doc.font(RB).fontSize(7).fillColor(GRAY).text(item[0], cx, cy, {lineBreak:false});
+      doc.font(BB).fontSize(9).fillColor(TEXT).text(item[1], cx, cy+11, {lineBreak:false});
     });
-
     if (data.customerName) {
-      doc.font(FONT.regular).fontSize(8).fillColor(COLORS.gray)
-         .text(`Cliente: ${data.customerName}`, 65, y + 78);
+      doc.font(RB).fontSize(7.5).fillColor(GRAY)
+         .text(`Cliente: ${data.customerName}`, ML+14, y+H-14, {lineBreak:false});
     }
-    doc.y = y + 100;
+    return y + H + 8;
   }
 
-  // ── DATOS DEL CLIENTE ─────────────────────────────────────
-  private drawCustomerInfo(doc: PDFKit.PDFDocument, customer: any) {
-    this.drawSectionTitle(doc, 'DATOS DEL ACREDITADO');
-    const y = doc.y;
-    doc.rect(50, y, doc.page.width - 100, 72).fillAndStroke(COLORS.lightGray, COLORS.border);
+  private drawSectionTitle(doc: PDFKit.PDFDocument, y: number, title: string): number {
+    doc.rect(ML, y+2, 4, 13).fill(GREEN);
+    doc.font(BB).fontSize(8.5).fillColor(GREEN2).text(title, ML+10, y+3, {lineBreak:false});
+    doc.moveTo(ML, y+18).lineTo(PW-MR, y+18).strokeColor(BORDER).lineWidth(0.5).stroke();
+    return y + 24;
+  }
+
+  private drawCustomerInfo(doc: PDFKit.PDFDocument, y: number, customer: any): number {
+    y = this.drawSectionTitle(doc, y, 'DATOS DEL ACREDITADO');
+    const H = 70;
+    doc.rect(ML, y, PW-ML*2, H).fillAndStroke(LGRAY, BORDER);
     const fields = [
-      ['Nombre',    customer.fullName],
-      ['CURP',      customer.curp],
-      ['RFC',       customer.rfc || '—'],
-      ['Teléfono',  customer.phone],
-      ['Email',     customer.email || '—'],
+      ['Nombre', customer.fullName], ['CURP', customer.curp],
+      ['RFC', customer.rfc||'—'], ['Teléfono', customer.phone],
+      ['Email', customer.email||'—'],
       ['Domicilio', customer.address
-        ? `${customer.address.street || ''}, ${customer.address.colonia || ''}, ${customer.address.municipality || ''}`.replace(/^,\s*|,\s*$/g, '')
+        ? [customer.address.street,customer.address.colonia,customer.address.municipality].filter(Boolean).join(', ')
         : '—'],
     ];
-    const cw = (doc.page.width - 120) / 2;
+    const cw = (PW-ML*2-28)/2;
     fields.forEach((f, i) => {
-      const cx = 65 + (i % 2) * cw;
-      const cy = y + 10 + Math.floor(i / 2) * 20;
-      doc.font(FONT.regular).fontSize(7).fillColor(COLORS.gray).text(f[0], cx, cy);
-      doc.font(FONT.bold).fontSize(8).fillColor(COLORS.text)
-         .text(f[1], cx, cy + 9, { width: cw - 10, lineBreak: false });
+      const cx = ML+14 + (i%2)*cw;
+      const cy = y + 8 + Math.floor(i/2)*20;
+      doc.font(RB).fontSize(7).fillColor(GRAY).text(f[0], cx, cy, {lineBreak:false});
+      doc.font(BB).fontSize(8).fillColor(TEXT).text(f[1], cx, cy+9, {width:cw-10,lineBreak:false});
     });
-    doc.y = y + 76;
+    return y + H + 6;
   }
 
-  // ── AVAL ──────────────────────────────────────────────────
-  private drawGuarantorInfo(doc: PDFKit.PDFDocument, guarantor: any) {
-    this.drawSectionTitle(doc, 'DATOS DEL AVAL');
-    const y = doc.y;
-    doc.rect(50, y, doc.page.width - 100, 56).fillAndStroke('#F0FFF4', '#BBF7D0');
+  private drawGuarantorInfo(doc: PDFKit.PDFDocument, y: number, guarantor: any): number {
+    y = this.drawSectionTitle(doc, y, 'DATOS DEL AVAL');
+    const H = 56;
+    doc.rect(ML, y, PW-ML*2, H).fillAndStroke('#FFFBEB', '#FDE68A');
     const fields = [
-      ['Nombre',    guarantor.fullName],
-      ['CURP',      guarantor.curp],
-      ['Teléfono',  guarantor.phone],
-      ['Parentesco',guarantor.relationship || '—'],
-      ['Domicilio', guarantor.address || '—'],
+      ['Nombre', guarantor.fullName], ['CURP', guarantor.curp],
+      ['Teléfono', guarantor.phone], ['Parentesco', guarantor.relationship||'—'],
+      ['Domicilio', guarantor.address||'—'],
     ];
-    const cw = (doc.page.width - 120) / 3;
+    const cw = (PW-ML*2-28)/3;
     fields.forEach((f, i) => {
-      const cx = 65 + (i % 3) * cw;
-      const cy = y + 10 + Math.floor(i / 3) * 20;
-      doc.font(FONT.regular).fontSize(7).fillColor(COLORS.gray).text(f[0], cx, cy);
-      doc.font(FONT.bold).fontSize(8).fillColor(COLORS.text)
-         .text(f[1], cx, cy + 9, { width: cw - 10, lineBreak: false });
+      const cx = ML+14 + (i%3)*cw;
+      const cy = y + 8 + Math.floor(i/3)*22;
+      doc.font(RB).fontSize(7).fillColor(GRAY).text(f[0], cx, cy, {lineBreak:false});
+      doc.font(BB).fontSize(8).fillColor(TEXT).text(f[1], cx, cy+9, {width:cw-8,lineBreak:false});
     });
-    doc.y = y + 62;
+    return y + H + 6;
   }
 
-  // ── INFO DEL PRÉSTAMO ─────────────────────────────────────
-  private drawLoanInfo(doc: PDFKit.PDFDocument, loan: any, loanType: any) {
-    this.drawSectionTitle(doc, 'CONDICIONES DEL CRÉDITO');
-    const y = doc.y;
-    const freq   = loan.frequency || 'SEMANAL';
-    const unidad = unidadPlazo(freq);
-
-    doc.rect(50, y, doc.page.width - 100, 72).fillAndStroke(COLORS.lightGray, COLORS.border);
+  private drawLoanInfo(doc: PDFKit.PDFDocument, y: number, loan: any, loanType: any): number {
+    y = this.drawSectionTitle(doc, y, 'CONDICIONES DEL CRÉDITO');
+    const H = 70;
+    const freq = loan.frequency||'SEMANAL';
+    doc.rect(ML, y, PW-ML*2, H).fillAndStroke(LGRAY, BORDER);
     const fields = [
-      ['Tipo',       loanType.name],
-      ['Monto',      this.currency(loan.principalAmount)],
-      ['Tasa',       `${(Number(loan.interestRate) * 100).toFixed(2)}%`],
-      ['Plazo',      `${loan.termWeeks} ${unidad}`],
-      ['Frecuencia', freq],
-      ['Cuota',      this.currency(loan.periodicPayment)],
-      ['Total',      this.currency(loan.totalAmount)],
-      ['Desembolso', this.formatDate(loan.disbursedAt)],
+      ['Tipo', loanType.name], ['Monto', cur(loan.principalAmount)],
+      ['Tasa', `${(Number(loan.interestRate)*100).toFixed(2)}%`],
+      ['Plazo', `${loan.termWeeks} ${freq2unit(freq)}`],
+      ['Frecuencia', freq], ['Cuota', cur(loan.periodicPayment)],
+      ['Total', cur(loan.totalAmount)], ['Desembolso', fdate(loan.disbursedAt)],
     ];
-    const cw = (doc.page.width - 120) / 4;
+    const cw = (PW-ML*2-28)/4;
     fields.forEach((f, i) => {
-      const cx = 65 + (i % 4) * cw;
-      const cy = y + 10 + Math.floor(i / 4) * 28;
-      doc.font(FONT.regular).fontSize(7).fillColor(COLORS.gray).text(f[0], cx, cy);
-      doc.font(FONT.bold).fontSize(9).fillColor(COLORS.text).text(f[1], cx, cy + 11);
+      const cx = ML+14 + (i%4)*cw;
+      const cy = y + 8 + Math.floor(i/4)*26;
+      doc.font(RB).fontSize(7).fillColor(GRAY).text(f[0], cx, cy, {lineBreak:false});
+      doc.font(BB).fontSize(9).fillColor(TEXT).text(f[1], cx, cy+10, {lineBreak:false});
     });
-    doc.y = y + 76;
+    return y + H + 6;
   }
 
-  // ── TABLA DE AMORTIZACIÓN ─────────────────────────────────
-  private drawScheduleTable(doc: PDFKit.PDFDocument, schedule: any[]) {
-    this.drawSectionTitle(doc, 'TABLA DE AMORTIZACIÓN');
-
+  private drawScheduleTable(doc: PDFKit.PDFDocument, y: number, schedule: any[]): number {
+    y = this.drawSectionTitle(doc, y, 'TABLA DE AMORTIZACIÓN');
     const cols = [
-      { label: '#',       width: 28,  align: 'center' as const },
-      { label: 'Vence',   width: 72,  align: 'center' as const },
-      { label: 'Cuota',   width: 72,  align: 'right'  as const },
-      { label: 'Capital', width: 72,  align: 'right'  as const },
-      { label: 'Interés', width: 72,  align: 'right'  as const },
-      { label: 'Saldo',   width: 80,  align: 'right'  as const },
+      {label:'#',      w:28,  align:'center' as const},
+      {label:'Vence',  w:72,  align:'center' as const},
+      {label:'Cuota',  w:72,  align:'right'  as const},
+      {label:'Capital',w:72,  align:'right'  as const},
+      {label:'Interés',w:72,  align:'right'  as const},
+      {label:'Saldo',  w:80,  align:'right'  as const},
     ];
-    const tableW = cols.reduce((s, c) => s + c.width, 0);
-    const tableX = (doc.page.width - tableW) / 2;
-    const rowH   = 16;
-    const headerH = 20;
+    const tW = cols.reduce((s,c)=>s+c.w,0);
+    const tX = (PW-tW)/2;
+    const rH = 16, hH = 20;
+    const contentBottom = PH - FOOTER_H - 20; // leave space for footer
 
-    const drawTableHeader = () => {
-      const hy = doc.y;
-      let cx = tableX;
-      doc.rect(tableX, hy, tableW, headerH).fill(COLORS.tableHead);
-      cols.forEach(col => {
-        doc.font(FONT.bold).fontSize(7.5).fillColor(COLORS.white)
-           .text(col.label, cx + 3, hy + 6, { width: col.width - 6, align: col.align, lineBreak: false });
-        cx += col.width;
+    const drawHead = (atY: number): number => {
+      let cx = tX;
+      doc.rect(tX, atY, tW, hH).fill(GREEN);
+      cols.forEach(c => {
+        doc.font(BB).fontSize(7.5).fillColor(WHITE)
+           .text(c.label, cx+3, atY+6, {width:c.w-6, align:c.align, lineBreak:false});
+        cx += c.w;
       });
-      doc.y = hy + headerH + 2;  // posición exacta tras cabecera
+      return atY + hH + 1;
     };
 
-    drawTableHeader();
+    y = drawHead(y);
 
     schedule.forEach((row, idx) => {
-      if (doc.y + rowH > doc.page.height - 60) {
+      // Check if we need a new page
+      if (y + rH > contentBottom) {
         doc.addPage();
-        drawTableHeader();
+        y = MT; // reset to top margin on new page
+        y = drawHead(y);
       }
-      const rowY = doc.y;
-      doc.rect(tableX, rowY, tableW, rowH)
-         .fill(idx % 2 === 1 ? COLORS.tableAlt : COLORS.white);
 
+      doc.rect(tX, y, tW, rH).fill(idx%2===1 ? ALT : WHITE);
       const cells = [
-        String(row.period),
-        this.formatDate(row.dueDate),
-        this.currency(row.payment),
-        this.currency(row.principal),
-        this.currency(row.interest),
-        this.currency(row.balance),
+        String(row.period), fdate(row.dueDate),
+        cur(row.payment), cur(row.principal), cur(row.interest), cur(row.balance),
       ];
-      let cx = tableX;
+      let cx = tX;
       cells.forEach((cell, ci) => {
-        doc.font(FONT.regular).fontSize(7.5).fillColor(COLORS.text)
-           .text(cell, cx + 3, rowY + 4, { width: cols[ci].width - 6, align: cols[ci].align, lineBreak: false });
-        cx += cols[ci].width;
+        doc.font(RB).fontSize(7.5).fillColor(TEXT)
+           .text(cell, cx+3, y+4, {width:cols[ci].w-6, align:cols[ci].align, lineBreak:false});
+        cx += cols[ci].w;
       });
-      doc.moveTo(tableX, rowY + rowH)
-         .lineTo(tableX + tableW, rowY + rowH)
-         .strokeColor(COLORS.border).lineWidth(0.3).stroke();
-      doc.y = rowY + rowH;
+      doc.moveTo(tX, y+rH).lineTo(tX+tW, y+rH).strokeColor(BORDER).lineWidth(0.3).stroke();
+      y += rH;
     });
-    // No moveDown al final — evita espacio extra que causa páginas en blanco
+
+    return y + 8;
   }
 
-  // ── FIRMAS ────────────────────────────────────────────────
-  private drawSignatureSection(
-    doc: PDFKit.PDFDocument,
-    customerName: string,
-    guarantorName?: string,
-  ) {
-    if (doc.y + 120 > doc.page.height - 60) doc.addPage();
-    this.drawSectionTitle(doc, 'FIRMAS');
-    const y = doc.y;
-    doc.font(FONT.regular).fontSize(7.5).fillColor(COLORS.gray)
+  private drawSignatureSection(doc: PDFKit.PDFDocument, y: number, customer: string, guarantor?: string) {
+    if (y + 110 > PH - FOOTER_H - 20) {
+      doc.addPage();
+      y = MT;
+    }
+    y = this.drawSectionTitle(doc, y, 'FIRMAS');
+    doc.font(RB).fontSize(7.5).fillColor(GRAY)
        .text('El acreditado declara haber leído y comprendido las condiciones del presente crédito.',
-         50, y, { width: doc.page.width - 100, align: 'justify' });
-    doc.moveDown(2.5);
-    const sigY = doc.y;
-    const sigW = (doc.page.width - 140) / 2;
+         ML, y, {width:PW-ML*2, align:'justify', lineBreak:false});
+    y += 44;
+    const sigW = (PW - ML*2 - 40) / 2;
+    doc.moveTo(ML, y).lineTo(ML+sigW, y).strokeColor(TEXT).lineWidth(0.7).stroke();
+    doc.font(BB).fontSize(7.5).fillColor(TEXT).text(customer.toUpperCase(), ML, y+4, {width:sigW,align:'center',lineBreak:false});
+    doc.font(RB).fontSize(7).fillColor(GRAY).text('FIRMA DEL ACREDITADO', ML, y+14, {width:sigW,align:'center',lineBreak:false});
 
-    doc.moveTo(50, sigY + 35).lineTo(50 + sigW, sigY + 35)
-       .strokeColor(COLORS.text).lineWidth(0.7).stroke();
-    doc.font(FONT.bold).fontSize(7.5).fillColor(COLORS.text)
-       .text(customerName.toUpperCase(), 50, sigY + 38, { width: sigW, align: 'center' });
-    doc.font(FONT.regular).fontSize(7).fillColor(COLORS.gray)
-       .text('FIRMA DEL ACREDITADO', 50, sigY + 50, { width: sigW, align: 'center' });
-
-    const rightX = 90 + sigW;
-    doc.moveTo(rightX, sigY + 35).lineTo(rightX + sigW, sigY + 35)
-       .strokeColor(COLORS.text).lineWidth(0.7).stroke();
-    if (guarantorName) {
-      doc.font(FONT.bold).fontSize(7.5).fillColor(COLORS.text)
-         .text(guarantorName.toUpperCase(), rightX, sigY + 38, { width: sigW, align: 'center' });
-      doc.font(FONT.regular).fontSize(7).fillColor(COLORS.gray)
-         .text('FIRMA DEL AVAL', rightX, sigY + 50, { width: sigW, align: 'center' });
+    const rx = ML + sigW + 40;
+    doc.moveTo(rx, y).lineTo(rx+sigW, y).strokeColor(TEXT).lineWidth(0.7).stroke();
+    if (guarantor) {
+      doc.font(BB).fontSize(7.5).fillColor(TEXT).text(guarantor.toUpperCase(), rx, y+4, {width:sigW,align:'center',lineBreak:false});
+      doc.font(RB).fontSize(7).fillColor(GRAY).text('FIRMA DEL AVAL', rx, y+14, {width:sigW,align:'center',lineBreak:false});
     } else {
-      doc.font(FONT.regular).fontSize(7).fillColor(COLORS.gray)
-         .text('FIRMA DEL EJECUTIVO / SELLO', rightX, sigY + 50, { width: sigW, align: 'center' });
+      doc.font(RB).fontSize(7).fillColor(GRAY).text('FIRMA DEL EJECUTIVO / SELLO', rx, y+14, {width:sigW,align:'center',lineBreak:false});
     }
-    doc.y = sigY + 70;
   }
 
-  // ── TÍTULO DE SECCIÓN ─────────────────────────────────────
-  private drawSectionTitle(doc: PDFKit.PDFDocument, title: string) {
-    const y = doc.y + 8;
-    doc.rect(50, y, 4, 14).fill(COLORS.accent);
-    doc.font(FONT.bold).fontSize(9).fillColor(COLORS.accentDark)
-       .text(title, 60, y + 2, { lineBreak: false });
-    const lineY = y + 16;
-    doc.moveTo(50, lineY).lineTo(doc.page.width - 50, lineY)
-       .strokeColor(COLORS.border).lineWidth(0.5).stroke();
-    doc.y = lineY + 6;  // posición exacta después del título
-  }
-
-  // ── PIE DE PÁGINA ─────────────────────────────────────────
-  private drawFooter(
-    doc: PDFKit.PDFDocument,
-    date: Date,
-    companyName: string,
-    legalFooter?: string,
-  ) {
-    // Dibuja el pie en la página actual — sin text() que desborde
-    const footerY = doc.page.height - 44;
-    const w = doc.page.width;
-    doc.rect(0, footerY - 4, w, 52).fill(COLORS.lightGray);
-
-    if (legalFooter) {
-      doc.font(FONT.regular).fontSize(6.5).fillColor(COLORS.gray)
-         .text(legalFooter, 50, footerY + 2,
-           { width: w - 100, align: 'center', lineBreak: false });
+  // ── FOOTER EN TODAS LAS PÁGINAS ───────────────────────────
+  private addFootersToAllPages(doc: PDFKit.PDFDocument, company: string, legal: string|undefined, date: Date) {
+    const range = (doc as any).bufferedPageRange();
+    for (let i = 0; i < range.count; i++) {
+      doc.switchToPage(range.start + i);
+      const fy = PH - FOOTER_H;
+      doc.rect(0, fy, PW, FOOTER_H).fill(LGRAY);
+      if (legal) {
+        doc.font(RB).fontSize(6.5).fillColor(GRAY)
+           .text(legal, ML, fy+4, {width:PW-ML*2, align:'center', lineBreak:false});
+      }
+      const infoY = fy + (legal ? 16 : 10);
+      doc.font(RB).fontSize(7).fillColor(GRAY)
+         .text(`${company} | ${fdate(date)}`, ML, infoY, {lineBreak:false});
+      doc.font(RB).fontSize(7).fillColor(GRAY)
+         .text(`Pág. ${i+1} de ${range.count}`, 0, infoY,
+           {width:PW-MR, align:'right', lineBreak:false});
     }
-
-    const textY = footerY + (legalFooter ? 16 : 8);
-    const label = `${companyName} | ${this.formatDate(date)}`;
-    doc.font(FONT.regular).fontSize(7).fillColor(COLORS.gray)
-       .text(label, 50, textY, { lineBreak: false });
-  }
-
-  // ── UTILIDADES ────────────────────────────────────────────
-  private currency(value: number | string | undefined): string {
-    const n = Number(value) || 0;
-    return `$${n.toLocaleString('es-MX', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
-  }
-
-  private formatDate(date: Date | string | undefined): string {
-    if (!date) return '—';
-    try {
-      const d = typeof date === 'string' ? new Date(date) : date;
-      return format(d, 'dd/MM/yyyy', { locale: es });
-    } catch { return String(date); }
   }
 }
