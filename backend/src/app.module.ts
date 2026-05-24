@@ -1,7 +1,6 @@
-import { Module, OnApplicationBootstrap } from '@nestjs/common';
+import { Module, OnApplicationBootstrap, NestModule, MiddlewareConsumer } from '@nestjs/common';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { TypeOrmModule } from '@nestjs/typeorm';
-import { ServeStaticModule } from '@nestjs/serve-static';
 import { ModuleRef } from '@nestjs/core';
 import { join } from 'path';
 import {
@@ -57,9 +56,10 @@ import { OverdueJobModule, OverdueJobService } from './jobs/overdue-job.module';
     DisbursementModule, ExpensesModule, OverdueJobModule,
   ],
 })
-export class AppModule implements OnApplicationBootstrap {
+export class AppModule implements OnApplicationBootstrap, NestModule {
   constructor(private moduleRef: ModuleRef) {}
 
+  // Corre al arrancar el servidor
   async onApplicationBootstrap() {
     try {
       const svc = this.moduleRef.get(OverdueJobService, { strict: false });
@@ -68,5 +68,17 @@ export class AppModule implements OnApplicationBootstrap {
     } catch (e: any) {
       console.warn('[OverdueJob] Error al iniciar:', e.message);
     }
+  }
+
+  // Middleware que corre el job una vez por día con cada petición
+  configure(consumer: MiddlewareConsumer) {
+    const moduleRef = this.moduleRef;
+    consumer.apply(async (req: any, res: any, next: () => void) => {
+      try {
+        const svc = moduleRef.get(OverdueJobService, { strict: false });
+        svc.runIfNeeded().catch(() => {}); // fire and forget
+      } catch {}
+      next();
+    }).forRoutes('*');
   }
 }
