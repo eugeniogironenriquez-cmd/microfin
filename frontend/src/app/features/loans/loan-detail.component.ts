@@ -297,9 +297,11 @@ export class LoanDetailComponent implements OnInit {
   downloadPlanPdf() {
     const l = this.loan();
     if (!l) return;
+    const totalRate = Number((l as any).totalRate || 0);
     this.pdfSvc.downloadPost('/loans/simulate/pdf', 'plan-pagos-' + l.id.substring(0,8) + '.pdf', {
       principalAmount: l.principalAmount,
-      interestRate:    l.interestRate,
+      interestRate:    totalRate > 0 ? 0 : l.interestRate,
+      totalRate:       totalRate > 0 ? totalRate : undefined,
       termWeeks:       l.termWeeks,
       frequency:       l.frequency,
       customerName:    l.customer?.fullName,

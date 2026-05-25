@@ -440,6 +440,7 @@ export class LoansService {
         id: loan.id,
         principalAmount:    Number(loan.principalAmount),
         interestRate:       Number(loan.interestRate),
+        totalRate:          Number((loan as any).totalRate || 0),
         termWeeks:          loan.termWeeks,
         frequency:          loan.frequency,
         periodicPayment:    Number(loan.periodicPayment),
