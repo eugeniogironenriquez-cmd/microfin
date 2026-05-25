@@ -258,45 +258,111 @@ export class PaymentsMonitorComponent implements OnInit, OnDestroy {
   }
 
   exportExcel() {
-    const rows = this.payments().map(p => ({
-      'Hora':       new Date(p.paymentDate).toLocaleTimeString('es-MX', { hour:'2-digit', minute:'2-digit' }),
-      'Cliente':    p.loan?.customer?.fullName || '—',
-      'Teléfono':   p.loan?.customer?.phone || '—',
-      'Monto':      Number(p.amountPaid),
-      'Capital':    Number(p.capitalApplied || 0),
-      'Interés':    Number(p.interestApplied || 0),
-      'Moratorio':  Number(p.lateInterestApplied || 0),
-      'Forma':      p.method,
-      'Folio':      p.receiptNumber || p.id?.substring(0,8).toUpperCase(),
-    }));
+    const fecha    = new Date().toISOString().split('T')[0];
+    const fechaLeg = new Date().toLocaleDateString('es-MX', { weekday:'long', year:'numeric', month:'long', day:'numeric' });
+    const cur      = (v: number) => '$' + v.toLocaleString('es-MX', { minimumFractionDigits:2, maximumFractionDigits:2 });
 
-    // Fila de totales
-    rows.push({
-      'Hora': 'TOTAL',
-      'Cliente': '',
-      'Teléfono': '',
-      'Monto':   this.totalCollected(),
-      'Capital': this.totalCapital(),
-      'Interés': this.totalInterest(),
-      'Moratorio': this.totalLate(),
-      'Forma': '',
-      'Folio': '',
-    });
+    const html = `
+      <html xmlns:o="urn:schemas-microsoft-com:office:office"
+            xmlns:x="urn:schemas-microsoft-com:office:excel"
+            xmlns="http://www.w3.org/TR/REC-html40">
+      <head><meta charset="UTF-8">
+      <!--[if gte mso 9]><xml><x:ExcelWorkbook><x:ExcelWorksheets>
+        <x:ExcelWorksheet><x:Name>Pagos del día</x:Name>
+        <x:WorksheetOptions><x:DisplayGridlines/></x:WorksheetOptions>
+        </x:ExcelWorksheet></x:ExcelWorksheets></x:ExcelWorkbook></xml><![endif]-->
+      <style>
+        body { font-family: Calibri, Arial, sans-serif; font-size: 11pt; }
+        .title {
+          background: #1C4532; color: #ffffff;
+          font-size: 16pt; font-weight: bold;
+          text-align: center; padding: 10px;
+        }
+        .subtitle {
+          background: #276749; color: #d1fae5;
+          font-size: 10pt; text-align: center; padding: 6px;
+        }
+        .meta {
+          background: #F0FFF4; color: #1C4532;
+          font-size: 9pt; text-align: center; padding: 4px;
+          border-bottom: 2px solid #1C4532;
+        }
+        .spacer { height: 8px; }
+        th {
+          background: #1C4532; color: #ffffff;
+          font-weight: bold; font-size: 10pt;
+          padding: 8px 10px; text-align: center;
+          border: 1px solid #0d2b1e;
+        }
+        td {
+          padding: 6px 10px; font-size: 10pt;
+          border: 1px solid #CBD5E0; vertical-align: middle;
+        }
+        .row-even { background: #F0FFF4; }
+        .row-odd  { background: #ffffff; }
+        .col-num  { text-align: right; font-family: Consolas, monospace; }
+        .col-mora { text-align: right; color: #DC2626; font-weight: 600; font-family: Consolas, monospace; }
+        .col-hora { text-align: center; font-weight: 600; color: #1C4532; }
+        .col-folio{ font-family: Consolas, monospace; font-size: 9pt; color: #718096; }
+        .totals td {
+          background: #1C4532; color: #ffffff;
+          font-weight: bold; font-size: 10pt;
+          border: 1px solid #0d2b1e;
+        }
+        .totals .col-label {
+          text-align: left; letter-spacing: 1px;
+        }
+        table { border-collapse: collapse; width: 100%; }
+      </style>
+      </head><body>
+      <table>
+        <tr><td colspan="9" class="title">REPORTE DE PAGOS DEL DÍA — MICROCAPITAL IXTEPEC</td></tr>
+        <tr><td colspan="9" class="subtitle">${fechaLeg}</td></tr>
+        <tr><td colspan="9" class="meta">
+          Total de pagos: ${this.payments().length} &nbsp;|&nbsp;
+          Total cobrado: ${cur(this.totalCollected())} &nbsp;|&nbsp;
+          Capital: ${cur(this.totalCapital())} &nbsp;|&nbsp;
+          Interés: ${cur(this.totalInterest())} &nbsp;|&nbsp;
+          Moratorio: ${cur(this.totalLate())}
+        </td></tr>
+        <tr class="spacer"><td colspan="9"></td></tr>
+        <tr>
+          <th>Hora</th><th>Cliente</th><th>Teléfono</th>
+          <th>Monto recibido</th><th>Capital</th><th>Interés</th>
+          <th>Moratorio</th><th>Forma de pago</th><th>Folio</th>
+        </tr>
+        ${this.payments().map((p, i) => `
+        <tr class="${i % 2 === 0 ? 'row-even' : 'row-odd'}">
+          <td class="col-hora">${new Date(p.paymentDate).toLocaleTimeString('es-MX',{hour:'2-digit',minute:'2-digit'})}</td>
+          <td><b>${p.loan?.customer?.fullName || '—'}</b></td>
+          <td>${p.loan?.customer?.phone || '—'}</td>
+          <td class="col-num">${cur(Number(p.amountPaid))}</td>
+          <td class="col-num">${cur(Number(p.capitalApplied||0))}</td>
+          <td class="col-num">${cur(Number(p.interestApplied||0))}</td>
+          <td class="${Number(p.lateInterestApplied||0) > 0 ? 'col-mora' : 'col-num'}">
+            ${Number(p.lateInterestApplied||0) > 0 ? cur(Number(p.lateInterestApplied)) : '—'}
+          </td>
+          <td style="text-align:center">${p.method || 'EFECTIVO'}</td>
+          <td class="col-folio">${p.receiptNumber || p.id?.substring(0,8).toUpperCase()}</td>
+        </tr>`).join('')}
+        <tr class="totals">
+          <td class="col-label" colspan="3">TOTALES</td>
+          <td class="col-num">${cur(this.totalCollected())}</td>
+          <td class="col-num">${cur(this.totalCapital())}</td>
+          <td class="col-num">${cur(this.totalInterest())}</td>
+          <td class="col-num">${cur(this.totalLate())}</td>
+          <td colspan="2"></td>
+        </tr>
+      </table>
+      </body></html>`;
 
-    const ws = XLSX.utils.json_to_sheet(rows);
-
-    // Ancho de columnas
-    ws['!cols'] = [
-      { wch:8 }, { wch:28 }, { wch:14 }, { wch:14 },
-      { wch:14 }, { wch:12 }, { wch:12 }, { wch:14 }, { wch:14 },
-    ];
-
-    const wb = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(wb, ws, 'Pagos del día');
-
-    const fecha = new Date().toISOString().split('T')[0];
-    XLSX.writeFile(wb, `pagos-${fecha}.xlsx`);
-
-    this.snackbar.open('Excel exportado', 'OK', { duration: 2000 });
+    const blob = new Blob([html], { type: 'application/vnd.ms-excel;charset=utf-8;' });
+    const url  = URL.createObjectURL(blob);
+    const a    = document.createElement('a');
+    a.href     = url;
+    a.download = `reporte-pagos-${fecha}.xls`;
+    a.click();
+    URL.revokeObjectURL(url);
+    this.snackbar.open('Reporte exportado correctamente', 'OK', { duration: 2000 });
   }
 }

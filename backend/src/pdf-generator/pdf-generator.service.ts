@@ -144,7 +144,7 @@ export class PdfGeneratorService {
       payment: Number(s.totalDue), principal: Number(s.principalDue),
       interest: Number(s.interestDue), balance: Number(s.balanceDue),
     })));
-    this.drawSignatureSection(doc, y, data.customer.fullName, data.guarantor?.fullName);
+    this.drawSignatureSection(doc, y, data.customer.fullName, data.guarantor?.fullName, data.legalFooter);
   }
 
   // ── DRAW FUNCTIONS (return next Y) ───────────────────────
@@ -311,7 +311,24 @@ export class PdfGeneratorService {
     return y + 8;
   }
 
-  private drawSignatureSection(doc: PDFKit.PDFDocument, y: number, customer: string, guarantor?: string) {
+  private drawSignatureSection(doc: PDFKit.PDFDocument, y: number, customer: string, guarantor?: string, legalText?: string) {
+    // Cuadro de texto legal en el cuerpo del contrato
+    if (legalText) {
+      if (y + 60 > PH - FOOTER_H - 20) { doc.addPage(); y = MT; }
+      y = this.drawSectionTitle(doc, y, 'INFORMACIÓN IMPORTANTE');
+      const lines = legalText.split('\n').filter(l => l.trim());
+      const boxH = Math.min(lines.length * 13 + 16, 120);
+      doc.rect(ML, y, PW - ML*2, boxH).fillAndStroke('#FFFBEB', '#FDE68A');
+      lines.forEach((line, li) => {
+        if (y + 12 + li*13 < y + boxH - 4) {
+          doc.font(RB).fontSize(7.5).fillColor(TEXT)
+             .text(line.trim(), ML + 10, y + 8 + li*13,
+               { width: PW - ML*2 - 20, lineBreak: false });
+        }
+      });
+      y += boxH + 8;
+    }
+
     if (y + 110 > PH - FOOTER_H - 20) {
       doc.addPage();
       y = MT;
@@ -455,20 +472,37 @@ export class PdfGeneratorService {
 
     for (let i = 0; i < total; i++) {
       doc.switchToPage(range.start + i);
-
-      // Dibujar footer con coordenadas absolutas fijas
       doc.save();
-      doc.rect(0, fy, PW, FOOTER_H).fill(LGRAY);
 
+      // Fondo del footer
+      doc.rect(0, fy, PW, FOOTER_H + (legal ? 20 : 0)).fill(LGRAY);
+
+      // Línea separadora superior
+      doc.moveTo(ML, fy + 2).lineTo(PW - MR, fy + 2)
+         .strokeColor(BORDER).lineWidth(0.5).stroke();
+
+      let textY = fy + 6;
+
+      // Texto legal — permitir hasta 2 líneas
       if (legal) {
         doc.font(RB).fontSize(6.5).fillColor(GRAY)
-           .text(legal, ML, fy + 4, { width: PW - ML*2, align: 'center', lineBreak: false });
+           .text(legal, ML, textY, {
+             width: PW - ML*2,
+             align: 'center',
+             lineBreak: true,
+             height: 18,
+             ellipsis: true,
+           });
+        textY += 20;
       }
 
-      const infoY = fy + (legal ? 16 : 10);
-      const label = `${company} | ${fdate(date)} | Pág. ${i+1}/${total}`;
+      // Empresa | fecha | página
+      const label = `${company}  |  Generado el ${fdate(date)}`;
       doc.font(RB).fontSize(7).fillColor(GRAY)
-         .text(label, ML, infoY, { lineBreak: false });
+         .text(label, ML, textY, { lineBreak: false });
+      doc.font(RB).fontSize(7).fillColor(GRAY)
+         .text(`Pág. ${i+1} / ${total}`, 0, textY,
+           { width: PW - MR, align: 'right', lineBreak: false });
 
       doc.restore();
     }
