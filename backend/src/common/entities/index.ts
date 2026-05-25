@@ -362,6 +362,9 @@ export class Loan {
   @Column({ name: 'tasa_interes', type: 'decimal', precision: 6, scale: 4 })
   interestRate: number;
 
+  @Column({ name: 'tasa_total', type: 'decimal', precision: 6, scale: 4, nullable: true, default: null })
+  totalRate: number;
+
   @Column({ name: 'plazo_semanas' })
   termWeeks: number;
 
@@ -797,4 +800,40 @@ export class Expense {
 
   @CreateDateColumn({ name: 'creado_en' })
   createdAt: Date;
+}
+
+// ─── RANGOS DE TASA ───────────────────────────────────────────
+@Entity('rangos_tasa')
+export class RangoTasa {
+  @PrimaryGeneratedColumn('uuid')
+  id: string;
+
+  @ManyToOne(() => LoanType, { onDelete: 'CASCADE' })
+  @JoinColumn({ name: 'tipo_prestamo_id' })
+  loanType: LoanType;
+
+  @Column({ name: 'tipo_prestamo_id' })
+  loanTypeId: string;
+
+  @Column({ name: 'monto_minimo', type: 'decimal', precision: 12, scale: 2 })
+  minAmount: number;
+
+  @Column({ name: 'monto_maximo', type: 'decimal', precision: 12, scale: 2 })
+  maxAmount: number;
+
+  @Column({ name: 'tasa_total', type: 'decimal', precision: 6, scale: 4 })
+  totalRate: number;
+
+  @Column({ name: 'periodos', type: 'json' })
+  periods: number[];
+
+  @Column({ name: 'activo', type: 'tinyint', width: 1, default: 1,
+    transformer: { to: (v: boolean) => v ? 1 : 0, from: (v: any) => Boolean(v) } })
+  isActive: boolean;
+
+  @CreateDateColumn({ name: 'creado_en' })
+  createdAt: Date;
+
+  @UpdateDateColumn({ name: 'actualizado_en' })
+  updatedAt: Date;
 }
