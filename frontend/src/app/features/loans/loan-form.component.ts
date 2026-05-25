@@ -15,7 +15,9 @@ import { MatDividerModule } from '@angular/material/divider';
 import { MatStepperModule } from '@angular/material/stepper';
 import { MatTableModule } from '@angular/material/table';
 import { MatChipsModule } from '@angular/material/chips';
+import { MatTooltipModule } from '@angular/material/tooltip';
 import { debounceTime, distinctUntilChanged, Subject } from 'rxjs';
+import { HttpClient, HttpHeaders } from '@angular/common/http';
 import { ApiService, Customer, LoanType, PagedResponse, Loan } from '../../core/index';
 import { PdfDownloadService } from '../../core/pdf-download.service';
 
@@ -34,7 +36,7 @@ function unidadPlazo(freq: string): string {
     MatCardModule, MatFormFieldModule, MatInputModule, MatSelectModule,
     MatButtonModule, MatIconModule, MatProgressSpinnerModule,
     MatSnackBarModule, MatAutocompleteModule, MatDividerModule,
-    MatStepperModule, MatTableModule, MatChipsModule,
+    MatStepperModule, MatTableModule, MatChipsModule, MatTooltipModule,
   ],
   template: `
     <div class="page-header">
@@ -274,16 +276,101 @@ function unidadPlazo(freq: string): string {
         </mat-card>
       </mat-step>
 
-      <!-- PASO 3 -->
+      <!-- PASO 3: DOCUMENTOS -->
+      <mat-step label="Documentos">
+        <mat-card>
+          <mat-card-header>
+            <mat-card-title><mat-icon>folder_open</mat-icon> Documentos de garantía</mat-card-title>
+            <mat-card-subtitle>Sube los documentos del cliente (opcional, puedes hacerlo después)</mat-card-subtitle>
+          </mat-card-header>
+          <mat-card-content>
+            @if (!createdLoan()) {
+              <div class="alert-box warning">
+                <mat-icon>warning</mat-icon>
+                <span>Primero completa los pasos anteriores.</span>
+              </div>
+            } @else {
+              <!-- Documento de garantía -->
+              <div class="garantia-section">
+                <div class="garantia-header">
+                  <mat-icon style="color:#1C4532;font-size:36px;width:36px;height:36px">home_work</mat-icon>
+                  <div>
+                    <h3 style="margin:0;font-size:16px;font-weight:700;color:#171923">Documento de garantía</h3>
+                    <p style="margin:4px 0 0;font-size:13px;color:#718096">
+                      Sube el documento que respalda el crédito: escritura de terreno, título de propiedad,
+                      factura de vehículo, contrato u otro bien como garantía.
+                    </p>
+                  </div>
+                </div>
+
+                <mat-form-field appearance="outline" class="w-full" style="margin:16px 0">
+                  <mat-label>Descripción del bien en garantía</mat-label>
+                  <textarea matInput rows="2"
+                            [value]="garantiaDesc()"
+                            (input)="garantiaDesc.set($any($event.target).value)"
+                            placeholder="Ej: Terreno ubicado en Calle Juárez #45, Col. Centro, Ixtepec, Oaxaca. Sup. 200m²">
+                  </textarea>
+                  <mat-hint>Describe brevemente el bien dado en garantía</mat-hint>
+                </mat-form-field>
+
+                @if (!uploadedDocs().has('garantia')) {
+                  <div class="upload-zone" (click)="docFileInput.click()">
+                    <mat-icon style="font-size:48px;width:48px;height:48px;color:#CBD5E0">cloud_upload</mat-icon>
+                    <p style="margin:8px 0 4px;font-weight:600;color:#4A5568">Haz clic para seleccionar el archivo</p>
+                    <p style="margin:0;font-size:12px;color:#718096">PDF, JPG, PNG — máximo 10 MB</p>
+                    <input #docFileInput type="file" accept=".pdf,.jpg,.jpeg,.png"
+                           style="display:none" (change)="uploadDoc('garantia', $event)">
+                  </div>
+                } @else {
+                  <div class="upload-success">
+                    <mat-icon style="color:#16A34A;font-size:32px;width:32px;height:32px">check_circle</mat-icon>
+                    <div>
+                      <div style="font-weight:700;color:#16A34A">Documento subido correctamente</div>
+                      <div style="font-size:12px;color:#718096">{{ uploadedFileName() }}</div>
+                    </div>
+                    <button mat-icon-button (click)="docFileInput2.click()" matTooltip="Reemplazar documento">
+                      <mat-icon>swap_horiz</mat-icon>
+                    </button>
+                    <input #docFileInput2 type="file" accept=".pdf,.jpg,.jpeg,.png"
+                           style="display:none" (change)="uploadDoc('garantia', $event)">
+                  </div>
+                }
+
+                @if (uploadingDoc() === 'garantia') {
+                  <div style="display:flex;align-items:center;gap:8px;margin-top:12px;color:#718096">
+                    <mat-spinner diameter="20"></mat-spinner>
+                    <span>Subiendo documento...</span>
+                  </div>
+                }
+              </div>
+
+              <div class="form-actions" style="margin-top:20px">
+                <button mat-stroked-button type="button" matStepperPrevious>Anterior</button>
+                <button mat-raised-button color="accent" type="button" matStepperNext>
+                  Continuar <mat-icon>arrow_forward</mat-icon>
+                </button>
+              </div>
+            }
+          </mat-card-content>
+        </mat-card>
+      </mat-step>
+
+      <!-- PASO 4: RESUMEN -->
       <mat-step label="Resumen">
         <mat-card>
-          <mat-card-header><mat-card-title>Solicitud enviada</mat-card-title></mat-card-header>
+          <mat-card-header><mat-card-title>Solicitud completada</mat-card-title></mat-card-header>
           <mat-card-content>
             @if (createdLoan()) {
               <div class="alert-box success" style="margin-bottom:16px">
                 <mat-icon>check_circle</mat-icon>
                 <span>Solicitud <strong>{{ createdLoan()!.id.substring(0,8).toUpperCase() }}</strong> creada.</span>
               </div>
+              @if (uploadedDocs().size > 0) {
+                <div class="alert-box info" style="margin-bottom:16px">
+                  <mat-icon>folder_open</mat-icon>
+                  <span>{{ uploadedDocs().size }} documento(s) adjunto(s) correctamente.</span>
+                </div>
+              }
               <div class="summary-actions">
                 <button mat-raised-button color="primary" (click)="downloadSimPdf()">
                   <mat-icon>picture_as_pdf</mat-icon> Plan de pagos
@@ -305,6 +392,7 @@ function unidadPlazo(freq: string): string {
 })
 export class LoanFormComponent implements OnInit {
   private api      = inject(ApiService);
+  private http     = inject(HttpClient);
   private fb       = inject(FormBuilder);
   private router   = inject(Router);
   private snackbar = inject(MatSnackBar);
@@ -326,7 +414,19 @@ export class LoanFormComponent implements OnInit {
   loadingHistory   = signal(false);
   customerSearch   = signal('');
   unidadActual     = signal('días');
-  historyCols = ['fecha', 'monto', 'plazo', 'estatus'];
+  historyCols  = ['fecha', 'monto', 'plazo', 'estatus'];
+  uploadedDocs = signal<Set<string>>(new Set());
+  uploadingDoc = signal<string | null>(null);
+
+  // Documento de garantía del crédito
+  readonly docTypes = [
+    { key: 'garantia', label: 'Documento de garantía', hint: 'Escritura de terreno, título de propiedad, factura de vehículo, etc.' },
+  ];
+  garantiaDesc     = signal('');  // descripción del bien en garantía
+  uploadedFileName = signal('');
+
+  // Referencias a inputs de archivo (uno por tipo)
+  fileInputs: Record<string, HTMLInputElement> = {};
 
   private searchSubject = new Subject<string>();
 
@@ -479,6 +579,39 @@ export class LoanFormComponent implements OnInit {
       error: (err) => {
         this.snackbar.open(err.error?.message?.[0] || 'Error', 'Cerrar', { duration: 5000 });
         this.saving.set(false);
+      },
+    });
+  }
+
+  uploadDoc(docType: string, event: Event) {
+    const file = (event.target as HTMLInputElement).files?.[0];
+    const loanId = this.createdLoan()?.id;
+    if (!file || !loanId) return;
+
+    this.uploadingDoc.set(docType);
+    const formData = new FormData();
+    formData.append('file', file);
+    formData.append('documentType', docType);
+    formData.append('fileName', file.name);
+    if (this.garantiaDesc()) formData.append('description', this.garantiaDesc());
+
+    const token = localStorage.getItem('access_token');
+    this.http.post(
+      `/api/v1/loans/${loanId}/documents`,
+      formData,
+      { headers: new HttpHeaders({ Authorization: `Bearer ${token}` }) }
+    ).subscribe({
+      next: () => {
+        const set = new Set(this.uploadedDocs());
+        set.add(docType);
+        this.uploadedDocs.set(set);
+        this.uploadedFileName.set(file.name);
+        this.uploadingDoc.set(null);
+        this.snackbar.open('Documento de garantía subido', 'OK', { duration: 2000 });
+      },
+      error: () => {
+        this.uploadingDoc.set(null);
+        this.snackbar.open('Error al subir el documento', 'Cerrar', { duration: 4000 });
       },
     });
   }

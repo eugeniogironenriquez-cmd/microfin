@@ -26,6 +26,7 @@ import { GuarantorModule }   from './guarantor/guarantor.module';
 import { DisbursementModule }from './disbursement/disbursement.module';
 import { ExpensesModule }    from './expenses/expenses.module';
 import { OverdueJobModule, OverdueJobService } from './jobs/overdue-job.module';
+import { LoanDocumentsModule } from './loan-documents/loan-documents.module';
 
 @Module({
   imports: [
@@ -53,7 +54,7 @@ import { OverdueJobModule, OverdueJobService } from './jobs/overdue-job.module';
     AuthModule, UsersModule, CustomersModule, LoansModule, PaymentsModule,
     CashModule, CollectionModule, ReportsModule, SettingsModule, RateRangesModule,
     CompanyModule, LateFeeRulesModule, LocationModule, GuarantorModule,
-    DisbursementModule, ExpensesModule, OverdueJobModule,
+    DisbursementModule, ExpensesModule, OverdueJobModule, LoanDocumentsModule,
   ],
 })
 export class AppModule implements OnApplicationBootstrap, NestModule {
