@@ -92,11 +92,14 @@ export class PaymentsService {
       await this.scheduleRepo.save(schedule);
     }
 
-    // Folio de comprobante
-    const [seqResult] = await this.dataSource.query(
-      'INSERT INTO secuencia_comprobantes (dummy) VALUES (1)'
+    // Folio de comprobante — basado en conteo de pagos del día
+    const todayStart = new Date(); todayStart.setHours(0,0,0,0);
+    const countResult = await this.dataSource.query(
+      'SELECT COUNT(*) as cnt FROM pagos WHERE fecha_pago >= ?', [todayStart]
     );
-    const receiptNumber = `REC-${String(seqResult?.insertId || Date.now()).padStart(6, '0')}`;
+    const seq = Number(countResult?.[0]?.cnt || 0) + 1;
+    const dateStr = new Date().toISOString().slice(0,10).replace(/-/g,'');
+    const receiptNumber = `REC-${dateStr}-${String(seq).padStart(4,'0')}`;
 
     const payment = this.paymentRepo.create({
       loanId: dto.loanId,
