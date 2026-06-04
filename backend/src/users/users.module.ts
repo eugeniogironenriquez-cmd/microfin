@@ -65,14 +65,14 @@ export class UsersService {
     }
 
     const hash = await bcrypt.hash(dto.password, 12);
-    const u = this.userRepo.create({
+    const u: User = this.userRepo.create({
       name: dto.name,
       email: dto.email,
       passwordHash: hash,
       role: roleEnum || UserRole.CAJERO,
-      ...(roleId ? { roleId } as any : {}),
-    });
-    const saved = await this.userRepo.save(u);
+      ...(roleId ? { roleId } : {}),
+    } as Partial<User>) as User;
+    const saved: User = await this.userRepo.save(u);
     return this.findOne(saved.id);
   }
 
