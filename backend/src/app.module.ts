@@ -8,9 +8,11 @@ import {
   PaymentSchedule, Payment, CollectionVisit, CollectorAssignment,
   CashSession, AuditLog, CompanySettings, LateFeeRule,
   State, Municipality, Guarantor, ExpenseCategory, Expense,
+  Role, Permiso,
 } from './common/entities';
 import { AuthModule }        from './auth/auth.module';
 import { UsersModule }       from './users/users.module';
+import { RolesModule }       from './roles/roles.module';
 import { CustomersModule }   from './customers/customers.module';
 import { LoansModule }       from './loans/loans.module';
 import { PaymentsModule }    from './payments/payments.module';
@@ -46,12 +48,13 @@ import { LoanDocumentsModule } from './loan-documents/loan-documents.module';
           PaymentSchedule, Payment, CollectionVisit, CollectorAssignment,
           CashSession, AuditLog, CompanySettings, LateFeeRule,
           State, Municipality, Guarantor, ExpenseCategory, Expense,
+          Role, Permiso,
         ],
         synchronize: false,
         logging: config.get('NODE_ENV') === 'development',
       }),
     }),
-    AuthModule, UsersModule, CustomersModule, LoansModule, PaymentsModule,
+    AuthModule, UsersModule, RolesModule, CustomersModule, LoansModule, PaymentsModule,
     CashModule, CollectionModule, ReportsModule, SettingsModule, RateRangesModule,
     CompanyModule, LateFeeRulesModule, LocationModule, GuarantorModule,
     DisbursementModule, ExpensesModule, OverdueJobModule, LoanDocumentsModule,

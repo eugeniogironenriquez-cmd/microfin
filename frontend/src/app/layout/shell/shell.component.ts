@@ -13,7 +13,7 @@ import { toSignal } from '@angular/core/rxjs-interop';
 import { map } from 'rxjs';
 import { AuthService } from '../../core/index';
 
-interface NavItem { label: string; icon: string; route: string; roles?: string[]; exact?: boolean; }
+interface NavItem { label: string; icon: string; route: string; perm?: string; exact?: boolean; }
 
 @Component({
   selector: 'app-shell',
@@ -36,7 +36,7 @@ interface NavItem { label: string; icon: string; route: string; roles?: string[]
             <mat-icon style="color:#4ade80;font-size:18px">person</mat-icon>
             <div class="user-info">
               <span class="user-name">{{ auth.user()?.name }}</span>
-              <span class="user-role">{{ auth.user()?.role }}</span>
+              <span class="user-role">{{ auth.user()?.roleName || auth.user()?.role }}</span>
             </div>
           </div>
         </div>
@@ -90,27 +90,33 @@ export class ShellComponent {
     this.breakpoint.observe([Breakpoints.Handset]).pipe(map(r => r.matches)),
     { initialValue: false },
   );
+
+  // Cada ítem se muestra según un permiso (perm). Sin perm = visible para todos.
   private readonly navItems: NavItem[] = [
-    { label: 'Dashboard',        icon: 'dashboard',              route: '/dashboard' },
-    { label: 'Cartera',          icon: 'account_balance_wallet', route: '/portfolio',       roles: ['ADMIN','CAJERO','AUTORIZADOR'] },
-    { label: 'Clientes',         icon: 'people',                 route: '/customers',       roles: ['ADMIN','CAJERO','AUTORIZADOR'] },
-    { label: 'Préstamos',        icon: 'attach_money',           route: '/loans',           roles: ['ADMIN','CAJERO','AUTORIZADOR'] },
-    { label: 'Pagos',            icon: 'payment',                route: '/payments',        exact: true },
-    { label: 'Monitor de pagos', icon: 'monitor',                route: '/payments/monitor',roles: ['ADMIN','CAJERO'] },
-    { label: 'Reestructuración', icon: 'refresh',                route: '/restructuring',   roles: ['ADMIN','AUTORIZADOR'] },
-    { label: 'Desembolso',       icon: 'payments',               route: '/disbursements',   roles: ['ADMIN','CAJERO'] },
-    { label: 'Cobranza',         icon: 'directions_bike',        route: '/collection' },
-    { label: 'Caja',             icon: 'point_of_sale',          route: '/cash',            roles: ['ADMIN','CAJERO'] },
-    { label: 'Gastos',           icon: 'receipt_long',           route: '/expenses',        roles: ['ADMIN','CAJERO'] },
-    { label: 'Reportes',         icon: 'bar_chart',              route: '/reports',         roles: ['ADMIN','CAJERO','AUTORIZADOR'] },
-    { label: 'Rpt. Ubicación',   icon: 'map',                    route: '/reports/location',roles: ['ADMIN','AUTORIZADOR'] },
-    { label: 'Configuración',    icon: 'settings',               route: '/settings',        roles: ['ADMIN'] },
-    { label: 'Empresa',          icon: 'business',               route: '/company',         roles: ['ADMIN'] },
-    { label: 'Moratorios',       icon: 'gavel',                  route: '/late-fee-rules',  roles: ['ADMIN'] },
-    { label: 'Usuarios',         icon: 'manage_accounts',        route: '/users',           roles: ['ADMIN'] },
+    { label: 'Dashboard',        icon: 'dashboard',              route: '/dashboard',        perm: 'dashboard.ver' },
+    { label: 'Cartera',          icon: 'account_balance_wallet', route: '/portfolio',        perm: 'cartera.ver' },
+    { label: 'Clientes',         icon: 'people',                 route: '/customers',        perm: 'clientes.ver' },
+    { label: 'Préstamos',        icon: 'attach_money',           route: '/loans',            perm: 'prestamos.ver' },
+    { label: 'Pagos',            icon: 'payment',                route: '/payments',         perm: 'pagos.ver', exact: true },
+    { label: 'Monitor de pagos', icon: 'monitor',                route: '/payments/monitor', perm: 'pagos.monitor' },
+    { label: 'Reestructuración', icon: 'refresh',                route: '/restructuring',    perm: 'prestamos.reestructurar' },
+    { label: 'Desembolso',       icon: 'payments',               route: '/disbursements',    perm: 'prestamos.desembolsar' },
+    { label: 'Cobranza',         icon: 'directions_bike',        route: '/collection',       perm: 'cobranza.ver' },
+    { label: 'Caja',             icon: 'point_of_sale',          route: '/cash',             perm: 'caja.ver' },
+    { label: 'Gastos',           icon: 'receipt_long',           route: '/expenses',         perm: 'gastos.ver' },
+    { label: 'Reportes',         icon: 'bar_chart',              route: '/reports',          perm: 'reportes.ver' },
+    { label: 'Rpt. Ubicación',   icon: 'map',                    route: '/reports/location', perm: 'reportes.ubicacion' },
+    { label: 'Configuración',    icon: 'settings',               route: '/settings',         perm: 'config.ver' },
+    { label: 'Empresa',          icon: 'business',               route: '/company',          perm: 'empresa.editar' },
+    { label: 'Moratorios',       icon: 'gavel',                  route: '/late-fee-rules',   perm: 'moratorios.editar' },
+    { label: 'Usuarios',         icon: 'manage_accounts',        route: '/users',            perm: 'usuarios.ver' },
+    { label: 'Roles y permisos', icon: 'admin_panel_settings',   route: '/roles',            perm: 'roles.ver' },
   ];
+
   visibleNavItems = computed(() => {
-    const role = this.auth.role();
-    return this.navItems.filter(item => !item.roles || !role || item.roles.includes(role));
+    // Forzar reactividad al usuario actual
+    const u = this.auth.user();
+    if (!u) return [];
+    return this.navItems.filter(item => !item.perm || this.auth.can(item.perm));
   });
 }

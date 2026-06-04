@@ -44,18 +44,24 @@ import { ApiService } from '../../core/index';
             <mat-form-field appearance="outline" class="w-full">
               <mat-label>Contraseña *</mat-label>
               <input matInput type="password" formControlName="password">
-              <mat-hint>Mínimo 8 chars, una mayúscula y un número</mat-hint>
+              <mat-hint>Mínimo 8 caracteres</mat-hint>
             </mat-form-field>
           }
 
           <mat-form-field appearance="outline" class="w-full">
             <mat-label>Rol *</mat-label>
-            <mat-select formControlName="role">
-              <mat-option value="ADMIN">Administrador</mat-option>
-              <mat-option value="CAJERO">Cajero</mat-option>
-              <mat-option value="AUTORIZADOR">Autorizador</mat-option>
-              <mat-option value="COBRADOR">Cobrador</mat-option>
+            <mat-select formControlName="roleId">
+              @if (loadingRoles()) {
+                <mat-option disabled>Cargando roles...</mat-option>
+              }
+              @for (r of roles(); track r.id) {
+                <mat-option [value]="r.id">
+                  {{ r.name }}
+                  @if (r.isAdmin) { (acceso total) }
+                </mat-option>
+              }
             </mat-select>
+            <mat-hint>Define qué permisos tendrá el usuario</mat-hint>
           </mat-form-field>
 
           <div class="form-actions">
@@ -80,22 +86,46 @@ export class UserFormComponent implements OnInit {
 
   isEdit = signal(false);
   saving = signal(false);
+  roles = signal<any[]>([]);
+  loadingRoles = signal(true);
 
   form = this.fb.group({
     name: ['', Validators.required],
     email: ['', [Validators.required, Validators.email]],
     password: [''],
-    role: ['CAJERO', Validators.required],
+    roleId: ['', Validators.required],
   });
 
   ngOnInit() {
+    // Cargar roles dinámicos
+    this.api.get<any[]>('/roles').subscribe({
+      next: (data) => {
+        this.roles.set(data.filter(r => r.isActive !== false));
+        this.loadingRoles.set(false);
+        // Si es alta nueva, preseleccionar el rol CAJERO si existe
+        if (!this.isEdit()) {
+          const cajero = this.roles().find(r => r.name === 'CAJERO');
+          if (cajero) this.form.patchValue({ roleId: cajero.id });
+        }
+      },
+      error: () => this.loadingRoles.set(false),
+    });
+
     const id = this.route.snapshot.paramMap.get('id');
     if (id) {
       this.isEdit.set(true);
       this.form.get('password')?.clearValidators();
-      this.api.get<any>(`/users/${id}`).subscribe((u) => this.form.patchValue(u));
+      this.form.get('password')?.updateValueAndValidity();
+      this.api.get<any>(`/users/${id}`).subscribe((u) => {
+        this.form.patchValue({
+          name: u.name,
+          email: u.email,
+          roleId: u.roleId || '',
+        });
+      });
     } else {
       this.form.get('password')?.setValidators([Validators.required, Validators.minLength(8)]);
+      this.form.get('password')?.updateValueAndValidity();
     }
   }
 
@@ -103,16 +133,25 @@ export class UserFormComponent implements OnInit {
     if (this.form.invalid) { this.form.markAllAsTouched(); return; }
     this.saving.set(true);
     const id = this.route.snapshot.paramMap.get('id');
+    const body: any = {
+      name: this.form.value.name,
+      roleId: this.form.value.roleId,
+    };
+    if (!id) {
+      body.email = this.form.value.email;
+      body.password = this.form.value.password;
+    }
+
     const req = id
-      ? this.api.put<any>(`/users/${id}`, this.form.value)
-      : this.api.post<any>('/users', this.form.value);
+      ? this.api.put<any>(`/users/${id}`, body)
+      : this.api.post<any>('/users', body);
     req.subscribe({
       next: () => {
         this.snackbar.open(this.isEdit() ? 'Usuario actualizado' : 'Usuario creado', 'OK', { duration: 3000 });
         this.router.navigate(['/users']);
       },
       error: (err) => {
-        this.snackbar.open(err.error?.message?.[0] || 'Error', 'Cerrar', { duration: 5000 });
+        this.snackbar.open(err.error?.message?.[0] || err.error?.message || 'Error', 'Cerrar', { duration: 5000 });
         this.saving.set(false);
       },
     });

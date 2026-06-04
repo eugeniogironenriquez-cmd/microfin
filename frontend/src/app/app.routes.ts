@@ -1,6 +1,6 @@
 import { Routes } from '@angular/router';
 import { authGuard } from './core/guards/auth.guard';
-import { roleGuard } from './core/guards/role.guard';
+import { roleGuard, permissionGuard } from './core/guards/role.guard';
 
 export const routes: Routes = [
   {
@@ -14,22 +14,24 @@ export const routes: Routes = [
     children: [
       { path: '', redirectTo: 'dashboard', pathMatch: 'full' },
       { path: 'dashboard', loadComponent: () => import('./features/dashboard/dashboard.component').then((m) => m.DashboardComponent) },
-      { path: 'customers', loadChildren: () => import('./features/customers/customers.routes').then((m) => m.customersRoutes) },
-      { path: 'loans', loadChildren: () => import('./features/loans/loans.routes').then((m) => m.loansRoutes) },
-      { path: 'payments', loadChildren: () => import('./features/payments/payments.routes').then((m) => m.paymentsRoutes) },
-      { path: 'restructuring', loadChildren: () => import('./features/restructuring/restructuring.routes').then((m) => m.restructuringRoutes), canActivate: [roleGuard(['ADMIN', 'AUTORIZADOR'])] },
-      { path: 'collection', loadChildren: () => import('./features/collection/collection.routes').then((m) => m.collectionRoutes) },
-      { path: 'cash', loadChildren: () => import('./features/cash/cash.routes').then((m) => m.cashRoutes), canActivate: [roleGuard(['ADMIN', 'CAJERO'])] },
-      { path: 'reports', loadChildren: () => import('./features/reports/reports.routes').then((m) => m.reportsRoutes) },
-      { path: 'settings', loadChildren: () => import('./features/settings/settings.routes').then((m) => m.settingsRoutes), canActivate: [roleGuard(['ADMIN'])] },
-      { path: 'users', loadChildren: () => import('./features/users/users.routes').then((m) => m.usersRoutes), canActivate: [roleGuard(['ADMIN'])] },
+      { path: 'customers', loadChildren: () => import('./features/customers/customers.routes').then((m) => m.customersRoutes), canActivate: [permissionGuard(['clientes.ver'])] },
+      { path: 'loans', loadChildren: () => import('./features/loans/loans.routes').then((m) => m.loansRoutes), canActivate: [permissionGuard(['prestamos.ver'])] },
+      { path: 'payments', loadChildren: () => import('./features/payments/payments.routes').then((m) => m.paymentsRoutes), canActivate: [permissionGuard(['pagos.ver'])] },
+      { path: 'restructuring', loadChildren: () => import('./features/restructuring/restructuring.routes').then((m) => m.restructuringRoutes), canActivate: [permissionGuard(['prestamos.reestructurar'])] },
+      { path: 'collection', loadChildren: () => import('./features/collection/collection.routes').then((m) => m.collectionRoutes), canActivate: [permissionGuard(['cobranza.ver'])] },
+      { path: 'cash', loadChildren: () => import('./features/cash/cash.routes').then((m) => m.cashRoutes), canActivate: [permissionGuard(['caja.ver'])] },
+      { path: 'reports', loadChildren: () => import('./features/reports/reports.routes').then((m) => m.reportsRoutes), canActivate: [permissionGuard(['reportes.ver'])] },
+      { path: 'settings', loadChildren: () => import('./features/settings/settings.routes').then((m) => m.settingsRoutes), canActivate: [permissionGuard(['config.ver'])] },
+      { path: 'users', loadChildren: () => import('./features/users/users.routes').then((m) => m.usersRoutes), canActivate: [permissionGuard(['usuarios.ver'])] },
+      // Gestión de roles y permisos
+      { path: 'roles', loadChildren: () => import('./features/roles/roles.routes').then((m) => m.ROLES_ROUTES), canActivate: [permissionGuard(['roles.ver'])] },
       // Nuevas rutas — DENTRO del shell para conservar el sidebar
-      { path: 'portfolio', loadComponent: () => import('./features/portfolio/portfolio.component').then(m => m.PortfolioComponent) },
-      { path: 'company', loadComponent: () => import('./features/settings/company-settings.component').then(m => m.CompanySettingsComponent) },
-      { path: 'late-fee-rules', loadComponent: () => import('./features/settings/late-fee-rules.component').then(m => m.LateFeeRulesComponent) },
-      { path: 'disbursements', loadComponent: () => import('./features/disbursements/disbursements.component').then(m => m.DisbursementsComponent) },
-      { path: 'reports/location', loadComponent: () => import('./features/reports/location-report.component').then(m => m.LocationReportComponent) },
-      { path: 'expenses', loadComponent: () => import('./features/expenses/expenses.component').then(m => m.ExpensesComponent) },
+      { path: 'portfolio', loadComponent: () => import('./features/portfolio/portfolio.component').then(m => m.PortfolioComponent), canActivate: [permissionGuard(['cartera.ver'])] },
+      { path: 'company', loadComponent: () => import('./features/settings/company-settings.component').then(m => m.CompanySettingsComponent), canActivate: [permissionGuard(['empresa.editar'])] },
+      { path: 'late-fee-rules', loadComponent: () => import('./features/settings/late-fee-rules.component').then(m => m.LateFeeRulesComponent), canActivate: [permissionGuard(['moratorios.editar'])] },
+      { path: 'disbursements', loadComponent: () => import('./features/disbursements/disbursements.component').then(m => m.DisbursementsComponent), canActivate: [permissionGuard(['prestamos.desembolsar'])] },
+      { path: 'reports/location', loadComponent: () => import('./features/reports/location-report.component').then(m => m.LocationReportComponent), canActivate: [permissionGuard(['reportes.ubicacion'])] },
+      { path: 'expenses', loadComponent: () => import('./features/expenses/expenses.component').then(m => m.ExpensesComponent), canActivate: [permissionGuard(['gastos.ver'])] },
       { path: '**', redirectTo: 'dashboard' },
     ],
   },
