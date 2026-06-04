@@ -107,20 +107,9 @@ const GIROS = [
             </mat-form-field>
 
             <mat-form-field appearance="outline">
-              <mat-label>RFC</mat-label>
-              <input matInput formControlName="rfc" placeholder="GARL900101ABC"
-                     style="text-transform:uppercase">
-            </mat-form-field>
-
-            <mat-form-field appearance="outline">
               <mat-label>Teléfono *</mat-label>
               <input matInput formControlName="phone" placeholder="5512345678" maxlength="10">
               <mat-error>10 dígitos requeridos</mat-error>
-            </mat-form-field>
-
-            <mat-form-field appearance="outline">
-              <mat-label>Correo electrónico</mat-label>
-              <input matInput type="email" formControlName="email">
             </mat-form-field>
 
             <mat-form-field appearance="outline">
@@ -152,9 +141,10 @@ const GIROS = [
             }
 
             <mat-form-field appearance="outline">
-              <mat-label>Ingreso mensual estimado</mat-label>
-              <input matInput type="number" formControlName="monthlyIncome">
+              <mat-label>Ingreso promedio diario</mat-label>
+              <input matInput type="number" formControlName="dailyIncome">
               <span matPrefix>$&nbsp;</span>
+              <mat-hint>Promedio de ingresos por día</mat-hint>
             </mat-form-field>
           </div>
 
@@ -294,14 +284,12 @@ export class CustomerFormComponent implements OnInit, AfterViewChecked {
     fullName:         ['', Validators.required],
     curp:             ['', [Validators.required,
                        Validators.pattern(/^[A-Z]{4}\d{6}[HM][A-Z]{5}[A-Z0-9]\d$/)]],
-    rfc:              [''],
     phone:            ['', [Validators.required, Validators.pattern(/^\d{10}$/)]],
-    email:            ['', Validators.email],
     birthDate:        [''],
     occupation:       [''],
     businessType:     [''],
     businessTypeOther:[''],
-    monthlyIncome:    [null as number | null],
+    dailyIncome:      [null as number | null],
     notes:            [''],
     address: this.fb.group({
       street:      [''],
@@ -341,13 +329,11 @@ export class CustomerFormComponent implements OnInit, AfterViewChecked {
     this.municipalities.set([]);
     this.form.get('address.municipality')?.setValue('');
     if (!stateName) return;
-    // Buscar el id del estado por nombre
     const state = this.states().find(s => s.name === stateName);
     if (state) this.loadMunicipalities(stateName, state.id);
   }
 
   loadMunicipalities(stateName: string, stateId?: number) {
-    // Si no tenemos el id, buscarlo
     const id = stateId ?? this.states().find(s => s.name === stateName)?.id;
     if (!id) return;
     this.loadingMunicipalities.set(true);
@@ -382,14 +368,12 @@ export class CustomerFormComponent implements OnInit, AfterViewChecked {
       );
       this.streamAttached = false;
       this.cameraActive.set(true);
-      // srcObject se asigna en ngAfterViewChecked cuando el <video> ya existe en el DOM
     } catch {
       this.snackbar.open('No se pudo acceder a la cámara', 'Cerrar', { duration: 4000 });
     }
   }
 
   ngAfterViewChecked() {
-    // Asigna el stream al elemento <video> en cuanto Angular lo renderice
     if (this.cameraActive() && this.videoStream && !this.streamAttached && this.videoElRef) {
       this.videoElRef.nativeElement.srcObject = this.videoStream;
       this.videoElRef.nativeElement.play().catch(() => {});
@@ -429,7 +413,7 @@ export class CustomerFormComponent implements OnInit, AfterViewChecked {
         const url = URL.createObjectURL(blob);
         this.photoPreview.set(url);
       },
-      error: () => {}, // sin foto, no mostrar nada
+      error: () => {},
     });
   }
 

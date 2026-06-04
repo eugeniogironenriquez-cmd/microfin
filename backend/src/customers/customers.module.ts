@@ -13,7 +13,7 @@ import { existsSync, mkdirSync } from 'fs';
 import { Customer, CustomerDocument, CustomerStatus, Loan, UserRole } from '../common/entities';
 import { Auth, CurrentUser } from '../common/guards/roles.guard';
 
-// ── SERVICE ──────────────────────────────────────────────────
+// ── SERVICE ──────────────────────────────
 @Injectable()
 export class CustomersService {
   constructor(
@@ -34,7 +34,7 @@ export class CustomersService {
 
     if (search) {
       qb.andWhere(
-        '(c.nombre_completo LIKE :s OR c.curp LIKE :s OR c.telefono LIKE :s OR c.correo LIKE :s)',
+        '(c.nombre_completo LIKE :s OR c.curp LIKE :s OR c.telefono LIKE :s)',
         { s: `%${search}%` },
       );
     }
@@ -56,7 +56,6 @@ export class CustomersService {
   }
 
   async create(dto: Partial<Customer>, userId: string): Promise<Customer> {
-    // Validar unicidad
     const checks: Promise<string | null>[] = [];
 
     if (dto.curp) {
@@ -133,7 +132,7 @@ export class CustomersService {
   }
 }
 
-// ── MULTER CONFIG ─────────────────────────────────────────────
+// ── MULTER CONFIG ──────────────────────────
 const documentStorage = diskStorage({
   destination: (req, file, cb) => {
     const dir = join(process.env.UPLOAD_DEST || './uploads', 'documentos');
@@ -158,7 +157,7 @@ const photoStorage = diskStorage({
   },
 });
 
-// ── CONTROLLER ───────────────────────────────────────────────
+// ── CONTROLLER ───────────────────────────
 @ApiTags('customers')
 @ApiBearerAuth()
 @Controller('customers')
@@ -278,7 +277,7 @@ export class CustomersController {
   }
 }
 
-// ── MODULE ───────────────────────────────────────────────────
+// ── MODULE ─────────────────────────────
 @Module({
   imports: [TypeOrmModule.forFeature([Customer, CustomerDocument, Loan])],
   providers: [CustomersService],

@@ -182,6 +182,9 @@ export class Customer {
 
   @Column({ name: 'ingreso_mensual', type: 'decimal', precision: 12, scale: 2, nullable: true })
   monthlyIncome: number;
+ 
+  @Column({ name: 'ingreso_diario', type: 'decimal', precision: 12, scale: 2, nullable: true })
+  dailyIncome: number;
 
   @Column({ name: 'notas', type: 'text', nullable: true })
   notes: string;
