@@ -53,6 +53,61 @@ export enum CustomerStatus {
   LISTA_NEGRA = 'LISTA_NEGRA',
 }
 
+// ============================================================
+// ENTIDADES DEL SISTEMA DE ROLES Y PERMISOS
+// Agregar al final de common/entities/index.ts
+// ============================================================
+
+
+// ─── ROL ──────────────────────────────────────────────────────
+@Entity('roles')
+export class Role {
+  @PrimaryGeneratedColumn('uuid')
+  id: string;
+
+  @Column({ name: 'nombre', length: 50, unique: true })
+  name: string;
+
+  @Column({ name: 'descripcion', length: 255, nullable: true })
+  description: string;
+
+  @Column({ name: 'es_sistema', type: 'tinyint', width: 1, default: 0,
+    transformer: { to: (v: boolean) => v ? 1 : 0, from: (v: any) => Boolean(v) } })
+  isSystem: boolean;
+
+  @Column({ name: 'es_admin', type: 'tinyint', width: 1, default: 0,
+    transformer: { to: (v: boolean) => v ? 1 : 0, from: (v: any) => Boolean(v) } })
+  isAdmin: boolean;
+
+  @Column({ name: 'activo', type: 'tinyint', width: 1, default: 1,
+    transformer: { to: (v: boolean) => v ? 1 : 0, from: (v: any) => Boolean(v) } })
+  isActive: boolean;
+
+  @CreateDateColumn({ name: 'creado_en' })
+  createdAt: Date;
+
+  @ManyToMany(() => Permiso, { eager: true })
+  @JoinTable({
+    name: 'roles_permisos',
+    joinColumn: { name: 'rol_id', referencedColumnName: 'id' },
+    inverseJoinColumn: { name: 'permiso_clave', referencedColumnName: 'key' },
+  })
+  permissions: Permiso[];
+}
+
+// ─── PERMISO (catálogo) ───────────────────────────────────────
+@Entity('permisos')
+export class Permiso {
+  @PrimaryColumn({ name: 'clave', length: 60 })
+  key: string;
+
+  @Column({ name: 'modulo', length: 50 })
+  module: string;
+
+  @Column({ name: 'accion', length: 50 })
+  action: string;
+}
+
 // ─── 1. USUARIOS ─────────────────────────────────────────────
 @Entity('usuarios')
 export class User {
@@ -849,57 +904,3 @@ export class RangoTasa {
   updatedAt: Date;
 }
 
-// ============================================================
-// ENTIDADES DEL SISTEMA DE ROLES Y PERMISOS
-// Agregar al final de common/entities/index.ts
-// ============================================================
-
-
-// ─── ROL ──────────────────────────────────────────────────────
-@Entity('roles')
-export class Role {
-  @PrimaryGeneratedColumn('uuid')
-  id: string;
-
-  @Column({ name: 'nombre', length: 50, unique: true })
-  name: string;
-
-  @Column({ name: 'descripcion', length: 255, nullable: true })
-  description: string;
-
-  @Column({ name: 'es_sistema', type: 'tinyint', width: 1, default: 0,
-    transformer: { to: (v: boolean) => v ? 1 : 0, from: (v: any) => Boolean(v) } })
-  isSystem: boolean;
-
-  @Column({ name: 'es_admin', type: 'tinyint', width: 1, default: 0,
-    transformer: { to: (v: boolean) => v ? 1 : 0, from: (v: any) => Boolean(v) } })
-  isAdmin: boolean;
-
-  @Column({ name: 'activo', type: 'tinyint', width: 1, default: 1,
-    transformer: { to: (v: boolean) => v ? 1 : 0, from: (v: any) => Boolean(v) } })
-  isActive: boolean;
-
-  @CreateDateColumn({ name: 'creado_en' })
-  createdAt: Date;
-
-  @ManyToMany(() => Permiso, { eager: true })
-  @JoinTable({
-    name: 'roles_permisos',
-    joinColumn: { name: 'rol_id', referencedColumnName: 'id' },
-    inverseJoinColumn: { name: 'permiso_clave', referencedColumnName: 'key' },
-  })
-  permissions: Permiso[];
-}
-
-// ─── PERMISO (catálogo) ───────────────────────────────────────
-@Entity('permisos')
-export class Permiso {
-  @PrimaryColumn({ name: 'clave', length: 60 })
-  key: string;
-
-  @Column({ name: 'modulo', length: 50 })
-  module: string;
-
-  @Column({ name: 'accion', length: 50 })
-  action: string;
-}
