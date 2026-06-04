@@ -115,6 +115,9 @@ const GIROS = [
             <mat-form-field appearance="outline">
               <mat-label>Fecha de nacimiento</mat-label>
               <input matInput type="date" formControlName="birthDate">
+              @if (edad()) {
+                <mat-hint>Edad: {{ edad() }} años</mat-hint>
+              }
             </mat-form-field>
 
             <mat-form-field appearance="outline">
@@ -279,6 +282,7 @@ export class CustomerFormComponent implements OnInit, AfterViewChecked {
   private videoStream: MediaStream | null = null;
   private streamAttached = false;
   giros = GIROS;
+  edad = signal<number | null>(null);
 
   form = this.fb.group({
     fullName:         ['', Validators.required],
@@ -303,6 +307,10 @@ export class CustomerFormComponent implements OnInit, AfterViewChecked {
 
   ngOnInit() {
     this.loadStates();
+    // Calcular edad en tiempo real al cambiar la fecha de nacimiento
+    this.form.get('birthDate')?.valueChanges.subscribe((val) => {
+      this.edad.set(this.calcAge(val));
+    });
     const id = this.route.snapshot.paramMap.get('id');
     if (id) {
       this.isEdit.set(true);
@@ -415,6 +423,17 @@ export class CustomerFormComponent implements OnInit, AfterViewChecked {
       },
       error: () => {},
     });
+  }
+
+  calcAge(birthDate: any): number | null {
+    if (!birthDate) return null;
+    const birth = new Date(birthDate);
+    if (isNaN(birth.getTime())) return null;
+    const today = new Date();
+    let age = today.getFullYear() - birth.getFullYear();
+    const m = today.getMonth() - birth.getMonth();
+    if (m < 0 || (m === 0 && today.getDate() < birth.getDate())) age--;
+    return age >= 0 ? age : null;
   }
 
   save() {

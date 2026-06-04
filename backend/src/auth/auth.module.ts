@@ -13,7 +13,28 @@ import { ApiTags, ApiBearerAuth } from '@nestjs/swagger';
 import { AuthGuard } from '@nestjs/passport';
 import { ExtractJwt, Strategy } from 'passport-jwt';
 import * as bcrypt from 'bcrypt';
-import { User } from '../common/entities';
+import { User, Role } from '../common/entities';
+
+// ── HELPER: arma el objeto user con rol + permisos ───────────
+function buildUserContext(user: User): any {
+  const roleEntity: Role | undefined = (user as any).roleEntity;
+  const isAdmin = !!roleEntity?.isAdmin;
+  const roleName = roleEntity?.name || (user as any).role || null;
+  // Si es super admin, no hace falta listar permisos (el guard lo deja pasar)
+  const permissions = isAdmin
+    ? ['*']
+    : (roleEntity?.permissions || []).map((p) => p.key);
+  return {
+    id: user.id,
+    email: user.email,
+    name: user.name,
+    role: (user as any).role,   // enum legacy (compatibilidad)
+    roleId: (user as any).roleId || null,
+    roleName,
+    isAdmin,
+    permissions,
+  };
+}
 
 // ── JWT STRATEGY ─────────────────────────────────────────────
 @Injectable()
@@ -31,9 +52,10 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
   }
 
   async validate(payload: { sub: string; email: string; role: string }) {
+    // roleEntity es eager → carga rol + permisos automáticamente
     const user = await this.userRepo.findOne({ where: { id: payload.sub } });
     if (!user || !user.isActive) throw new UnauthorizedException('Usuario no autorizado');
-    return { id: user.id, email: user.email, role: user.role, name: user.name };
+    return buildUserContext(user);
   }
 }
 
@@ -50,6 +72,8 @@ export class AuthService {
     const user = await this.userRepo
       .createQueryBuilder('u')
       .addSelect('u.passwordHash')
+      .leftJoinAndSelect('u.roleEntity', 'rol')
+      .leftJoinAndSelect('rol.permissions', 'permisos')
       .where('u.email = :email', { email })
       .getOne();
 
@@ -66,10 +90,15 @@ export class AuthService {
     user.lastLoginAt = new Date();
     await this.userRepo.save(user);
 
+    const ctx = buildUserContext(user);
     return {
       accessToken: tokens.accessToken,
       refreshToken: tokens.refreshToken,
-      user: { id: user.id, email: user.email, name: user.name, role: user.role },
+      user: {
+        id: ctx.id, email: ctx.email, name: ctx.name,
+        role: ctx.role, roleId: ctx.roleId, roleName: ctx.roleName,
+        isAdmin: ctx.isAdmin, permissions: ctx.permissions,
+      },
     };
   }
 
@@ -103,7 +132,7 @@ export class AuthService {
   }
 
   private async generateTokens(user: User) {
-    const payload = { sub: user.id, email: user.email, role: user.role };
+    const payload = { sub: user.id, email: user.email, role: (user as any).role };
     const secret = this.config.get('JWT_SECRET') || process.env.JWT_SECRET;
     const refreshSecret = this.config.get('JWT_REFRESH_SECRET') || process.env.JWT_REFRESH_SECRET;
     const [accessToken, refreshToken] = await Promise.all([
@@ -151,7 +180,7 @@ export class AuthController {
 // ── AUTH MODULE ──────────────────────────────────────────────
 @Module({
   imports: [
-    TypeOrmModule.forFeature([User]),
+    TypeOrmModule.forFeature([User, Role]),
     PassportModule.register({ defaultStrategy: 'jwt' }),
     JwtModule.registerAsync({
       inject: [ConfigService],

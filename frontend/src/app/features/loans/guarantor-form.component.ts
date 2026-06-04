@@ -46,20 +46,20 @@ import { ApiService } from '../../core/index';
                 <input matInput formControlName="curp" style="text-transform:uppercase">
               </mat-form-field>
 
-              <mat-form-field appearance="outline">
+              <!--<mat-form-field appearance="outline">
                 <mat-label>RFC</mat-label>
                 <input matInput formControlName="rfc" style="text-transform:uppercase">
-              </mat-form-field>
+              </mat-form-field>-->
 
               <mat-form-field appearance="outline">
                 <mat-label>Teléfono *</mat-label>
                 <input matInput formControlName="phone" maxlength="10">
               </mat-form-field>
 
-              <mat-form-field appearance="outline">
+              <!--<mat-form-field appearance="outline">
                 <mat-label>Email</mat-label>
                 <input matInput type="email" formControlName="email">
-              </mat-form-field>
+              </mat-form-field>-->
 
               <mat-form-field appearance="outline">
                 <mat-label>Parentesco / Relación</mat-label>

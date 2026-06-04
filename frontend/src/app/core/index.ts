@@ -8,6 +8,7 @@ import { environment } from '../../environments/environment';
 // ─── MODELS ──────────────────────────────────────────────────
 export interface User {
   id: string; email: string; name: string; role: UserRole;
+  roleId?: string; roleName?: string; isAdmin?: boolean; permissions?: string[];
 }
 export type UserRole = 'ADMIN' | 'CAJERO' | 'AUTORIZADOR' | 'COBRADOR';
 export type LoanStatus = 'SOLICITUD' | 'AUTORIZADO' | 'RECHAZADO' | 'ACTIVO' | 'VENCIDO' | 'REESTRUCTURADO' | 'LIQUIDADO' | 'CASTIGADO';
@@ -15,7 +16,8 @@ export type LoanStatus = 'SOLICITUD' | 'AUTORIZADO' | 'RECHAZADO' | 'ACTIVO' | '
 export interface Customer {
   id: string; curp: string; rfc?: string; fullName: string;
   phone: string; email?: string; birthDate?: string;
-  address?: Address; status: string; monthlyIncome?: number;
+  address?: Address; status: string; monthlyIncome?: number; dailyIncome?: number;
+  occupation?: string; businessType?: string;
   createdAt: string; loans?: Loan[];
 }
 export interface Address {
@@ -55,6 +57,14 @@ export interface Payment {
 export interface ApiResponse<T> { success: boolean; data: T; timestamp: string; }
 export interface PagedResponse<T> { data: T[]; total: number; page: number; limit: number; pages: number; }
 
+// Sistema de roles/permisos
+export interface Role {
+  id: string; name: string; description?: string;
+  isSystem?: boolean; isAdmin?: boolean; isActive?: boolean;
+  permissions?: { key: string; module: string; action: string }[];
+  permissionKeys?: string[];
+}
+
 // ─── AUTH SERVICE ────────────────────────────────────────────
 export interface AuthTokens { accessToken: string; refreshToken: string; user: User; }
 
@@ -67,6 +77,8 @@ export class AuthService {
   readonly user = this._user.asReadonly();
   readonly isLoggedIn = computed(() => !!this._user());
   readonly role = computed(() => this._user()?.role);
+  readonly isAdmin = computed(() => !!this._user()?.isAdmin);
+  readonly permissions = computed(() => this._user()?.permissions || []);
 
   constructor(private http: HttpClient, private router: Router) {}
 
@@ -112,10 +124,25 @@ export class AuthService {
   }
 
   getToken(): string | null { return localStorage.getItem('access_token'); }
+
+  /** LEGACY: validación por nombre de rol. Se mantiene por compatibilidad. */
   hasRole(...roles: UserRole[]): boolean {
-    const r = this._user()?.role;
-    return !!r && roles.includes(r);
+    const u = this._user();
+    if (!u) return false;
+    if (u.isAdmin) return true;
+    const r = u.roleName || u.role;
+    return !!r && roles.includes(r as UserRole);
   }
+
+  /** NUEVO: validación por permiso dinámico (ej: can('clientes.crear')). */
+  can(...perms: string[]): boolean {
+    const u = this._user();
+    if (!u) return false;
+    if (u.isAdmin) return true;
+    const userPerms = u.permissions || [];
+    return perms.some(p => userPerms.includes(p));
+  }
+
   private clearSession() {
     localStorage.removeItem('access_token');
     localStorage.removeItem('refresh_token');

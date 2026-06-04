@@ -51,9 +51,9 @@ import { GuarantorFormComponent } from './guarantor-form.component';
           <button mat-stroked-button (click)="downloadContractPdf()">
             <mat-icon>description</mat-icon> Contrato PDF
           </button>
-          <button mat-stroked-button (click)="downloadControlCard()">
+          <!--<button mat-stroked-button (click)="downloadControlCard()">
             <mat-icon>credit_card</mat-icon> Tarjeta
-          </button>
+          </button>-->
         }
       </div>
     </div>
@@ -94,8 +94,7 @@ import { GuarantorFormComponent } from './guarantor-form.component';
                   <div class="info-rows">
                     <div class="info-row"><span>Nombre</span><strong>{{ loan()!.customer?.fullName }}</strong></div>
                     <div class="info-row"><span>CURP</span><strong class="font-mono">{{ loan()!.customer?.curp }}</strong></div>
-                    <div class="info-row"><span>Teléfono</span><strong>{{ loan()!.customer?.phone }}</strong></div>
-                    <div class="info-row"><span>Email</span><strong>{{ loan()!.customer?.email || '—' }}</strong></div>
+                    <div class="info-row"><span>Teléfono</span><strong>{{ loan()!.customer?.phone }}</strong></div>                    
                   </div>
                   <div style="margin-top:12px">
                     <a mat-stroked-button [routerLink]="['/customers', loan()!.customerId]">

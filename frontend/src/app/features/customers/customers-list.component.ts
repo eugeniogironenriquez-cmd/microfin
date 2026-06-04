@@ -33,7 +33,7 @@ import { ApiService, AuthService, Customer, PagedResponse } from '../../core/ind
 
     <mat-card class="mb-16">
       <mat-form-field appearance="outline" class="w-full search-field">
-        <mat-label>Buscar por nombre, CURP, RFC o teléfono</mat-label>
+        <mat-label>Buscar por nombre, CURP o teléfono</mat-label>
         <input matInput [formControl]="searchCtrl" placeholder="Ej: Juan García o GARC901212...">
         <mat-icon matPrefix>search</mat-icon>
         @if (searchCtrl.value) {
@@ -62,9 +62,13 @@ import { ApiService, AuthService, Customer, PagedResponse } from '../../core/ind
             <th mat-header-cell *matHeaderCellDef>Teléfono</th>
             <td mat-cell *matCellDef="let r">{{ r.phone }}</td>
           </ng-container>
-          <ng-container matColumnDef="email">
-            <th mat-header-cell *matHeaderCellDef>Email</th>
-            <td mat-cell *matCellDef="let r">{{ r.email || '—' }}</td>
+          <ng-container matColumnDef="age">
+            <th mat-header-cell *matHeaderCellDef>Edad</th>
+            <td mat-cell *matCellDef="let r">{{ calcAge(r.birthDate) }}</td>
+          </ng-container>
+          <ng-container matColumnDef="occupation">
+            <th mat-header-cell *matHeaderCellDef>Ocupación</th>
+            <td mat-cell *matCellDef="let r">{{ r.occupation || '—' }}</td>
           </ng-container>
           <ng-container matColumnDef="status">
             <th mat-header-cell *matHeaderCellDef>Estado</th>
@@ -111,9 +115,20 @@ export class CustomersListComponent implements OnInit {
   customers = signal<Customer[]>([]);
   total = signal(0);
   loading = signal(true);
-  cols = ['name', 'phone', 'email', 'status', 'actions'];
+  cols = ['name', 'phone', 'age', 'occupation', 'status', 'actions'];
   searchCtrl = new FormControl('');
   page = 0; pageSize = 20;
+
+  calcAge(birthDate: any): string {
+    if (!birthDate) return '—';
+    const birth = new Date(birthDate);
+    if (isNaN(birth.getTime())) return '—';
+    const today = new Date();
+    let age = today.getFullYear() - birth.getFullYear();
+    const m = today.getMonth() - birth.getMonth();
+    if (m < 0 || (m === 0 && today.getDate() < birth.getDate())) age--;
+    return age >= 0 ? `${age}` : '—';
+  }
 
   ngOnInit() {
     this.load();

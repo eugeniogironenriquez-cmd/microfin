@@ -48,10 +48,9 @@ import { ApiService, AuthService, Customer, Loan } from '../../core/index';
               <div class="info-card">
                 <h3>Identificación</h3>
                 <div class="info-row"><span>CURP</span><code>{{ customer()!.curp }}</code></div>
-                <div class="info-row"><span>RFC</span><code>{{ customer()!.rfc || '—' }}</code></div>
                 <div class="info-row"><span>Teléfono</span><strong>{{ customer()!.phone }}</strong></div>
-                <div class="info-row"><span>Email</span><span>{{ customer()!.email || '—' }}</span></div>
                 <div class="info-row"><span>F. nacimiento</span><span>{{ customer()!.birthDate | date:'dd/MM/yyyy' }}</span></div>
+                <div class="info-row"><span>Edad</span><span>{{ edad() }}</span></div>
                 <div class="info-row"><span>Estado</span>
                   <span class="status-badge status-{{ customer()!.status | lowercase }}">{{ customer()!.status }}</span>
                 </div>
@@ -60,9 +59,10 @@ import { ApiService, AuthService, Customer, Loan } from '../../core/index';
               <div class="info-card">
                 <h3>Económicos</h3>
                 <div class="info-row"><span>Ocupación</span><span>{{ customer()!.occupation || '—' }}</span></div>
+                <div class="info-row"><span>Giro</span><span>{{ customer()!.businessType || '—' }}</span></div>
                 <div class="info-row">
-                  <span>Ingreso mensual</span>
-                  <span>{{ customer()!.monthlyIncome | currency:'MXN' }}</span>
+                  <span>Ingreso diario</span>
+                  <span>{{ ($any(customer())?.dailyIncome ?? 0) | currency:'MXN' }}</span>
                 </div>
               </div>
 
@@ -140,6 +140,18 @@ export class CustomerDetailComponent implements OnInit {
   loans = signal<Loan[]>([]);
   loading = signal(true);
   loanCols = ['id', 'amount', 'type', 'status', 'date', 'actions'];
+
+  edad(): string {
+    const b = this.customer()?.birthDate;
+    if (!b) return '—';
+    const birth = new Date(b);
+    if (isNaN(birth.getTime())) return '—';
+    const today = new Date();
+    let age = today.getFullYear() - birth.getFullYear();
+    const m = today.getMonth() - birth.getMonth();
+    if (m < 0 || (m === 0 && today.getDate() < birth.getDate())) age--;
+    return age >= 0 ? `${age} años` : '—';
+  }
 
   ngOnInit() {
     const id = this.route.snapshot.paramMap.get('id')!;
