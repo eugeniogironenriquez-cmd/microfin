@@ -6,10 +6,9 @@ import {
 import { TypeOrmModule, InjectRepository } from '@nestjs/typeorm';
 import { Repository, DataSource } from 'typeorm';
 import { ApiTags, ApiBearerAuth } from '@nestjs/swagger';
-import { addDays } from 'date-fns';
 import { Response } from 'express';
 import {
-  Loan, LoanType, PaymentSchedule, Customer,
+  Loan, LoanType, PaymentSchedule, Customer, PlazoCredito,
   LoanStatus, ScheduleStatus, UserRole,
 } from '../common/entities';
 import { Auth, CurrentUser } from '../common/guards/roles.guard';
@@ -19,77 +18,81 @@ import { GuarantorModule } from '../guarantor/guarantor.module';
 import { GuarantorService } from '../guarantor/guarantor.module';
 import { CompanyModule } from '../company/company.module';
 import { CompanyService } from '../company/company.module';
+import { PlazosCreditoModule, PlazosCreditoService } from '../plazos-credito/plazos-credito.module';
 
 // ── FINANCIAL CALCULATOR ──────────────────────────────────────
-// Modelo simple: total = principal * (1 + totalRate), cuota = total / periods
-// Modelo clásico: amortización con tasa periódica compuesta
+// Modelo Microcapital: total = monto * porcentaje * 4 + monto
+//                      cuota = total / dias
+// El calendario solo cuenta días hábiles (Lunes a Viernes),
+// empezando el día hábil siguiente al desembolso.
 @Injectable()
 export class FinancialCalculator {
 
-  getFrequencyDays(frequency: string): number {
-    const map: Record<string, number> = { DIARIO: 1, SEMANAL: 7, QUINCENAL: 15, MENSUAL: 30 };
-    return map[frequency] ?? 1;
-  }
+  // Multiplicador fijo de la fórmula
+  static readonly FACTOR = 4;
 
-  // ── INTERÉS SIMPLE TOTAL ─────────────────────────────────────
-  calculateSimple(principal: number, totalRate: number, periods: number) {
-    const totalAmount   = this.round(principal * (1 + totalRate));
-    const totalInterest = this.round(totalAmount - principal);
-    const periodicPayment = this.round(totalAmount / periods);
+  // ── CÁLCULO PRINCIPAL ────────────────────────────────────────
+  // total = principal * percentage * 4 + principal
+  calculate(principal: number, percentage: number, days: number) {
+    const totalInterest = this.round(principal * percentage * FinancialCalculator.FACTOR);
+    const totalAmount   = this.round(principal + totalInterest);
+    const periodicPayment = this.round(totalAmount / days);
     return { totalAmount, totalInterest, periodicPayment };
   }
 
-  generateSimpleTable(
-    principal: number, totalRate: number, periods: number,
-    startDate: Date, frequencyDays: number,
+  // ── DÍAS HÁBILES (Lunes a Viernes) ───────────────────────────
+  // Devuelve el siguiente día hábil ESTRICTAMENTE después de 'date'
+  nextBusinessDay(date: Date): Date {
+    const d = new Date(date);
+    d.setHours(0, 0, 0, 0);
+    do {
+      d.setDate(d.getDate() + 1);
+    } while (this.isWeekend(d));
+    return d;
+  }
+
+  isWeekend(date: Date): boolean {
+    const day = date.getDay(); // 0=domingo, 6=sábado
+    return day === 0 || day === 6;
+  }
+
+  // Genera un array de N fechas hábiles consecutivas empezando
+  // el primer día hábil DESPUÉS de startDate
+  generateBusinessDates(startDate: Date, count: number): Date[] {
+    const dates: Date[] = [];
+    let cursor = new Date(startDate);
+    cursor.setHours(0, 0, 0, 0);
+    for (let i = 0; i < count; i++) {
+      cursor = this.nextBusinessDay(cursor);
+      dates.push(new Date(cursor));
+    }
+    return dates;
+  }
+
+  // ── TABLA DE AMORTIZACIÓN (calendario L-V) ───────────────────
+  // days = número de pagos (un pago por día hábil)
+  generateScheduleTable(
+    principal: number, percentage: number, days: number, startDate: Date,
   ) {
-    const { totalAmount, periodicPayment } = this.calculateSimple(principal, totalRate, periods);
-    const interestTotal    = this.round(totalAmount - principal);
-    const interestPerPeriod = this.round(interestTotal / periods);
-    const capitalPerPeriod  = this.round(principal / periods);
+    const { totalAmount, periodicPayment } = this.calculate(principal, percentage, days);
+    const interestTotal     = this.round(totalAmount - principal);
+    const interestPerPeriod = this.round(interestTotal / days);
+    const capitalPerPeriod  = this.round(principal / days);
+
+    const dates = this.generateBusinessDates(startDate, days);
     const table = [];
     let balance = totalAmount;
 
-    for (let i = 1; i <= periods; i++) {
-      const pmt = i < periods ? periodicPayment : this.round(balance);
+    for (let i = 1; i <= days; i++) {
+      const pmt = i < days ? periodicPayment : this.round(balance);
       balance = this.round(Math.max(0, balance - pmt));
       table.push({
         period: i,
-        dueDate: addDays(startDate, i * frequencyDays),
+        dueDate: dates[i - 1],
         payment: pmt,
         principal: capitalPerPeriod,
         interest: interestPerPeriod,
         balance,
-      });
-    }
-    return table;
-  }
-
-  // ── INTERÉS PERIÓDICO COMPUESTO ───────────────────────────────
-  calculatePeriodicPayment(principal: number, rate: number, periods: number): number {
-    if (rate === 0) return principal / periods;
-    return principal * (rate * Math.pow(1 + rate, periods)) / (Math.pow(1 + rate, periods) - 1);
-  }
-
-  generateAmortizationTable(
-    principal: number, rate: number, periods: number,
-    startDate: Date, frequencyDays: number,
-  ) {
-    const payment = this.round(this.calculatePeriodicPayment(principal, rate, periods));
-    let balance = principal;
-    const table: Array<{
-      period: number; dueDate: Date; payment: number;
-      principal: number; interest: number; balance: number;
-    }> = [];
-    for (let i = 1; i <= periods; i++) {
-      const interest = this.round(balance * rate);
-      const cap = i < periods ? this.round(payment - interest) : this.round(balance);
-      balance = this.round(Math.max(0, balance - cap));
-      table.push({
-        period: i,
-        dueDate: addDays(startDate, i * frequencyDays),
-        payment: this.round(cap + interest),
-        principal: cap, interest, balance,
       });
     }
     return table;
@@ -106,11 +109,12 @@ export class LoansService {
     @InjectRepository(LoanType)        private loanTypeRepo: Repository<LoanType>,
     @InjectRepository(PaymentSchedule) private scheduleRepo: Repository<PaymentSchedule>,
     @InjectRepository(Customer)        private customerRepo: Repository<Customer>,
-    private calculator:     FinancialCalculator,
-    private dataSource:     DataSource,
-    private pdfService:     PdfGeneratorService,
+    private calculator:       FinancialCalculator,
+    private dataSource:       DataSource,
+    private pdfService:       PdfGeneratorService,
     private guarantorService: GuarantorService,
     private companyService:   CompanyService,
+    private plazosService:    PlazosCreditoService,
   ) {}
 
   async findAll(filters: {
@@ -142,42 +146,31 @@ export class LoansService {
     return loan;
   }
 
+  // ── SIMULAR ──────────────────────────────────────────────────
+  // days = plazo en días (determina el % automáticamente)
   async simulate(dto: {
-    principalAmount: number; interestRate?: number; totalRate?: number;
-    termWeeks: number; frequency: string;
+    principalAmount: number; termWeeks: number; frequency?: string;
+    days?: number; percentage?: number;
   }) {
-    const freqDays = this.calculator.getFrequencyDays(dto.frequency);
-    // termWeeks es el número de períodos directamente
-    // Para DIARIO: 30 días = 30 períodos (no 30*7/1)
-    // Para SEMANAL: 12 semanas = 12 períodos (no 12*7/7)
-    // La fórmula (termWeeks * 7 / freqDays) solo funciona para conversión entre unidades
-    // pero como el formulario ya muestra "días/semanas/etc", usamos directo
-    const periods = freqDays === 1
-      ? Math.round(dto.termWeeks)           // DIARIO: períodos = días
-      : freqDays === 7
-      ? Math.round(dto.termWeeks)           // SEMANAL: períodos = semanas
-      : freqDays === 15
-      ? Math.round(dto.termWeeks)           // QUINCENAL: períodos = quincenas
-      : Math.round(dto.termWeeks);          // MENSUAL: períodos = meses
+    const principal = Number(dto.principalAmount);
+    const days = Number(dto.days ?? dto.termWeeks);
+    // El % se resuelve automáticamente por el plazo configurado,
+    // salvo que venga uno explícito (preview manual)
+    const percentage = dto.percentage != null
+      ? Number(dto.percentage)
+      : await this.plazosService.getPercentageForDays(days);
 
-    if (dto.totalRate !== undefined && Number(dto.totalRate) > 0) {
-      const { totalAmount, totalInterest, periodicPayment } =
-        this.calculator.calculateSimple(dto.principalAmount, dto.totalRate, periods);
-      const table = this.calculator.generateSimpleTable(
-        dto.principalAmount, dto.totalRate, periods, new Date(), freqDays,
-      );
-      return { periodicPayment, totalPayment: totalAmount, totalInterest, schedule: table };
-    }
-
-    const rate     = Number(dto.interestRate) || 0;
-    const periodic = this.calculator.calculatePeriodicPayment(dto.principalAmount, rate, periods);
-    const table    = this.calculator.generateAmortizationTable(
-      dto.principalAmount, rate, periods, new Date(), freqDays,
+    const { totalAmount, totalInterest, periodicPayment } =
+      this.calculator.calculate(principal, percentage, days);
+    const table = this.calculator.generateScheduleTable(
+      principal, percentage, days, new Date(),
     );
     return {
-      periodicPayment: this.calculator.round(periodic),
-      totalPayment:    this.calculator.round(periodic * periods),
-      totalInterest:   this.calculator.round(periodic * periods - dto.principalAmount),
+      periodicPayment,
+      totalPayment: totalAmount,
+      totalInterest,
+      percentage,
+      days,
       schedule: table,
     };
   }
@@ -186,29 +179,20 @@ export class LoansService {
     const loanType = await this.loanTypeRepo.findOne({ where: { id: dto.loanTypeId } });
     if (!loanType) throw new NotFoundException('Tipo de préstamo no encontrado');
 
-    const freqDays = this.calculator.getFrequencyDays(dto.frequency || loanType.frequency);
-    // Períodos directos — el formulario ya envía días/semanas/quincenas/meses
-    const periods = Math.round(Number(dto.termWeeks));
+    const principal = Number(dto.principalAmount);
+    const days = Number(dto.days ?? dto.termWeeks);
+    // Resolver % por el plazo configurado
+    const percentage = await this.plazosService.getPercentageForDays(days);
 
-    let periodicPayment: number;
-    let totalAmount: number;
-
-    if (dto.totalRate && Number(dto.totalRate) > 0) {
-      const calc = this.calculator.calculateSimple(
-        Number(dto.principalAmount), Number(dto.totalRate), periods,
-      );
-      periodicPayment = calc.periodicPayment;
-      totalAmount     = calc.totalAmount;
-    } else {
-      periodicPayment = this.calculator.calculatePeriodicPayment(
-        Number(dto.principalAmount), Number(dto.interestRate || 0), periods,
-      );
-      totalAmount = this.calculator.round(periodicPayment * periods);
-    }
+    const { totalAmount, periodicPayment } =
+      this.calculator.calculate(principal, percentage, days);
 
     const loan = this.loanRepo.create({
       ...dto,
-      frequency:       dto.frequency || loanType.frequency,
+      termWeeks:       days,
+      frequency:       'DIARIO',
+      interestRate:    percentage,       // guardamos el % aplicado
+      totalRate:       percentage,       // compatibilidad con PDFs
       periodicPayment: this.calculator.round(periodicPayment),
       totalAmount:     this.calculator.round(totalAmount),
       createdBy:       userId,
@@ -227,6 +211,7 @@ export class LoansService {
     return this.loanRepo.save(loan);
   }
 
+  // ── DESEMBOLSAR (genera calendario L-V) ──────────────────────
   async disburse(id: string, dto: { disbursementMethod: string; notes?: string }, userId: string) {
     const loan = await this.findOne(id);
     if (loan.status !== LoanStatus.AUTORIZADO)
@@ -243,23 +228,13 @@ export class LoansService {
       if (dto.notes) loan.notes = dto.notes;
       await qr.manager.save(loan);
 
-      const freqDays = this.calculator.getFrequencyDays(loan.frequency);
-      // Períodos directos — no multiplicar por 7
-      const periods = Math.round(loan.termWeeks);
+      const days       = Math.round(loan.termWeeks);
+      const percentage = Number((loan as any).totalRate || loan.interestRate);
 
-      // Detectar modelo según si tiene totalRate guardado
-      let table: any[];
-      if ((loan as any).totalRate && Number((loan as any).totalRate) > 0) {
-        table = this.calculator.generateSimpleTable(
-          Number(loan.principalAmount), Number((loan as any).totalRate),
-          periods, loan.disbursedAt, freqDays,
-        );
-      } else {
-        table = this.calculator.generateAmortizationTable(
-          Number(loan.principalAmount), Number(loan.interestRate),
-          periods, loan.disbursedAt, freqDays,
-        );
-      }
+      // Calendario L-V empezando el día hábil siguiente al desembolso
+      const table = this.calculator.generateScheduleTable(
+        Number(loan.principalAmount), percentage, days, loan.disbursedAt,
+      );
 
       const schedules = table.map((row) =>
         this.scheduleRepo.create({
@@ -279,6 +254,7 @@ export class LoansService {
     }
   }
 
+  // ── REESTRUCTURAR ────────────────────────────────────────────
   async restructure(id: string, dto: any, userId: string) {
     const loan = await this.findOne(id);
     if (!['ACTIVO', 'VENCIDO', 'REESTRUCTURADO'].includes(loan.status))
@@ -288,36 +264,27 @@ export class LoansService {
     await qr.connect(); await qr.startTransaction();
 
     try {
-      // Cerrar crédito anterior
       loan.status = LoanStatus.REESTRUCTURADO;
       await qr.manager.save(loan);
 
-      // Crear nuevo crédito
-      const periods = Math.round(Number(dto.termWeeks));
-      let periodicPayment: number;
-      let totalAmount: number;
+      const principal = Number(dto.principalAmount);
+      const days = Number(dto.days ?? dto.termWeeks);
+      const percentage = dto.percentage != null
+        ? Number(dto.percentage)
+        : await this.plazosService.getPercentageForDays(days);
 
-      if (dto.totalRate && Number(dto.totalRate) > 0) {
-        const calc = this.calculator.calculateSimple(
-          Number(dto.principalAmount), Number(dto.totalRate), periods,
-        );
-        periodicPayment = calc.periodicPayment;
-        totalAmount     = calc.totalAmount;
-      } else {
-        periodicPayment = this.calculator.calculatePeriodicPayment(
-          Number(dto.principalAmount), Number(dto.interestRate || 0), periods,
-        );
-        totalAmount = this.calculator.round(periodicPayment * periods);
-      }
+      const { totalAmount, periodicPayment } =
+        this.calculator.calculate(principal, percentage, days);
 
       const newLoan = this.loanRepo.create({
         customerId:         loan.customerId,
         loanTypeId:         dto.loanTypeId || loan.loanTypeId,
         parentLoanId:       loan.id,
-        principalAmount:    Number(dto.principalAmount),
-        interestRate:       Number(dto.interestRate || 0),
-        termWeeks:          Number(dto.termWeeks),
-        frequency:          dto.frequency || loan.frequency,
+        principalAmount:    principal,
+        interestRate:       percentage,
+        totalRate:          percentage,
+        termWeeks:          days,
+        frequency:          'DIARIO',
         status:             LoanStatus.ACTIVO,
         disbursedAt:        new Date(),
         disbursedBy:        userId,
@@ -330,19 +297,9 @@ export class LoansService {
       } as any);
       const saved = await qr.manager.save(newLoan as any);
 
-      // Generar calendario del nuevo crédito
-      const freqDays = this.calculator.getFrequencyDays(dto.frequency || loan.frequency);
-      let table: any[];
-      if (dto.totalRate && Number(dto.totalRate) > 0) {
-        table = this.calculator.generateSimpleTable(
-          Number(dto.principalAmount), Number(dto.totalRate), periods, new Date(), freqDays,
-        );
-      } else {
-        table = this.calculator.generateAmortizationTable(
-          Number(dto.principalAmount), Number(dto.interestRate || 0), periods, new Date(), freqDays,
-        );
-      }
-
+      const table = this.calculator.generateScheduleTable(
+        principal, percentage, days, new Date(),
+      );
       const schedules = table.map((row: any) =>
         this.scheduleRepo.create({
           loanId: saved.id, periodNumber: row.period, dueDate: row.dueDate,
@@ -374,8 +331,6 @@ export class LoansService {
 
     const guarantor = await this.guarantorService.findByLoan(id);
     const company   = await this.companyService.get().catch(() => null);
-
-    // Número de crédito del cliente (cuántos créditos previos tiene)
     const loanCount = await this.loanRepo.count({ where: { customerId: loan.customerId } });
 
     return this.pdfService.generateControlCard({
@@ -409,10 +364,10 @@ export class LoansService {
     const company = await this.companyService.get().catch(() => null);
     return this.pdfService.generateSimulationPdf({
       principalAmount: dto.principalAmount,
-      interestRate:    dto.totalRate ? dto.totalRate : (dto.interestRate || 0),
-      termWeeks:       dto.termWeeks,
-      frequency:       dto.frequency,
-      totalRate:       dto.totalRate,
+      interestRate:    sim.percentage,
+      termWeeks:       sim.days,
+      frequency:       'DIARIO',
+      totalRate:       sim.percentage,
       periodicPayment: sim.periodicPayment,
       totalPayment:    sim.totalPayment,
       totalInterest:   sim.totalInterest,
@@ -507,8 +462,8 @@ export class LoansController {
 // ── MODULE ───────────────────────────────────────────────────
 @Module({
   imports: [
-    TypeOrmModule.forFeature([Loan, LoanType, PaymentSchedule, Customer]),
-    PdfGeneratorModule, GuarantorModule, CompanyModule,
+    TypeOrmModule.forFeature([Loan, LoanType, PaymentSchedule, Customer, PlazoCredito]),
+    PdfGeneratorModule, GuarantorModule, CompanyModule, PlazosCreditoModule,
   ],
   providers: [LoansService, FinancialCalculator],
   controllers: [LoansController],

@@ -21,13 +21,6 @@ import { HttpClient, HttpHeaders } from '@angular/common/http';
 import { ApiService, Customer, LoanType, PagedResponse, Loan } from '../../core/index';
 import { PdfDownloadService } from '../../core/pdf-download.service';
 
-function unidadPlazo(freq: string): string {
-  const map: Record<string, string> = {
-    DIARIO: 'días', SEMANAL: 'semanas', QUINCENAL: 'quincenas', MENSUAL: 'meses',
-  };
-  return map[freq] ?? 'períodos';
-}
-
 @Component({
   selector: 'app-loan-form',
   standalone: true,
@@ -96,7 +89,7 @@ function unidadPlazo(freq: string): string {
                       </ng-container>
                       <ng-container matColumnDef="plazo">
                         <th mat-header-cell *matHeaderCellDef>Plazo</th>
-                        <td mat-cell *matCellDef="let r">{{ r.termWeeks }} {{ getUnidad(r.frequency) }}</td>
+                        <td mat-cell *matCellDef="let r">{{ r.termWeeks }} días</td>
                       </ng-container>
                       <ng-container matColumnDef="estatus">
                         <th mat-header-cell *matHeaderCellDef>Estatus</th>
@@ -120,10 +113,10 @@ function unidadPlazo(freq: string): string {
               <h3 class="section-title">Condiciones del crédito</h3>
 
               <div class="form-grid">
-                <!-- Tipo -->
+                <!-- Tipo (opcional, informativo) -->
                 <mat-form-field appearance="outline">
                   <mat-label>Tipo de crédito *</mat-label>
-                  <mat-select formControlName="loanTypeId" (selectionChange)="onTypeChange()">
+                  <mat-select formControlName="loanTypeId">
                     @for (t of loanTypes(); track t.id) {
                       <mat-option [value]="t.id">{{ t.name }}</mat-option>
                     }
@@ -134,32 +127,22 @@ function unidadPlazo(freq: string): string {
                 <mat-form-field appearance="outline">
                   <mat-label>Monto solicitado *</mat-label>
                   <input matInput type="number" formControlName="principalAmount"
-                         (change)="onAmountChange()">
+                         (change)="simulate()">
                   <span matPrefix>$&nbsp;</span>
-                  @if (currentRange()) {
-                    <mat-hint>
-                      Tasa: {{ (currentRange()!.totalRate * 100).toFixed(0) }}% total
-                    </mat-hint>
-                  }
                 </mat-form-field>
 
-                <!-- Período — solo los disponibles según el rango -->
+                <!-- Plazo en días -->
                 <mat-form-field appearance="outline">
-                  <mat-label>Plazo ({{ unidadActual() }}) *</mat-label>
-                  @if (periodsAvailable().length > 0) {
-                    <mat-select formControlName="termWeeks" (selectionChange)="simulate()">
-                      @for (p of periodsAvailable(); track p) {
-                        <mat-option [value]="p">{{ p }} {{ unidadActual() }}</mat-option>
-                      }
-                    </mat-select>
-                  } @else {
-                    <input matInput type="number" formControlName="termWeeks"
-                           (change)="simulate()">
-                  }
-                  @if (periodsAvailable().length === 0 && form.value.loanTypeId && form.value.principalAmount) {
-                    <mat-hint style="color:#DC2626">
-                      Sin rangos configurados para este monto
-                    </mat-hint>
+                  <mat-label>Plazo (días) *</mat-label>
+                  <mat-select formControlName="days" (selectionChange)="onPlazoChange()">
+                    @for (p of plazos(); track p.id) {
+                      <mat-option [value]="p.days">
+                        {{ p.days }} días — {{ (p.percentage * 100).toFixed(0) }}%
+                      </mat-option>
+                    }
+                  </mat-select>
+                  @if (selectedPlazo()) {
+                    <mat-hint>Tasa: {{ (selectedPlazo()!.percentage * 100).toFixed(0) }}%</mat-hint>
                   }
                 </mat-form-field>
               </div>
@@ -168,7 +151,7 @@ function unidadPlazo(freq: string): string {
               @if (simResult()) {
                 <div class="sim-preview">
                   <div class="sim-item">
-                    <span>Cuota {{ unidadActual() === 'días' ? 'diaria' : unidadActual() }}</span>
+                    <span>Cuota diaria</span>
                     <strong>{{ simResult()!.periodicPayment | currency:'MXN' }}</strong>
                   </div>
                   <div class="sim-item">
@@ -290,7 +273,6 @@ function unidadPlazo(freq: string): string {
                 <span>Primero completa los pasos anteriores.</span>
               </div>
             } @else {
-              <!-- Documento de garantía -->
               <div class="garantia-section">
                 <div class="garantia-header">
                   <mat-icon style="color:#1C4532;font-size:36px;width:36px;height:36px">home_work</mat-icon>
@@ -400,11 +382,10 @@ export class LoanFormComponent implements OnInit {
 
   customers        = signal<Customer[]>([]);
   loanTypes        = signal<LoanType[]>([]);
+  plazos           = signal<any[]>([]);
+  selectedPlazo    = signal<any>(null);
   customerLoans    = signal<Loan[]>([]);
   selectedCustomer = signal<Customer | null>(null);
-  selectedType     = signal<LoanType | null>(null);
-  currentRange     = signal<any>(null);      // rango de tasa actual
-  periodsAvailable = signal<number[]>([]);   // períodos del rango
   simResult        = signal<any>(null);
   createdLoan      = signal<Loan | null>(null);
   saving           = signal(false);
@@ -413,28 +394,19 @@ export class LoanFormComponent implements OnInit {
   downloadingPdf   = signal(false);
   loadingHistory   = signal(false);
   customerSearch   = signal('');
-  unidadActual     = signal('días');
   historyCols  = ['fecha', 'monto', 'plazo', 'estatus'];
   uploadedDocs = signal<Set<string>>(new Set());
   uploadingDoc = signal<string | null>(null);
 
-  // Documento de garantía del crédito
-  readonly docTypes = [
-    { key: 'garantia', label: 'Documento de garantía', hint: 'Escritura de terreno, título de propiedad, factura de vehículo, etc.' },
-  ];
-  garantiaDesc     = signal('');  // descripción del bien en garantía
+  garantiaDesc     = signal('');
   uploadedFileName = signal('');
-
-  // Referencias a inputs de archivo (uno por tipo)
-  fileInputs: Record<string, HTMLInputElement> = {};
 
   private searchSubject = new Subject<string>();
 
   form = this.fb.group({
     loanTypeId:      ['', Validators.required],
-    frequency:       ['DIARIO', Validators.required],
     principalAmount: [null as number | null, [Validators.required, Validators.min(1)]],
-    termWeeks:       [null as number | null, [Validators.required, Validators.min(1)]],
+    days:            [null as number | null, [Validators.required, Validators.min(1)]],
     notes:           [''],
   });
 
@@ -454,6 +426,12 @@ export class LoanFormComponent implements OnInit {
         this.loanTypes.set(list);
       },
     });
+    this.api.get<any>('/plazos-credito').subscribe({
+      next: (r) => {
+        const list = Array.isArray(r) ? r : r?.data ?? [];
+        this.plazos.set(list);
+      },
+    });
     this.searchSubject.pipe(debounceTime(350), distinctUntilChanged()).subscribe((term) => {
       if (!term || term.length < 2) { this.customers.set([]); return; }
       this.api.get<any>('/customers', { search: term, limit: 5 }).subscribe({
@@ -464,8 +442,6 @@ export class LoanFormComponent implements OnInit {
       });
     });
   }
-
-  getUnidad(freq: string): string { return unidadPlazo(freq); }
 
   onCustomerSearch(event: Event) {
     const term = (event.target as HTMLInputElement).value;
@@ -489,71 +465,26 @@ export class LoanFormComponent implements OnInit {
     this.customerLoans.set([]);
   }
 
-  onTypeChange() {
-    const type = this.loanTypes().find((t) => t.id === this.form.value.loanTypeId);
-    if (!type) return;
-    this.selectedType.set(type);
-    this.unidadActual.set(unidadPlazo(type.frequency));
-    this.form.patchValue({ frequency: type.frequency, termWeeks: null });
-    this.currentRange.set(null);
-    this.periodsAvailable.set([]);
-    this.simResult.set(null);
-    // Si hay monto, cargar rango
-    if (this.form.value.principalAmount) this.loadRange();
-  }
-
-  onAmountChange() {
-    if (this.form.value.loanTypeId) this.loadRange();
-  }
-
-  loadRange() {
-    const loanTypeId = this.form.value.loanTypeId;
-    const amount     = Number(this.form.value.principalAmount);
-    if (!loanTypeId || !amount) return;
-
-    this.api.get<any>('/settings/rate-ranges/by-amount', { loanTypeId, amount }).subscribe({
-      next: (r) => {
-        if (r) {
-          this.currentRange.set(r);
-          const periods = Array.isArray(r.periods) ? r.periods : [];
-          this.periodsAvailable.set(periods);
-          // Pre-seleccionar el período máximo
-          if (periods.length > 0) {
-            const maxP = Math.max(...periods);
-            this.form.patchValue({ termWeeks: maxP });
-            this.simulate();
-          }
-        } else {
-          this.currentRange.set(null);
-          this.periodsAvailable.set([]);
-        }
-      },
-      error: () => { this.currentRange.set(null); this.periodsAvailable.set([]); },
-    });
+  onPlazoChange() {
+    const p = this.plazos().find(x => x.days === this.form.value.days);
+    this.selectedPlazo.set(p || null);
+    this.simulate();
   }
 
   simulate() {
-    const { principalAmount, termWeeks, frequency } = this.form.value;
-    if (!principalAmount || !termWeeks) return;
-    const range = this.currentRange();
+    const { principalAmount, days } = this.form.value;
+    if (!principalAmount || !days) return;
     this.api.post<any>('/loans/simulate', {
-      principalAmount,
-      termWeeks,
-      frequency,
-      totalRate:    range ? range.totalRate : undefined,
-      interestRate: range ? undefined : 0,
+      principalAmount, days,
     }).subscribe({ next: (r) => this.simResult.set(r) });
   }
 
   downloadSimPdf() {
-    const { principalAmount, termWeeks, frequency } = this.form.value;
-    if (!principalAmount || !termWeeks) return;
-    const range = this.currentRange();
+    const { principalAmount, days } = this.form.value;
+    if (!principalAmount || !days) return;
     this.downloadingPdf.set(true);
     this.pdfSvc.downloadPost('/loans/simulate/pdf', 'plan-pagos.pdf', {
-      principalAmount, termWeeks, frequency,
-      totalRate:    range ? range.totalRate : undefined,
-      interestRate: range ? undefined : 0,
+      principalAmount, days,
       customerName: this.selectedCustomer()?.fullName,
     });
     setTimeout(() => this.downloadingPdf.set(false), 2000);
@@ -564,12 +495,12 @@ export class LoanFormComponent implements OnInit {
       this.form.markAllAsTouched(); return;
     }
     this.saving.set(true);
-    const range = this.currentRange();
     this.api.post<Loan>('/loans', {
-      ...this.form.value,
-      customerId:  this.selectedCustomer()!.id,
-      totalRate:   range ? range.totalRate : undefined,
-      interestRate: range ? 0 : 0,
+      loanTypeId:      this.form.value.loanTypeId,
+      principalAmount: this.form.value.principalAmount,
+      days:            this.form.value.days,
+      notes:           this.form.value.notes,
+      customerId:      this.selectedCustomer()!.id,
     }).subscribe({
       next: (loan) => {
         this.createdLoan.set(loan);
@@ -577,7 +508,7 @@ export class LoanFormComponent implements OnInit {
         this.saving.set(false);
       },
       error: (err) => {
-        this.snackbar.open(err.error?.message?.[0] || 'Error', 'Cerrar', { duration: 5000 });
+        this.snackbar.open(err.error?.message?.[0] || err.error?.message || 'Error', 'Cerrar', { duration: 5000 });
         this.saving.set(false);
       },
     });
@@ -625,7 +556,7 @@ export class LoanFormComponent implements OnInit {
       rfc:  (this.avalForm.value.rfc  || '').toUpperCase(),
     }).subscribe({
       next: () => { this.snackbar.open('Aval registrado', 'OK', { duration: 3000 }); this.avalSaved.set(true); this.savingAval.set(false); },
-      error: (err: any) => { this.snackbar.open(err.error?.message?.[0] || 'Error', 'Cerrar', { duration: 5000 }); this.savingAval.set(false); },
+      error: (err: any) => { this.snackbar.open(err.error?.message?.[0] || err.error?.message || 'Error', 'Cerrar', { duration: 5000 }); this.savingAval.set(false); },
     });
   }
 }

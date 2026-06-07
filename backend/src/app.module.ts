@@ -8,7 +8,7 @@ import {
   PaymentSchedule, Payment, CollectionVisit, CollectorAssignment,
   CashSession, AuditLog, CompanySettings, LateFeeRule,
   State, Municipality, Guarantor, ExpenseCategory, Expense,
-  Role, Permiso,
+  Role, Permiso, PlazoCredito,
 } from './common/entities';
 import { AuthModule }        from './auth/auth.module';
 import { UsersModule }       from './users/users.module';
@@ -29,6 +29,7 @@ import { DisbursementModule }from './disbursement/disbursement.module';
 import { ExpensesModule }    from './expenses/expenses.module';
 import { OverdueJobModule, OverdueJobService } from './jobs/overdue-job.module';
 import { LoanDocumentsModule } from './loan-documents/loan-documents.module';
+import { PlazosCreditoModule } from './plazos-credito/plazos-credito.module';
 
 @Module({
   imports: [
@@ -48,7 +49,7 @@ import { LoanDocumentsModule } from './loan-documents/loan-documents.module';
           PaymentSchedule, Payment, CollectionVisit, CollectorAssignment,
           CashSession, AuditLog, CompanySettings, LateFeeRule,
           State, Municipality, Guarantor, ExpenseCategory, Expense,
-          Role, Permiso,
+          Role, Permiso, PlazoCredito,
         ],
         synchronize: false,
         logging: config.get('NODE_ENV') === 'development',
@@ -58,6 +59,7 @@ import { LoanDocumentsModule } from './loan-documents/loan-documents.module';
     CashModule, CollectionModule, ReportsModule, SettingsModule, RateRangesModule,
     CompanyModule, LateFeeRulesModule, LocationModule, GuarantorModule,
     DisbursementModule, ExpensesModule, OverdueJobModule, LoanDocumentsModule,
+    PlazosCreditoModule,
   ],
 })
 export class AppModule implements OnApplicationBootstrap, NestModule {

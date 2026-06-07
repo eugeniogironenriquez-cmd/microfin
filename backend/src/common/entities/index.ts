@@ -904,3 +904,29 @@ export class RangoTasa {
   updatedAt: Date;
 }
 
+// ─── PLAZOS DE CRÉDITO (días -> porcentaje) ───────────────────
+// Agregar al final de common/entities/index.ts
+@Entity('plazos_credito')
+export class PlazoCredito {
+  @PrimaryGeneratedColumn('uuid')
+  id: string;
+
+  @Column({ name: 'dias', type: 'int', unique: true })
+  days: number;
+
+  @Column({ name: 'porcentaje', type: 'decimal', precision: 6, scale: 4 })
+  percentage: number;
+
+  @Column({ name: 'descripcion', length: 150, nullable: true })
+  description: string;
+
+  @Column({ name: 'activo', type: 'tinyint', width: 1, default: 1,
+    transformer: { to: (v: boolean) => v ? 1 : 0, from: (v: any) => Boolean(v) } })
+  isActive: boolean;
+
+  @CreateDateColumn({ name: 'creado_en' })
+  createdAt: Date;
+
+  @UpdateDateColumn({ name: 'actualizado_en' })
+  updatedAt: Date;
+}
