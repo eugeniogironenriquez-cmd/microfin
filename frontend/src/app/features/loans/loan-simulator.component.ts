@@ -98,7 +98,7 @@ import { PdfDownloadService } from '../../core/pdf-download.service';
                 </ng-container>
                 <ng-container matColumnDef="dueDate">
                   <th mat-header-cell *matHeaderCellDef>Fecha de pago</th>
-                  <td mat-cell *matCellDef="let r">{{ r.dueDate | date:'EEE dd/MM/yyyy' }}</td>
+                  <td mat-cell *matCellDef="let r">{{ r.dueDate | date:'EEE dd/MM/yyyy':'UTC' }}</td>
                 </ng-container>
                 <ng-container matColumnDef="payment">
                   <th mat-header-cell *matHeaderCellDef>Monto</th>
