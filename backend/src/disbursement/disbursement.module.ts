@@ -53,11 +53,13 @@ export class DisbursementService {
       if (dto.notes) loan.notes = dto.notes;
       await qr.manager.save(loan);
 
-      const freqDays = this.calculator.getFrequencyDays(loan.frequency);
-      const periods = Math.round((loan.termWeeks * 7) / freqDays);
-      const table = this.calculator.generateAmortizationTable(
-        Number(loan.principalAmount), Number(loan.interestRate),
-        periods, loan.disbursedAt, freqDays,
+      // Nueva fórmula: el plazo en días es termWeeks, el % está en totalRate/interestRate
+      const days       = Math.round(loan.termWeeks);
+      const percentage = Number((loan as any).totalRate || loan.interestRate);
+
+      // Calendario L-V empezando el día hábil siguiente al desembolso
+      const table = this.calculator.generateScheduleTable(
+        Number(loan.principalAmount), percentage, days, loan.disbursedAt,
       );
 
       const schedules = table.map((row) =>
