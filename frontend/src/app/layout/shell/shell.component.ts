@@ -107,9 +107,10 @@ export class ShellComponent {
     { label: 'Reportes',         icon: 'bar_chart',              route: '/reports',          perm: 'reportes.ver' },
     { label: 'Rpt. Ubicación',   icon: 'map',                    route: '/reports/location', perm: 'reportes.ubicacion' },
     { label: 'Configuración',    icon: 'settings',               route: '/settings',         perm: 'config.ver' },
-    { label: 'Plazos de crédito', icon: 'tune', route: '/plazos', perm: 'config.editar' },
+    { label: 'Plazos de crédito', icon: 'tune',                  route: '/plazos',           perm: 'config.editar' },
+    { label: 'Mora',             icon: 'gavel',                  route: '/config-mora',      perm: 'config.editar' },
     { label: 'Empresa',          icon: 'business',               route: '/company',          perm: 'empresa.editar' },
-    { label: 'Moratorios',       icon: 'gavel',                  route: '/late-fee-rules',   perm: 'moratorios.editar' },
+    { label: 'Moratorios',       icon: 'rule',                   route: '/late-fee-rules',   perm: 'moratorios.editar' },
     { label: 'Usuarios',         icon: 'manage_accounts',        route: '/users',            perm: 'usuarios.ver' },
     { label: 'Roles y permisos', icon: 'admin_panel_settings',   route: '/roles',            perm: 'roles.ver' },
   ];

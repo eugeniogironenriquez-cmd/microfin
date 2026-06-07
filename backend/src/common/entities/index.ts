@@ -930,3 +930,18 @@ export class PlazoCredito {
   @UpdateDateColumn({ name: 'actualizado_en' })
   updatedAt: Date;
 }
+
+// ─── CONFIGURACIÓN GLOBAL DE MORA ─────────────────────────────
+// Agregar al final de common/entities/index.ts
+@Entity('config_mora')
+export class ConfigMora {
+  @PrimaryGeneratedColumn('increment')
+  id: number;
+ 
+  @Column({ name: 'mora_por_dia', type: 'decimal', precision: 12, scale: 2, default: 50 })
+  moraPorDia: number;
+ 
+  @UpdateDateColumn({ name: 'actualizado_en' })
+  updatedAt: Date;
+}
+ 
