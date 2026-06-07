@@ -41,18 +41,35 @@ export class FinancialCalculator {
   }
 
   // ── DÍAS HÁBILES (Lunes a Viernes) ───────────────────────────
+  // IMPORTANTE: todo el cálculo se hace en UTC para evitar que la zona
+  // horaria del servidor (Hostinger corre en UTC) corra las fechas un día.
+
+  // Ancla una fecha a "medianoche del día en México" expresado como UTC.
+  // México es UTC-6. Una fecha/hora cualquiera se convierte al día-calendario
+  // que corresponde en México y se fija a las 00:00 UTC de ese día.
+  // Así el cálculo de día de la semana y el guardado en BD son consistentes.
+  anchorToMexicoDay(date: Date): Date {
+    const MX_OFFSET_MS = 6 * 60 * 60 * 1000; // UTC-6
+    const mxTime = new Date(date.getTime() - MX_OFFSET_MS);
+    // Tomar el día-calendario en México y fijarlo a medianoche UTC
+    const d = new Date(Date.UTC(
+      mxTime.getUTCFullYear(), mxTime.getUTCMonth(), mxTime.getUTCDate(), 0, 0, 0, 0,
+    ));
+    return d;
+  }
+
   // Devuelve el siguiente día hábil ESTRICTAMENTE después de 'date'
   nextBusinessDay(date: Date): Date {
     const d = new Date(date);
-    d.setHours(0, 0, 0, 0);
+    d.setUTCHours(0, 0, 0, 0);
     do {
-      d.setDate(d.getDate() + 1);
+      d.setUTCDate(d.getUTCDate() + 1);
     } while (this.isWeekend(d));
     return d;
   }
 
   isWeekend(date: Date): boolean {
-    const day = date.getDay(); // 0=domingo, 6=sábado
+    const day = date.getUTCDay(); // 0=domingo, 6=sábado
     return day === 0 || day === 6;
   }
 
@@ -60,8 +77,7 @@ export class FinancialCalculator {
   // el primer día hábil DESPUÉS de startDate
   generateBusinessDates(startDate: Date, count: number): Date[] {
     const dates: Date[] = [];
-    let cursor = new Date(startDate);
-    cursor.setHours(0, 0, 0, 0);
+    let cursor = this.anchorToMexicoDay(startDate);
     for (let i = 0; i < count; i++) {
       cursor = this.nextBusinessDay(cursor);
       dates.push(new Date(cursor));
