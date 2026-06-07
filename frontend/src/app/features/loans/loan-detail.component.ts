@@ -77,12 +77,11 @@ import { GuarantorFormComponent } from './guarantor-form.component';
                     </div>
                     <div class="info-row"><span>Tipo</span><strong>{{ loan()!.loanType?.name }}</strong></div>
                     <div class="info-row"><span>Monto</span><strong>{{ loan()!.principalAmount | currency:'MXN' }}</strong></div>
-                    <div class="info-row"><span>Plazo</span><strong>{{ loan()!.termWeeks }} {{ freq2unit(loan()!.frequency) }}</strong></div>
-                    <div class="info-row"><span>Frecuencia</span><strong>{{ loan()!.frequency }}</strong></div>
-                    <div class="info-row"><span>Cuota</span><strong>{{ loan()!.periodicPayment | currency:'MXN' }}</strong></div>
+                    <div class="info-row"><span>Plazo</span><strong>{{ loan()!.termWeeks }} días</strong></div>
+                    <div class="info-row"><span>Cuota diaria</span><strong>{{ loan()!.periodicPayment | currency:'MXN' }}</strong></div>
                     <div class="info-row"><span>Total a pagar</span><strong>{{ loan()!.totalAmount | currency:'MXN' }}</strong></div>
                     @if (loan()!.disbursedAt) {
-                      <div class="info-row"><span>Desembolso</span><strong>{{ loan()!.disbursedAt | date:'dd/MM/yyyy' }}</strong></div>
+                      <div class="info-row"><span>Desembolso</span><strong>{{ loan()!.disbursedAt | date:'dd/MM/yyyy':'UTC' }}</strong></div>
                     }
                   </div>
                 </mat-card-content>
@@ -129,7 +128,7 @@ import { GuarantorFormComponent } from './guarantor-form.component';
                   <ng-container matColumnDef="vence">
                     <th mat-header-cell *matHeaderCellDef>Vence</th>
                     <td mat-cell *matCellDef="let s">
-                      <div>{{ s.dueDate | date:'dd/MM/yyyy' }}</div>
+                      <div>{{ s.dueDate | date:'EEE dd/MM/yyyy':'UTC' }}</div>
                       @if (daysOverdue(s) > 0 && s.status !== 'PAGADO') {
                         <div class="overdue-badge">{{ daysOverdue(s) }} días vencido</div>
                       }
@@ -221,14 +220,19 @@ export class LoanDetailComponent implements OnInit {
     return {DIARIO:'días',SEMANAL:'semanas',QUINCENAL:'quincenas',MENSUAL:'meses'}[f] ?? 'períodos';
   }
 
-  // Días de atraso de una cuota
+  // Días de atraso de una cuota.
+  // Se compara en el día-calendario de México (UTC-6) para ser consistente
+  // con cómo el backend generó las fechas de vencimiento (medianoche UTC).
   daysOverdue(s: any): number {
     if (s.status === 'PAGADO') return 0;
-    const due  = new Date(s.dueDate);
-    const today = new Date();
-    today.setHours(0,0,0,0);
-    due.setHours(0,0,0,0);
-    const diff = Math.floor((today.getTime() - due.getTime()) / (1000*60*60*24));
+    const MX = 6 * 60 * 60 * 1000;
+    const due = new Date(s.dueDate);
+    const dueDay = new Date(due.getTime() - MX);
+    const dueUTC = Date.UTC(dueDay.getUTCFullYear(), dueDay.getUTCMonth(), dueDay.getUTCDate());
+    const now = new Date();
+    const nowDay = new Date(now.getTime() - MX);
+    const todayUTC = Date.UTC(nowDay.getUTCFullYear(), nowDay.getUTCMonth(), nowDay.getUTCDate());
+    const diff = Math.floor((todayUTC - dueUTC) / (1000 * 60 * 60 * 24));
     return Math.max(0, diff);
   }
 
@@ -299,10 +303,7 @@ export class LoanDetailComponent implements OnInit {
     const totalRate = Number((l as any).totalRate || 0);
     this.pdfSvc.downloadPost('/loans/simulate/pdf', 'plan-pagos-' + l.id.substring(0,8) + '.pdf', {
       principalAmount: l.principalAmount,
-      interestRate:    totalRate > 0 ? 0 : l.interestRate,
-      totalRate:       totalRate > 0 ? totalRate : undefined,
-      termWeeks:       l.termWeeks,
-      frequency:       l.frequency,
+      days:            l.termWeeks,
       customerName:    l.customer?.fullName,
     });
   }

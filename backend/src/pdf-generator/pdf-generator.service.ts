@@ -1,8 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { Response } from 'express';
 import * as PDFDocument from 'pdfkit';
-import { format } from 'date-fns';
-import { es } from 'date-fns/locale';
 
 const GREEN  = '#1C4532';
 const GREEN2 = '#0d2b1e';
@@ -21,10 +19,17 @@ function freq2unit(f: string) {
 function cur(v: any) {
   return '$' + (Number(v)||0).toLocaleString('es-MX',{minimumFractionDigits:2,maximumFractionDigits:2});
 }
+// Formatear fechas en UTC para respetar el día-calendario que generó el backend
+// (las fechas de vencimiento y desembolso se guardan a medianoche UTC).
 function fdate(d: any) {
   if (!d) return '—';
-  try { return format(typeof d==='string'?new Date(d):d,'dd/MM/yyyy',{locale:es}); }
-  catch { return String(d); }
+  try {
+    const dt = typeof d === 'string' ? new Date(d) : d;
+    const dd = String(dt.getUTCDate()).padStart(2, '0');
+    const mm = String(dt.getUTCMonth() + 1).padStart(2, '0');
+    const yyyy = dt.getUTCFullYear();
+    return `${dd}/${mm}/${yyyy}`;
+  } catch { return String(d); }
 }
 
 // Page dimensions (LETTER)
@@ -165,12 +170,11 @@ export class PdfGeneratorService {
     doc.rect(ML, y, PW-ML*2, H).fillAndStroke(LGRAY, BORDER);
     doc.font(BB).fontSize(8.5).fillColor(GREEN2).text('RESUMEN DEL CRÉDITO', ML+14, y+10, {lineBreak:false});
 
-    const freq = data.frequency||'SEMANAL';
     const items = [
       ['Monto',   cur(data.principalAmount)],
       ['Tasa',    data.totalRate ? `${(data.totalRate*100).toFixed(0)}%` : `${(data.interestRate*100).toFixed(2)}%`],
-      ['Plazo',   `${data.termWeeks} ${freq2unit(freq)}`],
-      ['Frecuencia', freq],
+      ['Plazo',   `${data.termWeeks} días`],
+      ['Frecuencia', 'DIARIO'],
       ['Cuota',   cur(data.periodicPayment)],
       ['Total',   cur(data.totalPayment)],
       ['Intereses',cur(data.totalInterest)],
@@ -240,13 +244,12 @@ export class PdfGeneratorService {
   private drawLoanInfo(doc: PDFKit.PDFDocument, y: number, loan: any, loanType: any): number {
     y = this.drawSectionTitle(doc, y, 'CONDICIONES DEL CRÉDITO');
     const H = 70;
-    const freq = loan.frequency||'SEMANAL';
     doc.rect(ML, y, PW-ML*2, H).fillAndStroke(LGRAY, BORDER);
     const fields = [
       ['Tipo', loanType.name], ['Monto', cur(loan.principalAmount)],
       ['Tasa', loan.totalRate && Number(loan.totalRate) > 0 ? `${(Number(loan.totalRate)*100).toFixed(0)}% total` : `${(Number(loan.interestRate)*100).toFixed(2)}%`],
-      ['Plazo', `${loan.termWeeks} ${freq2unit(freq)}`],
-      ['Frecuencia', freq], ['Cuota', cur(loan.periodicPayment)],
+      ['Plazo', `${loan.termWeeks} días`],
+      ['Frecuencia', 'DIARIO'], ['Cuota', cur(loan.periodicPayment)],
       ['Total', cur(loan.totalAmount)], ['Desembolso', fdate(loan.disbursedAt)],
     ];
     const cw = (PW-ML*2-28)/4;
@@ -413,10 +416,9 @@ export class PdfGeneratorService {
          .text(val2, col2 + lw, yy, { width: W - col2 - lpad - lw, lineBreak: false });
     };
 
-    // Calcular fecha de término
-    const freqDays = { DIARIO:1, SEMANAL:7, QUINCENAL:15, MENSUAL:30 }[freq] ?? 1;
+    // Calcular fecha de término (usando días hábiles aproximados)
     const disbDate = loan.disbursedAt ? new Date(loan.disbursedAt) : new Date();
-    const endDate  = new Date(disbDate.getTime() + loan.termWeeks * freqDays * 24*60*60*1000);
+    const endDate  = new Date(disbDate.getTime() + loan.termWeeks * 24*60*60*1000);
 
     line('CLIENTE', (customer.fullName || '—').toUpperCase(), y, true); y += lh;
 
@@ -435,7 +437,7 @@ export class PdfGeneratorService {
     ); y += lh;
 
     lineTwo(
-      'PLAZO', `${loan.termWeeks} ${unit} HÁBILES`,
+      'PLAZO', `${loan.termWeeks} DÍAS HÁBILES`,
       'TIPO DE PAGO', tipoPago,
       y
     ); y += lh;
