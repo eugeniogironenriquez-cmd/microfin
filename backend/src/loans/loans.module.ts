@@ -85,6 +85,45 @@ export class FinancialCalculator {
     return dates;
   }
 
+  // ── FECHAS DE CONVENIO (periodicidad + fecha de inicio elegidas) ──
+  // periodicidad: DIARIO (solo L-V) | SEMANAL | QUINCENAL | MENSUAL
+  // El primer pago cae EXACTAMENTE en fechaPrimerPago; los siguientes
+  // se espacian según la periodicidad. Todo anclado a medianoche UTC.
+  generateConvenioDates(
+    fechaPrimerPago: string,
+    periodicidad: 'DIARIO' | 'SEMANAL' | 'QUINCENAL' | 'MENSUAL',
+    count: number,
+  ): Date[] {
+    // Anclar la fecha del primer pago a medianoche UTC del día elegido
+    const base = new Date(`${fechaPrimerPago}T00:00:00Z`);
+    const dates: Date[] = [];
+    let cursor = new Date(base);
+
+    for (let i = 0; i < count; i++) {
+      if (i === 0) {
+        // El primer pago es la fecha elegida; si es DIARIO y cae en fin de
+        // semana, lo movemos al siguiente día hábil
+        if (periodicidad === 'DIARIO' && this.isWeekend(cursor)) {
+          cursor = this.nextBusinessDay(cursor);
+        }
+        dates.push(new Date(cursor));
+        continue;
+      }
+
+      if (periodicidad === 'DIARIO') {
+        cursor = this.nextBusinessDay(cursor); // siguiente L-V
+      } else if (periodicidad === 'SEMANAL') {
+        cursor = new Date(cursor); cursor.setUTCDate(cursor.getUTCDate() + 7);
+      } else if (periodicidad === 'QUINCENAL') {
+        cursor = new Date(cursor); cursor.setUTCDate(cursor.getUTCDate() + 15);
+      } else { // MENSUAL
+        cursor = new Date(cursor); cursor.setUTCMonth(cursor.getUTCMonth() + 1);
+      }
+      dates.push(new Date(cursor));
+    }
+    return dates;
+  }
+
   // ── TABLA DE AMORTIZACIÓN (calendario L-V) ───────────────────
   // days = número de pagos (un pago por día hábil)
   generateScheduleTable(
@@ -380,6 +419,201 @@ export class LoansService {
     return { data: rows, total: rows.length };
   }
 
+  // ── RENOVACIÓN (feature 7) ───────────────────────────────────
+  // Crea un nuevo crédito que NACE AUTORIZADO a partir de un crédito liquidado.
+  // Aval: opcional. avalMode = 'NINGUNO' | 'REUSAR' | 'NUEVO'.
+  async renovar(prevLoanId: string, dto: {
+    principalAmount: number; days: number; loanTypeId?: string;
+    avalMode?: 'NINGUNO' | 'REUSAR' | 'NUEVO';
+    aval?: any;  // datos del aval nuevo si avalMode === 'NUEVO'
+    notes?: string;
+  }, userId: string) {
+    const prev = await this.loanRepo.findOne({ where: { id: prevLoanId } });
+    if (!prev) throw new NotFoundException('Crédito de origen no encontrado');
+    if (prev.status !== LoanStatus.LIQUIDADO)
+      throw new BadRequestException('Solo se puede renovar un crédito ya liquidado');
+
+    const principal = Number(dto.principalAmount);
+    const days = Number(dto.days);
+    const percentage = await this.plazosService.getPercentageForDays(days);
+    const { totalAmount, periodicPayment } = this.calculator.calculate(principal, percentage, days);
+
+    const qr = this.dataSource.createQueryRunner();
+    await qr.connect(); await qr.startTransaction();
+    try {
+      // Crédito nuevo NACE AUTORIZADO (listo para desembolsar)
+      const newLoan = this.loanRepo.create({
+        customerId:    prev.customerId,
+        loanTypeId:    dto.loanTypeId || prev.loanTypeId,
+        parentLoanId:  prev.id,
+        principalAmount: principal,
+        interestRate:  percentage,
+        totalRate:     percentage,
+        termWeeks:     days,
+        frequency:     'DIARIO',
+        status:        LoanStatus.AUTORIZADO,
+        authorizedBy:  userId,
+        authorizedAt:  new Date(),
+        periodicPayment: this.calculator.round(periodicPayment),
+        totalAmount:     this.calculator.round(totalAmount),
+        notes:         dto.notes,
+        createdBy:     userId,
+      } as any);
+      const saved: Loan = await qr.manager.save(newLoan as any);
+
+      await qr.commitTransaction();
+
+      // Aval (fuera de la transacción del préstamo, usa el servicio con su validación)
+      const avalMode = dto.avalMode || 'NINGUNO';
+      if (avalMode === 'REUSAR') {
+        const prevAval = await this.guarantorService.findByLoan(prev.id);
+        if (prevAval) {
+          await this.guarantorService.upsert(saved.id, {
+            fullName: prevAval.fullName, curp: prevAval.curp, rfc: prevAval.rfc,
+            phone: prevAval.phone, email: prevAval.email, address: prevAval.address,
+            relationship: prevAval.relationship, occupation: prevAval.occupation,
+          } as any, userId);
+        }
+      } else if (avalMode === 'NUEVO' && dto.aval) {
+        await this.guarantorService.upsert(saved.id, dto.aval, userId);
+      }
+
+      return { loan: saved, message: 'Renovación creada y autorizada. Lista para desembolsar.' };
+    } catch (err) {
+      await qr.rollbackTransaction();
+      throw err;
+    } finally {
+      await qr.release();
+    }
+  }
+
+  // Datos para la pantalla de renovación: historial de pago del crédito anterior
+  async getRenovacionInfo(prevLoanId: string) {
+    const prev = await this.loanRepo.findOne({
+      where: { id: prevLoanId },
+      relations: ['customer'],
+    });
+    if (!prev) throw new NotFoundException('Crédito no encontrado');
+
+    const payments = await this.scheduleRepo.find({ where: { loanId: prevLoanId } });
+    const totalCuotas = payments.length;
+    const pagadas = payments.filter(s => s.status === ScheduleStatus.PAGADO).length;
+    const prevAval = await this.guarantorService.findByLoan(prevLoanId);
+
+    return {
+      prevLoan: {
+        id: prev.id,
+        principalAmount: Number(prev.principalAmount),
+        totalAmount: Number(prev.totalAmount),
+        termWeeks: prev.termWeeks,
+        status: prev.status,
+        disbursedAt: prev.disbursedAt,
+      },
+      customer: {
+        id: prev.customerId,
+        fullName: prev.customer?.fullName,
+        phone: prev.customer?.phone,
+        curp: prev.customer?.curp,
+      },
+      historialPago: { totalCuotas, pagadas },
+      avalAnterior: prevAval ? {
+        fullName: prevAval.fullName, curp: prevAval.curp, phone: prevAval.phone,
+        relationship: prevAval.relationship,
+      } : null,
+    };
+  }
+
+  // ── CONVENIO DE PAGO (feature 12) ────────────────────────────
+  // Reestructura un crédito existente con un plan ESPECIAL SIN INTERESES.
+  // El gestor define monto total y número de pagos; se reparte en partes
+  // iguales en días hábiles consecutivos. El crédito anterior pasa a CONVENIO.
+  async convenio(loanId: string, dto: {
+    montoConvenio: number; numeroPagos: number;
+    periodicidad?: 'DIARIO' | 'SEMANAL' | 'QUINCENAL' | 'MENSUAL';
+    fechaPrimerPago?: string;  // ISO yyyy-mm-dd
+    notes?: string;
+  }, userId: string) {
+    const prev = await this.loanRepo.findOne({ where: { id: loanId } });
+    if (!prev) throw new NotFoundException('Crédito no encontrado');
+    if (![LoanStatus.ACTIVO, LoanStatus.VENCIDO].includes(prev.status as LoanStatus))
+      throw new BadRequestException('Solo se puede hacer convenio de un crédito activo o vencido');
+
+    const monto = Number(dto.montoConvenio);
+    const numPagos = Math.round(Number(dto.numeroPagos));
+    const periodicidad = dto.periodicidad || 'SEMANAL';
+    if (monto <= 0) throw new BadRequestException('El monto del convenio debe ser mayor a 0');
+    if (numPagos <= 0) throw new BadRequestException('El número de pagos debe ser mayor a 0');
+    if (!dto.fechaPrimerPago) throw new BadRequestException('Debe indicar la fecha del primer pago');
+
+    const cuota = this.calculator.round(monto / numPagos);
+
+    const qr = this.dataSource.createQueryRunner();
+    await qr.connect(); await qr.startTransaction();
+    try {
+      // El crédito anterior pasa a CONVENIO (se archiva como historial)
+      prev.status = LoanStatus.CONVENIO;
+      await qr.manager.save(prev);
+
+      // Nuevo crédito tipo convenio: sin intereses, nace ACTIVO
+      const convenioLoan = this.loanRepo.create({
+        customerId:    prev.customerId,
+        loanTypeId:    prev.loanTypeId,
+        parentLoanId:  prev.id,
+        principalAmount: monto,
+        interestRate:  0,
+        totalRate:     0,
+        termWeeks:     numPagos,
+        frequency:     'DIARIO',
+        status:        LoanStatus.ACTIVO,
+        disbursedAt:   new Date(),
+        disbursedBy:   userId,
+        disbursementMethod: 'CONVENIO',
+        periodicPayment: cuota,
+        totalAmount:   this.calculator.round(monto),
+        restructureReason: dto.notes || 'Convenio de pago',
+        isConvenio:    true,
+        createdBy:     userId,
+      } as any);
+      const saved: Loan = await qr.manager.save(convenioLoan as any);
+
+      // Calendario del convenio: fechas según periodicidad y primer pago elegidos
+      const dates = this.calculator.generateConvenioDates(
+        dto.fechaPrimerPago!, periodicidad, numPagos,
+      );
+      const capitalPorPago = this.calculator.round(monto / numPagos);
+      let balance = monto;
+      const schedules = [];
+      for (let i = 1; i <= numPagos; i++) {
+        const pmt = i < numPagos ? cuota : this.calculator.round(balance);
+        balance = this.calculator.round(Math.max(0, balance - pmt));
+        schedules.push(this.scheduleRepo.create({
+          loanId: saved.id,
+          periodNumber: i,
+          dueDate: dates[i - 1],
+          principalDue: capitalPorPago,
+          interestDue: 0,
+          totalDue: pmt,
+          balanceDue: pmt,
+          status: ScheduleStatus.PENDIENTE,
+        }));
+      }
+      await qr.manager.save(schedules);
+
+      await qr.commitTransaction();
+      return {
+        loan: saved,
+        schedulesGenerated: schedules.length,
+        cuota,
+        message: 'Convenio generado. El crédito anterior quedó archivado.',
+      };
+    } catch (err) {
+      await qr.rollbackTransaction();
+      throw err;
+    } finally {
+      await qr.release();
+    }
+  }
+
   async generateControlCard(id: string, res: Response): Promise<void> {
     const loan = await this.loanRepo.findOne({
       where: { id }, relations: ['customer', 'loanType'],
@@ -492,6 +726,18 @@ export class LoansController {
   @Get()      @Auth() findAll(@Query() q: any) { return this.loansService.findAll(q); }
   @Get('reportes/proximos-liquidar') @Auth() proximosLiquidar(@Query('max') max?: string) {
     return this.loansService.getProximosLiquidar(max ? Number(max) : 3);
+  }
+  @Get(':id/renovacion-info') @Auth() renovacionInfo(@Param('id') id: string) {
+    return this.loansService.getRenovacionInfo(id);
+  }
+  @Post(':id/renovar') @Auth(UserRole.ADMIN, UserRole.AUTORIZADOR)
+  renovar(@Param('id') id: string, @Body() dto: any, @CurrentUser('id') uid: string) {
+    return this.loansService.renovar(id, dto, uid);
+  }
+
+  @Post(':id/convenio') @Auth(UserRole.ADMIN, UserRole.AUTORIZADOR)
+  convenio(@Param('id') id: string, @Body() dto: any, @CurrentUser('id') uid: string) {
+    return this.loansService.convenio(id, dto, uid);
   }
   @Get(':id') @Auth() findOne(@Param('id') id: string) { return this.loansService.findOne(id); }
   @Post()     @Auth() create(@Body() dto: any, @CurrentUser('id') uid: string) { return this.loansService.create(dto, uid); }

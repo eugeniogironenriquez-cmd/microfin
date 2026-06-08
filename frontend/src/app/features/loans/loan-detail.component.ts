@@ -1,6 +1,6 @@
 import { Component, OnInit, inject, signal } from '@angular/core';
 import { CommonModule, CurrencyPipe, DatePipe } from '@angular/common';
-import { ActivatedRoute, RouterLink } from '@angular/router';
+import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { MatCardModule } from '@angular/material/card';
 import { MatButtonModule } from '@angular/material/button';
 import { MatIconModule } from '@angular/material/icon';
@@ -51,9 +51,16 @@ import { GuarantorFormComponent } from './guarantor-form.component';
           <button mat-stroked-button (click)="downloadContractPdf()">
             <mat-icon>description</mat-icon> Contrato PDF
           </button>
-          <!--<button mat-stroked-button (click)="downloadControlCard()">
-            <mat-icon>credit_card</mat-icon> Tarjeta
-          </button>-->
+        }
+        @if (loan()?.status === 'LIQUIDADO' && auth.can('prestamos.reestructurar')) {
+          <button mat-raised-button color="primary" (click)="renovar()">
+            <mat-icon>autorenew</mat-icon> Renovar
+          </button>
+        }
+        @if ((loan()?.status === 'ACTIVO' || loan()?.status === 'VENCIDO') && auth.can('prestamos.reestructurar')) {
+          <button mat-stroked-button color="warn" (click)="convenio()">
+            <mat-icon>handshake</mat-icon> Convenio
+          </button>
         }
       </div>
     </div>
@@ -207,6 +214,7 @@ import { GuarantorFormComponent } from './guarantor-form.component';
 export class LoanDetailComponent implements OnInit {
   readonly auth = inject(AuthService);
   private route    = inject(ActivatedRoute);
+  private router   = inject(Router);
   private api      = inject(ApiService);
   private snackbar = inject(MatSnackBar);
   private pdfSvc   = inject(PdfDownloadService);
@@ -318,5 +326,15 @@ export class LoanDetailComponent implements OnInit {
     const l = this.loan();
     if (!l?.id) return;
     this.pdfSvc.open('/loans/' + l.id + '/control-card');
+  }
+
+  renovar() {
+    const l = this.loan();
+    if (l?.id) this.router.navigate(['/loans', l.id, 'renovar']);
+  }
+
+  convenio() {
+    const l = this.loan();
+    if (l?.id) this.router.navigate(['/loans', l.id, 'convenio']);
   }
 }
