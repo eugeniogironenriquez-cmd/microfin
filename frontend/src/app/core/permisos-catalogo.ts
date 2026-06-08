@@ -16,6 +16,7 @@ export const PERMISOS_CATALOGO: PermisoDef[] = [
 
   // ── CARTERA ──
   { key: 'cartera.ver', module: 'Cartera', action: 'Ver', description: 'Ver la cartera de créditos' },
+  { key: 'cartera.semaforo', module: 'Cartera', action: 'Semáforo', description: 'Ver el monitor de semáforo de cartera' },
 
   // ── CLIENTES ──
   { key: 'clientes.ver',     module: 'Clientes', action: 'Ver',     description: 'Ver lista y detalle de clientes' },
@@ -38,6 +39,7 @@ export const PERMISOS_CATALOGO: PermisoDef[] = [
   // ── COBRANZA ──
   { key: 'cobranza.ver',     module: 'Cobranza', action: 'Ver',     description: 'Ver cartera de cobranza' },
   { key: 'cobranza.asignar', module: 'Cobranza', action: 'Asignar', description: 'Asignar cobradores a créditos' },
+  { key: 'cobranza.gestor',  module: 'Cobranza', action: 'Gestor',  description: 'Acceder a la gestión de créditos en situación crítica (rojos)' },
 
   // ── CAJA ──
   { key: 'caja.ver',   module: 'Caja', action: 'Ver',   description: 'Ver el módulo de caja' },
@@ -53,7 +55,7 @@ export const PERMISOS_CATALOGO: PermisoDef[] = [
 
   // ── CONFIGURACIÓN ──
   { key: 'config.ver',      module: 'Configuración', action: 'Ver',      description: 'Ver configuración del sistema' },
-  { key: 'config.editar',   module: 'Configuración', action: 'Editar',   description: 'Modificar tipos de crédito y rangos de tasa' },
+  { key: 'config.editar',   module: 'Configuración', action: 'Editar',   description: 'Modificar tipos de crédito, plazos, mora y semáforo' },
   { key: 'empresa.editar',  module: 'Configuración', action: 'Empresa',  description: 'Editar datos de la empresa' },
   { key: 'moratorios.editar',module: 'Configuración', action: 'Moratorios',description: 'Configurar reglas de moratorio' },
 
@@ -69,7 +71,7 @@ export const PERMISOS_POR_ROL: Record<string, string[]> = {
   ADMIN: PERMISOS_CATALOGO.map(p => p.key), // TODOS
 
   CAJERO: [
-    'dashboard.ver', 'cartera.ver',
+    'dashboard.ver', 'cartera.ver', 'cartera.semaforo',
     'clientes.ver', 'clientes.crear', 'clientes.editar',
     'prestamos.ver', 'prestamos.crear', 'prestamos.desembolsar',
     'pagos.ver', 'pagos.registrar', 'pagos.monitor',
@@ -80,7 +82,7 @@ export const PERMISOS_POR_ROL: Record<string, string[]> = {
   ],
 
   AUTORIZADOR: [
-    'dashboard.ver', 'cartera.ver',
+    'dashboard.ver', 'cartera.ver', 'cartera.semaforo',
     'clientes.ver', 'clientes.crear', 'clientes.editar',
     'prestamos.ver', 'prestamos.crear', 'prestamos.autorizar', 'prestamos.reestructurar',
     'pagos.ver', 'pagos.registrar',

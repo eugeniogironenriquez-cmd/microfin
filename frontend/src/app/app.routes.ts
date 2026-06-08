@@ -24,13 +24,16 @@ export const routes: Routes = [
       { path: 'settings', loadChildren: () => import('./features/settings/settings.routes').then((m) => m.settingsRoutes), canActivate: [permissionGuard(['config.ver'])] },
       { path: 'plazos', loadComponent: () => import('./features/settings/plazos-config.component').then(m => m.PlazosConfigComponent), canActivate: [permissionGuard(['config.editar'])] },
       { path: 'config-mora', loadComponent: () => import('./features/settings/mora-config.component').then(m => m.MoraConfigComponent), canActivate: [permissionGuard(['config.editar'])] },
+      { path: 'cartera/monitor', loadComponent: () => import('./features/cartera/cartera-monitor.component').then(m => m.CarteraMonitorComponent), canActivate: [permissionGuard(['cartera.semaforo'])] },
+      { path: 'gestor-cobranza', loadComponent: () => import('./features/cartera/gestor-cobranza.component').then(m => m.GestorCobranzaComponent), canActivate: [permissionGuard(['cobranza.gestor'])] },
+      { path: 'semaforo-config', loadComponent: () => import('./features/settings/semaforo-config.component').then(m => m.SemaforoConfigComponent), canActivate: [permissionGuard(['config.editar'])] },
       { path: 'users', loadChildren: () => import('./features/users/users.routes').then((m) => m.usersRoutes), canActivate: [permissionGuard(['usuarios.ver'])] },
       // Gestión de roles y permisos
       { path: 'roles', loadChildren: () => import('./features/roles/roles.routes').then((m) => m.ROLES_ROUTES), canActivate: [permissionGuard(['roles.ver'])] },
       // Nuevas rutas — DENTRO del shell para conservar el sidebar
       { path: 'portfolio', loadComponent: () => import('./features/portfolio/portfolio.component').then(m => m.PortfolioComponent), canActivate: [permissionGuard(['cartera.ver'])] },
       { path: 'company', loadComponent: () => import('./features/settings/company-settings.component').then(m => m.CompanySettingsComponent), canActivate: [permissionGuard(['empresa.editar'])] },
-      { path: 'late-fee-rules', loadComponent: () => import('./features/settings/late-fee-rules.component').then(m => m.LateFeeRulesComponent), canActivate: [permissionGuard(['moratorios.editar'])] },
+      //{ path: 'late-fee-rules', loadComponent: () => import('./features/settings/late-fee-rules.component').then(m => m.LateFeeRulesComponent), canActivate: [permissionGuard(['moratorios.editar'])] },
       { path: 'disbursements', loadComponent: () => import('./features/disbursements/disbursements.component').then(m => m.DisbursementsComponent), canActivate: [permissionGuard(['prestamos.desembolsar'])] },
       { path: 'reports/location', loadComponent: () => import('./features/reports/location-report.component').then(m => m.LocationReportComponent), canActivate: [permissionGuard(['reportes.ubicacion'])] },
       { path: 'expenses', loadComponent: () => import('./features/expenses/expenses.component').then(m => m.ExpensesComponent), canActivate: [permissionGuard(['gastos.ver'])] },

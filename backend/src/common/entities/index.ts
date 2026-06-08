@@ -945,3 +945,41 @@ export class ConfigMora {
   updatedAt: Date;
 }
  
+// ─── CONFIGURACIÓN DEL SEMÁFORO DE CARTERA ────────────────────
+// Agregar al final de common/entities/index.ts
+@Entity('config_semaforo')
+export class ConfigSemaforo {
+  @PrimaryGeneratedColumn('increment')
+  id: number;
+
+  @Column({ name: 'verde_hasta', type: 'int', default: 0 })
+  greenUpTo: number;       // cuotas vencidas hasta este num = verde
+
+  @Column({ name: 'amarillo_hasta', type: 'int', default: 5 })
+  yellowUpTo: number;      // hasta este num = amarillo; mas = rojo
+
+  @UpdateDateColumn({ name: 'actualizado_en' })
+  updatedAt: Date;
+}
+
+// ─── HISTORIAL DE COMPORTAMIENTO DE PAGO ──────────────────────
+@Entity('historial_comportamiento')
+export class HistorialComportamiento {
+  @PrimaryGeneratedColumn('uuid')
+  id: string;
+
+  @Column({ name: 'cliente_id' })
+  customerId: string;
+
+  @Column({ name: 'prestamo_id' })
+  loanId: string;
+
+  @Column({ name: 'nivel', length: 10 })
+  level: string;           // AMARILLO | ROJO
+
+  @Column({ name: 'cuotas_vencidas', type: 'int', default: 0 })
+  overdueCount: number;
+
+  @CreateDateColumn({ name: 'registrado_en' })
+  recordedAt: Date;
+}
