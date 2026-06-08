@@ -24,7 +24,6 @@ export const routes: Routes = [
       { path: 'collection', loadChildren: () => import('./features/collection/collection.routes').then((m) => m.collectionRoutes), canActivate: [permissionGuard(['cobranza.ver'])] },
       { path: 'cash', loadChildren: () => import('./features/cash/cash.routes').then((m) => m.cashRoutes), canActivate: [permissionGuard(['caja.ver'])] },
       { path: 'reports', loadChildren: () => import('./features/reports/reports.routes').then((m) => m.reportsRoutes), canActivate: [permissionGuard(['reportes.ver'])] },
-      { path: 'settings', loadChildren: () => import('./features/settings/settings.routes').then((m) => m.settingsRoutes), canActivate: [permissionGuard(['config.ver'])] },
       { path: 'plazos', loadComponent: () => import('./features/settings/plazos-config.component').then(m => m.PlazosConfigComponent), canActivate: [permissionGuard(['config.editar'])] },
       { path: 'config-mora', loadComponent: () => import('./features/settings/mora-config.component').then(m => m.MoraConfigComponent), canActivate: [permissionGuard(['config.editar'])] },
       { path: 'users', loadChildren: () => import('./features/users/users.routes').then((m) => m.usersRoutes), canActivate: [permissionGuard(['usuarios.ver'])] },

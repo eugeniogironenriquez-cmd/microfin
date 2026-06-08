@@ -107,7 +107,6 @@ export class ShellComponent {
     { label: 'Gastos',           icon: 'receipt_long',           route: '/expenses',         perm: 'gastos.ver' },
     { label: 'Reportes',         icon: 'bar_chart',              route: '/reports',          perm: 'reportes.ver' },
     { label: 'Rpt. Ubicación',   icon: 'map',                    route: '/reports/location', perm: 'reportes.ubicacion' },
-    { label: 'Configuración',    icon: 'settings',               route: '/settings',         perm: 'config.ver' },
     { label: 'Plazos de crédito', icon: 'tune',                  route: '/plazos',           perm: 'config.editar' },
     { label: 'Mora',             icon: 'gavel',                  route: '/config-mora',      perm: 'config.editar' },
     { label: 'Empresa',          icon: 'business',               route: '/company',          perm: 'empresa.editar' },

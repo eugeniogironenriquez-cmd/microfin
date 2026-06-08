@@ -414,11 +414,11 @@ export class Loan {
   @Column({ name: 'cliente_id' })
   customerId: string;
 
-  @ManyToOne(() => LoanType)
+  @ManyToOne(() => LoanType, { nullable: true })
   @JoinColumn({ name: 'tipo_prestamo_id' })
   loanType: LoanType;
-
-  @Column({ name: 'tipo_prestamo_id' })
+ 
+  @Column({ name: 'tipo_prestamo_id', nullable: true })
   loanTypeId: string;
 
   @Column({ name: 'prestamo_padre_id', nullable: true })

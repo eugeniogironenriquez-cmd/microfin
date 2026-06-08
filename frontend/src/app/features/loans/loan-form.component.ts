@@ -18,7 +18,7 @@ import { MatChipsModule } from '@angular/material/chips';
 import { MatTooltipModule } from '@angular/material/tooltip';
 import { debounceTime, distinctUntilChanged, Subject } from 'rxjs';
 import { HttpClient, HttpHeaders } from '@angular/common/http';
-import { ApiService, Customer, LoanType, PagedResponse, Loan } from '../../core/index';
+import { ApiService, Customer, PagedResponse, Loan } from '../../core/index';
 import { PdfDownloadService } from '../../core/pdf-download.service';
 
 @Component({
@@ -144,16 +144,6 @@ import { PdfDownloadService } from '../../core/pdf-download.service';
               <h3 class="section-title">Condiciones del crédito</h3>
 
               <div class="form-grid">
-                <!-- Tipo (opcional, informativo) -->
-                <mat-form-field appearance="outline">
-                  <mat-label>Tipo de crédito *</mat-label>
-                  <mat-select formControlName="loanTypeId">
-                    @for (t of loanTypes(); track t.id) {
-                      <mat-option [value]="t.id">{{ t.name }}</mat-option>
-                    }
-                  </mat-select>
-                </mat-form-field>
-
                 <!-- Monto -->
                 <mat-form-field appearance="outline">
                   <mat-label>Monto solicitado *</mat-label>
@@ -426,7 +416,6 @@ export class LoanFormComponent implements OnInit {
   private pdfSvc   = inject(PdfDownloadService);
 
   customers        = signal<Customer[]>([]);
-  loanTypes        = signal<LoanType[]>([]);
   plazos           = signal<any[]>([]);
   selectedPlazo    = signal<any>(null);
   customerLoans    = signal<Loan[]>([]);
@@ -450,7 +439,6 @@ export class LoanFormComponent implements OnInit {
   private searchSubject = new Subject<string>();
 
   form = this.fb.group({
-    loanTypeId:      ['', Validators.required],
     principalAmount: [null as number | null, [Validators.required, Validators.min(1)]],
     days:            [null as number | null, [Validators.required, Validators.min(1)]],
     notes:           [''],
@@ -466,12 +454,6 @@ export class LoanFormComponent implements OnInit {
   });
 
   ngOnInit() {
-    this.api.get<any>('/settings/loan-types').subscribe({
-      next: (r) => {
-        const list = Array.isArray(r) ? r : r?.data ?? [];
-        this.loanTypes.set(list);
-      },
-    });
     this.api.get<any>('/plazos-credito').subscribe({
       next: (r) => {
         const list = Array.isArray(r) ? r : r?.data ?? [];
@@ -549,7 +531,6 @@ export class LoanFormComponent implements OnInit {
     }
     this.saving.set(true);
     this.api.post<Loan>('/loans', {
-      loanTypeId:      this.form.value.loanTypeId,
       principalAmount: this.form.value.principalAmount,
       days:            this.form.value.days,
       notes:           this.form.value.notes,

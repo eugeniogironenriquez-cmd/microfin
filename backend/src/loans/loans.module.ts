@@ -230,10 +230,7 @@ export class LoansService {
     };
   }
 
-  async create(dto: any & { customerId: string; loanTypeId: string }, userId: string): Promise<Loan> {
-    const loanType = await this.loanTypeRepo.findOne({ where: { id: dto.loanTypeId } });
-    if (!loanType) throw new NotFoundException('Tipo de préstamo no encontrado');
-
+  async create(dto: any & { customerId: string }, userId: string): Promise<Loan> {
     const principal = Number(dto.principalAmount);
     const days = Number(dto.days ?? dto.termWeeks);
     // Resolver % por el plazo configurado

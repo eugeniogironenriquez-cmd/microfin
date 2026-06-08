@@ -171,13 +171,10 @@ export class PdfGeneratorService {
     doc.font(BB).fontSize(8.5).fillColor(GREEN2).text('RESUMEN DEL CRÉDITO', ML+14, y+10, {lineBreak:false});
 
     const items = [
-      ['Monto',   cur(data.principalAmount)],
-      ['Tasa',    data.totalRate ? `${(data.totalRate*100).toFixed(0)}%` : `${(data.interestRate*100).toFixed(2)}%`],
-      ['Plazo',   `${data.termWeeks} días`],
+      ['Monto',  cur(data.principalAmount)],
+      ['Plazo',  `${data.termWeeks} días`],
+      ['Cuota diaria', cur(data.periodicPayment)],
       ['Frecuencia', 'DIARIO'],
-      ['Cuota',   cur(data.periodicPayment)],
-      ['Total',   cur(data.totalPayment)],
-      ['Intereses',cur(data.totalInterest)],
     ];
     const cw = (PW-ML*2-28)/4;
     items.forEach((item, i) => {
@@ -246,11 +243,11 @@ export class PdfGeneratorService {
     const H = 70;
     doc.rect(ML, y, PW-ML*2, H).fillAndStroke(LGRAY, BORDER);
     const fields = [
-      ['Tipo', loanType.name], ['Monto', cur(loan.principalAmount)],
-      ['Tasa', loan.totalRate && Number(loan.totalRate) > 0 ? `${(Number(loan.totalRate)*100).toFixed(0)}% total` : `${(Number(loan.interestRate)*100).toFixed(2)}%`],
+      ['Monto', cur(loan.principalAmount)],
       ['Plazo', `${loan.termWeeks} días`],
-      ['Frecuencia', 'DIARIO'], ['Cuota', cur(loan.periodicPayment)],
-      ['Total', cur(loan.totalAmount)], ['Desembolso', fdate(loan.disbursedAt)],
+      ['Cuota diaria', cur(loan.periodicPayment)],
+      ['Frecuencia', 'DIARIO'],
+      ['Desembolso', fdate(loan.disbursedAt)],
     ];
     const cw = (PW-ML*2-28)/4;
     fields.forEach((f, i) => {
