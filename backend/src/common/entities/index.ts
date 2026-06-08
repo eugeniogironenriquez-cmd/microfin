@@ -25,7 +25,9 @@ export enum LoanStatus {
   REESTRUCTURADO = 'REESTRUCTURADO',
   LIQUIDADO      = 'LIQUIDADO',
   CASTIGADO      = 'CASTIGADO',
+  CONVENIO       = 'CONVENIO',   // <-- AGREGAR
 }
+ 
 export enum ScheduleStatus {
   PENDIENTE = 'PENDIENTE',
   PAGADO    = 'PAGADO',
@@ -469,6 +471,10 @@ export class Loan {
 
   @Column({ name: 'contador_reestructuras', default: 0 })
   restructureCount: number;
+
+  @Column({ name: 'es_convenio', type: 'tinyint', width: 1, default: 0,
+  transformer: { to: (v: boolean) => v ? 1 : 0, from: (v: any) => Boolean(v) } })
+  isConvenio: boolean;
 
   @Column({ name: 'cobrador_id', nullable: true })
   collectorId: string;

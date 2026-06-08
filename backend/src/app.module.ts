@@ -9,6 +9,7 @@ import {
   CashSession, AuditLog, CompanySettings, LateFeeRule,
   State, Municipality, Guarantor, ExpenseCategory, Expense,
   Role, Permiso, PlazoCredito, ConfigMora,
+  ConfigSemaforo, HistorialComportamiento,
 } from './common/entities';
 import { AuthModule }        from './auth/auth.module';
 import { UsersModule }       from './users/users.module';
@@ -31,6 +32,7 @@ import { OverdueJobModule, OverdueJobService } from './jobs/overdue-job.module';
 import { LoanDocumentsModule } from './loan-documents/loan-documents.module';
 import { PlazosCreditoModule } from './plazos-credito/plazos-credito.module';
 import { ConfigMoraModule } from './config-mora/config-mora.module';
+import { SemaforoModule } from './semaforo/semaforo.module';
 
 @Module({
   imports: [
@@ -51,6 +53,7 @@ import { ConfigMoraModule } from './config-mora/config-mora.module';
           CashSession, AuditLog, CompanySettings, LateFeeRule,
           State, Municipality, Guarantor, ExpenseCategory, Expense,
           Role, Permiso, PlazoCredito, ConfigMora,
+          ConfigSemaforo, HistorialComportamiento,
         ],
         synchronize: false,
         logging: config.get('NODE_ENV') === 'development',
@@ -60,7 +63,7 @@ import { ConfigMoraModule } from './config-mora/config-mora.module';
     CashModule, CollectionModule, ReportsModule, SettingsModule, RateRangesModule,
     CompanyModule, LateFeeRulesModule, LocationModule, GuarantorModule,
     DisbursementModule, ExpensesModule, OverdueJobModule, LoanDocumentsModule,
-    PlazosCreditoModule, ConfigMoraModule,
+    PlazosCreditoModule, ConfigMoraModule, SemaforoModule,
   ],
 })
 export class AppModule implements OnApplicationBootstrap, NestModule {

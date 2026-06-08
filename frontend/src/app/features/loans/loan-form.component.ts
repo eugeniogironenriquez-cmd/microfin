@@ -107,6 +107,37 @@ import { PdfDownloadService } from '../../core/pdf-download.service';
                     <span>Cliente sin historial de créditos previos.</span>
                   </div>
                 }
+
+                <!-- COMPORTAMIENTO DE PAGO -->
+                @if (comportamiento(); as comp) {
+                  @if (comp.resumen.tieneProblemas) {
+                    <div class="comportamiento-box">
+                      <div class="comp-header">
+                        <mat-icon style="color:#DC2626">warning</mat-icon>
+                        <strong>Historial de problemas de pago</strong>
+                      </div>
+                      <div class="comp-stats">
+                        <div class="comp-stat">
+                          <span class="comp-num rojo">{{ comp.resumen.vecesRojo }}</span>
+                          <span class="comp-lbl">veces en rojo</span>
+                        </div>
+                        <div class="comp-stat">
+                          <span class="comp-num amarillo">{{ comp.resumen.vecesAmarillo }}</span>
+                          <span class="comp-lbl">veces en amarillo</span>
+                        </div>
+                        <div class="comp-stat">
+                          <span class="comp-num">{{ comp.resumen.maxCuotasVencidas }}</span>
+                          <span class="comp-lbl">máx. cuotas vencidas</span>
+                        </div>
+                      </div>
+                    </div>
+                  } @else {
+                    <div class="alert-box success" style="margin:12px 0">
+                      <mat-icon>verified</mat-icon>
+                      <span>Cliente sin problemas de pago registrados. Buen comportamiento.</span>
+                    </div>
+                  }
+                }
               }
 
               <mat-divider style="margin:16px 0"></mat-divider>
@@ -371,6 +402,20 @@ import { PdfDownloadService } from '../../core/pdf-download.service';
 
     </mat-stepper>
   `,
+  styles: [`
+    .comportamiento-box {
+      background:#FEF2F2; border:1px solid #FECACA; border-radius:10px;
+      padding:14px; margin:12px 0;
+    }
+    .comp-header { display:flex; align-items:center; gap:8px; margin-bottom:12px; }
+    .comp-header strong { color:#991B1B; }
+    .comp-stats { display:flex; gap:20px; }
+    .comp-stat { display:flex; flex-direction:column; align-items:center; }
+    .comp-num { font-size:24px; font-weight:700; line-height:1; }
+    .comp-num.rojo { color:#DC2626; }
+    .comp-num.amarillo { color:#D97706; }
+    .comp-lbl { font-size:11px; color:#718096; margin-top:2px; text-align:center; }
+  `],
 })
 export class LoanFormComponent implements OnInit {
   private api      = inject(ApiService);
@@ -385,6 +430,7 @@ export class LoanFormComponent implements OnInit {
   plazos           = signal<any[]>([]);
   selectedPlazo    = signal<any>(null);
   customerLoans    = signal<Loan[]>([]);
+  comportamiento   = signal<any>(null);
   selectedCustomer = signal<Customer | null>(null);
   simResult        = signal<any>(null);
   createdLoan      = signal<Loan | null>(null);
@@ -452,10 +498,16 @@ export class LoanFormComponent implements OnInit {
   selectCustomer(c: Customer) {
     this.selectedCustomer.set(c);
     this.customerSearch.set(c.fullName);
+    this.comportamiento.set(null);
     this.loadingHistory.set(true);
     this.api.get<any>('/loans', { customerId: c.id, limit: 10 }).subscribe({
       next: (r) => { this.customerLoans.set(r?.data ?? []); this.loadingHistory.set(false); },
       error: () => this.loadingHistory.set(false),
+    });
+    // Comportamiento de pago (historial de semáforo)
+    this.api.get<any>(`/semaforo/historial/${c.id}`).subscribe({
+      next: (h) => this.comportamiento.set(h),
+      error: () => this.comportamiento.set(null),
     });
   }
 
@@ -463,6 +515,7 @@ export class LoanFormComponent implements OnInit {
     this.selectedCustomer.set(null);
     this.customerSearch.set('');
     this.customerLoans.set([]);
+    this.comportamiento.set(null);
   }
 
   onPlazoChange() {

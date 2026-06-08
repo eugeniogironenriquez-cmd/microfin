@@ -338,6 +338,48 @@ export class LoansService {
     return this.scheduleRepo.find({ where: { loanId }, order: { periodNumber: 'ASC' } });
   }
 
+  // ── PRÓXIMOS A LIQUIDAR (feature 11) ─────────────────────────
+  // Créditos ACTIVO/VENCIDO con 3 o menos cuotas pendientes.
+  // Lista informativa para el administrador.
+  async getProximosLiquidar(maxPendientes = 3) {
+    const loans = await this.loanRepo.find({
+      where: [
+        { status: LoanStatus.ACTIVO },
+        { status: LoanStatus.VENCIDO },
+      ],
+      relations: ['customer'],
+    });
+
+    const rows = [];
+    for (const loan of loans) {
+      const pendientes = await this.scheduleRepo.count({
+        where: [
+          { loanId: loan.id, status: ScheduleStatus.PENDIENTE },
+          { loanId: loan.id, status: ScheduleStatus.PARCIAL },
+        ],
+      });
+      if (pendientes > 0 && pendientes <= maxPendientes) {
+        rows.push({
+          id: loan.id,
+          customerId: loan.customerId,
+          customerName: loan.customer?.fullName || '',
+          customerPhone: loan.customer?.phone || '',
+          principalAmount: Number(loan.principalAmount),
+          periodicPayment: Number(loan.periodicPayment),
+          totalAmount: Number(loan.totalAmount),
+          termWeeks: loan.termWeeks,
+          status: loan.status,
+          disbursedAt: loan.disbursedAt,
+          cuotasPendientes: pendientes,
+        });
+      }
+    }
+
+    // Ordenar: menos cuotas pendientes primero (más cerca de liquidar)
+    rows.sort((a, b) => a.cuotasPendientes - b.cuotasPendientes);
+    return { data: rows, total: rows.length };
+  }
+
   async generateControlCard(id: string, res: Response): Promise<void> {
     const loan = await this.loanRepo.findOne({
       where: { id }, relations: ['customer', 'loanType'],
@@ -448,6 +490,9 @@ export class LoansController {
   constructor(private loansService: LoansService) {}
 
   @Get()      @Auth() findAll(@Query() q: any) { return this.loansService.findAll(q); }
+  @Get('reportes/proximos-liquidar') @Auth() proximosLiquidar(@Query('max') max?: string) {
+    return this.loansService.getProximosLiquidar(max ? Number(max) : 3);
+  }
   @Get(':id') @Auth() findOne(@Param('id') id: string) { return this.loansService.findOne(id); }
   @Post()     @Auth() create(@Body() dto: any, @CurrentUser('id') uid: string) { return this.loansService.create(dto, uid); }
 

@@ -34,6 +34,12 @@ import { ApiService } from '../../core/index';
         @if (loading()) {
           <div class="loading-overlay"><mat-spinner diameter="36"></mat-spinner></div>
         } @else {
+          <!-- Aviso de aval único -->
+          <div class="aval-info">
+            <mat-icon>info</mat-icon>
+            <span>Un aval no puede respaldar más de un crédito activo o vencido al mismo tiempo.</span>
+          </div>
+
           <form [formGroup]="form" (ngSubmit)="save()">
             <div class="form-grid">
               <mat-form-field appearance="outline" class="col-span-2">
@@ -46,20 +52,10 @@ import { ApiService } from '../../core/index';
                 <input matInput formControlName="curp" style="text-transform:uppercase">
               </mat-form-field>
 
-              <!--<mat-form-field appearance="outline">
-                <mat-label>RFC</mat-label>
-                <input matInput formControlName="rfc" style="text-transform:uppercase">
-              </mat-form-field>-->
-
               <mat-form-field appearance="outline">
                 <mat-label>Teléfono *</mat-label>
                 <input matInput formControlName="phone" maxlength="10">
               </mat-form-field>
-
-              <!--<mat-form-field appearance="outline">
-                <mat-label>Email</mat-label>
-                <input matInput type="email" formControlName="email">
-              </mat-form-field>-->
 
               <mat-form-field appearance="outline">
                 <mat-label>Parentesco / Relación</mat-label>
@@ -98,7 +94,15 @@ import { ApiService } from '../../core/index';
         }
       </mat-card-content>
     </mat-card>
-  `
+  `,
+  styles: [`
+    .aval-info {
+      display:flex; align-items:center; gap:8px; padding:10px 12px;
+      background:#EFF6FF; border:1px solid #BFDBFE; border-radius:8px;
+      margin-bottom:16px; font-size:13px; color:#1E40AF;
+    }
+    .aval-info mat-icon { color:#2563EB; flex-shrink:0; }
+  `],
 })
 export class GuarantorFormComponent implements OnInit {
   @Input() loanId!: string;
@@ -137,14 +141,21 @@ export class GuarantorFormComponent implements OnInit {
     if (this.form.invalid) { this.form.markAllAsTouched(); return; }
     this.saving.set(true);
     const dto = { ...this.form.value, curp: (this.form.value.curp || '').toUpperCase(), rfc: (this.form.value.rfc || '').toUpperCase() };
-    this.api.post<any>(`/loans/${this.loanId}/guarantor`, dto).subscribe({
+    // Si ya existe, usar PUT (edición); si no, POST (alta)
+    const req = this.existing()
+      ? this.api.put<any>(`/loans/${this.loanId}/guarantor`, dto)
+      : this.api.post<any>(`/loans/${this.loanId}/guarantor`, dto);
+    req.subscribe({
       next: () => {
         this.snackbar.open(this.existing() ? 'Aval actualizado' : 'Aval registrado', 'OK', { duration: 3000 });
         this.existing.set(true);
         this.saving.set(false);
       },
       error: (err) => {
-        this.snackbar.open(err.error?.message?.[0] || 'Error al guardar', 'Cerrar', { duration: 5000 });
+        const msg = Array.isArray(err.error?.message)
+          ? err.error.message[0]
+          : (err.error?.message || 'Error al guardar');
+        this.snackbar.open(msg, 'Cerrar', { duration: 6000 });
         this.saving.set(false);
       },
     });
