@@ -76,11 +76,16 @@ export class UsersService {
     return this.findOne(saved.id);
   }
 
-  async update(id: string, dto: Partial<{ name: string; roleId: string; role: UserRole }>): Promise<any> {
+  async update(id: string, dto: Partial<{ name: string; roleId: string; role: UserRole; isActive: boolean }>): Promise<any> {
     const u = await this.userRepo.findOne({ where: { id } });
     if (!u) throw new NotFoundException('Usuario no encontrado');
 
     if (dto.name) u.name = dto.name;
+
+    // Aceptar isActive por PUT también (además del endpoint /toggle)
+    if (dto.isActive !== undefined) {
+      u.isActive = Boolean(dto.isActive);
+    }
 
     if (dto.roleId) {
       const role = await this.roleRepo.findOne({ where: { id: dto.roleId } });
@@ -148,7 +153,7 @@ export class UsersController {
   }
 
   @Put(':id') @AuthPermission('usuarios.crear')
-  update(@Param('id') id: string, @Body() dto: Partial<{ name: string; roleId: string; role: UserRole }>) {
+  update(@Param('id') id: string, @Body() dto: Partial<{ name: string; roleId: string; role: UserRole; isActive: boolean }>) {
     return this.usersService.update(id, dto);
   }
 

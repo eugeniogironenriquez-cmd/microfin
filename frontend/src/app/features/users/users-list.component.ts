@@ -49,7 +49,7 @@ import { ApiService } from '../../core/index';
           <ng-container matColumnDef="role">
             <th mat-header-cell *matHeaderCellDef>Rol</th>
             <td mat-cell *matCellDef="let r">
-              <span class="badge badge-{{ r.role | lowercase }}">{{ r.role }}</span>
+              <span class="badge badge-{{ (r.roleName || r.role) | lowercase }}">{{ r.roleName || r.role }}</span>
             </td>
           </ng-container>
           <ng-container matColumnDef="lastLogin">
@@ -62,6 +62,7 @@ import { ApiService } from '../../core/index';
             <th mat-header-cell *matHeaderCellDef>Activo</th>
             <td mat-cell *matCellDef="let r">
               <mat-slide-toggle [checked]="r.isActive"
+                                [disabled]="togglingId() === r.id"
                                 (change)="toggleActive(r)"></mat-slide-toggle>
             </td>
           </ng-container>
@@ -86,6 +87,7 @@ export class UsersListComponent implements OnInit {
 
   users   = signal<any[]>([]);
   loading = signal(true);
+  togglingId = signal<string | null>(null);
   cols    = ['name', 'role', 'lastLogin', 'active', 'actions'];
 
   ngOnInit() { this.load(); }
@@ -94,7 +96,6 @@ export class UsersListComponent implements OnInit {
     this.loading.set(true);
     this.api.get<any>('/users').subscribe({
       next: (r) => {
-        // Handle both array and paged response formats
         if (Array.isArray(r)) {
           this.users.set(r);
         } else if (r?.data && Array.isArray(r.data)) {
@@ -109,12 +110,19 @@ export class UsersListComponent implements OnInit {
   }
 
   toggleActive(user: any) {
-    this.api.put(`/users/${user.id}`, { isActive: !user.isActive }).subscribe({
+    // Usar el endpoint dedicado PATCH /users/:id/toggle (el PUT no procesa isActive)
+    this.togglingId.set(user.id);
+    this.api.patch(`/users/${user.id}/toggle`, {}).subscribe({
       next: () => {
         this.snackbar.open('Usuario actualizado', 'OK', { duration: 2000 });
+        this.togglingId.set(null);
         this.load();
       },
-      error: () => this.snackbar.open('Error al actualizar', 'Cerrar', { duration: 3000 }),
+      error: () => {
+        this.snackbar.open('Error al actualizar', 'Cerrar', { duration: 3000 });
+        this.togglingId.set(null);
+        this.load(); // recargar para revertir el toggle visual
+      },
     });
   }
 }
