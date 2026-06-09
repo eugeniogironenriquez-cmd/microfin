@@ -621,6 +621,13 @@ export class Payment {
   @Column({ name: 'geolocalizacion', nullable: true })
   geolocation: string | undefined;
 
+  @Column({ name: 'lat', type: 'decimal', precision: 10, scale: 7, nullable: true })
+  lat?: number | null;
+
+  @Column({ name: 'lng', type: 'decimal', precision: 10, scale: 7, nullable: true })
+  lng?: number | null;
+
+
   @Column({ name: 'id_local', nullable: true })
   localId: string | undefined;
 
