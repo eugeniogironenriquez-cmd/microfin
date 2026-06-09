@@ -220,27 +220,33 @@ import { GuarantorFormComponent } from './guarantor-form.component';
 
                   @if (existingDocs().length > 0) {
                     <div class="docs-existentes">
-                      <h4 style="font-size:13px;color:#4A5568;margin:16px 0 8px">Documentos cargados</h4>
+                      <h4 class="docs-title">Documentos cargados</h4>
                       @for (d of existingDocs(); track d.id) {
                         <div class="doc-item">
                           <mat-icon style="color:#16A34A">description</mat-icon>
                           <div class="doc-info">
-                            <span class="doc-name">{{ d.fileName || d.documentType || 'Documento' }}</span>
-                            @if (d.description) { <span class="doc-desc">{{ d.description }}</span> }
+                            <span class="doc-name">{{ d.nombre_archivo || d.tipo || 'Documento' }}</span>
+                            @if (d.descripcion) { <span class="doc-desc">{{ d.descripcion }}</span> }
                           </div>
+                          <button mat-icon-button color="primary" (click)="verDoc(d)"
+                                  matTooltip="Ver documento">
+                            <mat-icon>visibility</mat-icon>
+                          </button>
                         </div>
                       }
                     </div>
                   }
 
-                  <mat-form-field appearance="outline" class="w-full" style="margin:16px 0">
-                    <mat-label>Descripción del bien en garantía</mat-label>
-                    <textarea matInput rows="2"
-                              [value]="garantiaDesc()"
-                              (input)="garantiaDesc.set($any($event.target).value)"
-                              placeholder="Ej: Terreno en Calle Juárez #45, Col. Centro, Ixtepec. Sup. 200m²">
-                    </textarea>
-                  </mat-form-field>
+                  <div class="desc-block">
+                    <label class="desc-label">Descripción del bien en garantía</label>
+                    <mat-form-field appearance="outline" class="w-full">
+                      <textarea matInput rows="2"
+                                [value]="garantiaDesc()"
+                                (input)="garantiaDesc.set($any($event.target).value)"
+                                placeholder="Ej: Terreno en Calle Juárez #45, Col. Centro, Ixtepec. Sup. 200m²">
+                      </textarea>
+                    </mat-form-field>
+                  </div>
 
                   <div class="upload-zone" (click)="docInput.click()">
                     <mat-icon style="font-size:48px;width:48px;height:48px;color:#CBD5E0">cloud_upload</mat-icon>
@@ -283,10 +289,13 @@ import { GuarantorFormComponent } from './guarantor-form.component';
       display:flex; align-items:center; gap:10px; padding:10px 12px;
       background:#F7FAFC; border-radius:8px; margin-bottom:6px;
     }
-    .doc-info { display:flex; flex-direction:column; }
+    .doc-info { display:flex; flex-direction:column; flex:1; }
     .doc-name { font-weight:600; font-size:14px; }
     .doc-desc { font-size:12px; color:#718096; }
     .w-full { width:100%; }
+    .docs-title { font-size:13px; color:#4A5568; margin:16px 0 8px; }
+    .desc-block { margin:20px 0 4px; }
+    .desc-label { display:block; font-size:13px; font-weight:600; color:#4A5568; margin-bottom:8px; }
   `],
 })
 export class LoanDetailComponent implements OnInit {
@@ -452,6 +461,19 @@ export class LoanDetailComponent implements OnInit {
         this.snackbar.open('Error al subir el documento', 'Cerrar', { duration: 4000 });
       },
     });
+  }
+
+  // Abrir/descargar un documento cargado.
+  // Intenta varias formas según lo que devuelva el backend:
+  //  - d.url / d.fileUrl: enlace directo → abrir en pestaña nueva
+  //  - d.id: pedir el archivo al endpoint con el token (vía PdfDownloadService.open)
+  verDoc(d: any) {
+    if (!d?.id) {
+      this.snackbar.open('No se pudo abrir el documento', 'Cerrar', { duration: 4000 });
+      return;
+    }
+    // Endpoint real del backend: GET /loans/documents/:docId/file
+    this.pdfSvc.open('/loans/documents/' + d.id + '/file');
   }
 
   renovar() {
