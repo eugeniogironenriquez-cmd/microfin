@@ -11,6 +11,7 @@ import { MatSnackBar, MatSnackBarModule } from '@angular/material/snack-bar';
 import { MatDividerModule } from '@angular/material/divider';
 import { MatChipsModule } from '@angular/material/chips';
 import { MatTooltipModule } from '@angular/material/tooltip';
+import { HttpClient, HttpHeaders } from '@angular/common/http';
 import { ApiService, AuthService, Loan, PaymentSchedule } from '../../core/index';
 import { PdfDownloadService } from '../../core/pdf-download.service';
 import { GuarantorFormComponent } from './guarantor-form.component';
@@ -197,6 +198,70 @@ import { GuarantorFormComponent } from './guarantor-form.component';
           </div>
         </mat-tab>
 
+        <!-- TAB: DOCUMENTOS -->
+        <mat-tab label="Documentos">
+          <div class="tab-content">
+            <mat-card>
+              <mat-card-header>
+                <mat-card-title><mat-icon>folder_open</mat-icon> Documento de garantía</mat-card-title>
+                <mat-card-subtitle>Sube o reemplaza el documento que respalda el crédito</mat-card-subtitle>
+              </mat-card-header>
+              <mat-card-content>
+                <div class="garantia-section">
+                  <div class="garantia-header">
+                    <mat-icon style="color:#1C4532;font-size:36px;width:36px;height:36px">home_work</mat-icon>
+                    <div>
+                      <h3 style="margin:0;font-size:16px;font-weight:700">Documento de garantía</h3>
+                      <p style="margin:4px 0 0;font-size:13px;color:#718096">
+                        Escritura de terreno, título de propiedad, factura de vehículo, contrato u otro bien.
+                      </p>
+                    </div>
+                  </div>
+
+                  @if (existingDocs().length > 0) {
+                    <div class="docs-existentes">
+                      <h4 style="font-size:13px;color:#4A5568;margin:16px 0 8px">Documentos cargados</h4>
+                      @for (d of existingDocs(); track d.id) {
+                        <div class="doc-item">
+                          <mat-icon style="color:#16A34A">description</mat-icon>
+                          <div class="doc-info">
+                            <span class="doc-name">{{ d.fileName || d.documentType || 'Documento' }}</span>
+                            @if (d.description) { <span class="doc-desc">{{ d.description }}</span> }
+                          </div>
+                        </div>
+                      }
+                    </div>
+                  }
+
+                  <mat-form-field appearance="outline" class="w-full" style="margin:16px 0">
+                    <mat-label>Descripción del bien en garantía</mat-label>
+                    <textarea matInput rows="2"
+                              [value]="garantiaDesc()"
+                              (input)="garantiaDesc.set($any($event.target).value)"
+                              placeholder="Ej: Terreno en Calle Juárez #45, Col. Centro, Ixtepec. Sup. 200m²">
+                    </textarea>
+                  </mat-form-field>
+
+                  <div class="upload-zone" (click)="docInput.click()">
+                    <mat-icon style="font-size:48px;width:48px;height:48px;color:#CBD5E0">cloud_upload</mat-icon>
+                    <p style="margin:8px 0 4px;font-weight:600;color:#4A5568">Haz clic para seleccionar el archivo</p>
+                    <p style="margin:0;font-size:12px;color:#718096">PDF, JPG, PNG — máximo 10 MB</p>
+                    <input #docInput type="file" accept=".pdf,.jpg,.jpeg,.png"
+                           style="display:none" (change)="uploadGarantia($event)">
+                  </div>
+
+                  @if (uploadingDoc()) {
+                    <div style="display:flex;align-items:center;gap:8px;margin-top:12px;color:#718096">
+                      <mat-spinner diameter="20"></mat-spinner>
+                      <span>Subiendo documento...</span>
+                    </div>
+                  }
+                </div>
+              </mat-card-content>
+            </mat-card>
+          </div>
+        </mat-tab>
+
       </mat-tab-group>
     }
   `,
@@ -208,6 +273,20 @@ import { GuarantorFormComponent } from './guarantor-form.component';
     }
     .overdue-row { background: #FFF5F5 !important; }
     .paid-row    { opacity: .55; }
+    .garantia-header { display:flex; align-items:flex-start; gap:14px; }
+    .upload-zone {
+      border:2px dashed #CBD5E0; border-radius:12px; padding:28px;
+      text-align:center; cursor:pointer; transition:.15s; margin-top:8px;
+    }
+    .upload-zone:hover { border-color:#1C4532; background:#F0FFF4; }
+    .doc-item {
+      display:flex; align-items:center; gap:10px; padding:10px 12px;
+      background:#F7FAFC; border-radius:8px; margin-bottom:6px;
+    }
+    .doc-info { display:flex; flex-direction:column; }
+    .doc-name { font-weight:600; font-size:14px; }
+    .doc-desc { font-size:12px; color:#718096; }
+    .w-full { width:100%; }
   `],
 })
 export class LoanDetailComponent implements OnInit {
@@ -217,11 +296,17 @@ export class LoanDetailComponent implements OnInit {
   private api      = inject(ApiService);
   private snackbar = inject(MatSnackBar);
   private pdfSvc   = inject(PdfDownloadService);
+  private http     = inject(HttpClient);
 
   loan      = signal<Loan | null>(null);
   schedules = signal<PaymentSchedule[]>([]);
   loading   = signal(true);
   scheduleCols = ['periodo', 'vence', 'total', 'capital', 'interes', 'moratorio', 'estatus'];
+
+  // Documentos de garantía
+  existingDocs = signal<any[]>([]);
+  garantiaDesc = signal('');
+  uploadingDoc = signal(false);
 
   freq2unit(f: string): string {
     return {DIARIO:'días',SEMANAL:'semanas',QUINCENAL:'quincenas',MENSUAL:'meses'}[f] ?? 'períodos';
@@ -269,6 +354,7 @@ export class LoanDetailComponent implements OnInit {
         this.loan.set(l);
         this.loading.set(false);
         if (l.disbursedAt) this.loadSchedule(id);
+        this.loadDocs(id);
       },
       error: () => this.loading.set(false),
     });
@@ -326,6 +412,46 @@ export class LoanDetailComponent implements OnInit {
     const l = this.loan();
     if (!l?.id) return;
     this.pdfSvc.open('/loans/' + l.id + '/control-card');
+  }
+
+  // Cargar documentos ya subidos (si el backend lo soporta)
+  loadDocs(loanId: string) {
+    this.api.get<any>('/loans/' + loanId + '/documents').subscribe({
+      next: (r) => this.existingDocs.set(Array.isArray(r) ? r : r?.data ?? []),
+      error: () => this.existingDocs.set([]), // si no hay endpoint, simplemente no lista
+    });
+  }
+
+  // Subir documento de garantía a este crédito (mismo patrón que la solicitud nueva)
+  uploadGarantia(event: Event) {
+    const file = (event.target as HTMLInputElement).files?.[0];
+    const loanId = this.loan()?.id;
+    if (!file || !loanId) return;
+
+    this.uploadingDoc.set(true);
+    const formData = new FormData();
+    formData.append('file', file);
+    formData.append('documentType', 'garantia');
+    formData.append('fileName', file.name);
+    if (this.garantiaDesc()) formData.append('description', this.garantiaDesc());
+
+    const token = localStorage.getItem('access_token');
+    this.http.post(
+      '/api/v1/loans/' + loanId + '/documents',
+      formData,
+      { headers: new HttpHeaders({ Authorization: 'Bearer ' + token }) }
+    ).subscribe({
+      next: () => {
+        this.uploadingDoc.set(false);
+        this.snackbar.open('Documento de garantía subido', 'OK', { duration: 3000 });
+        this.loadDocs(loanId);
+        this.garantiaDesc.set('');
+      },
+      error: () => {
+        this.uploadingDoc.set(false);
+        this.snackbar.open('Error al subir el documento', 'Cerrar', { duration: 4000 });
+      },
+    });
   }
 
   renovar() {
