@@ -13,3 +13,15 @@ logs/
 # OS
 .DS_Store
 Thumbs.db
+
+# Caché y dependencias de la app móvil
+mobile/.angular/
+mobile/node_modules/
+mobile/www/
+mobile/android/
+mobile/ios/
+mobile/.sourcemaps/
+
+# Por si acaso, a nivel general
+**/.angular/cache/
+**/node_modules/
