@@ -15,7 +15,8 @@ async function bootstrap() {
     'https://sitio.microcapital-ixtepec.com',   // ← el nuevo subdominio del frontend
     'http://localhost:4200',                      // desarrollo local (opcional)
     'capacitor://localhost',                      // app móvil Capacitor (Android)
-    'http://localhost',                           // app móvil (WebView)
+    'http://localhost',                           // app móvil (WebView),
+    'http://localhost:8100',                           // app móvil (WebView)
   ],
   methods: 'GET,HEAD,PUT,PATCH,POST,DELETE,OPTIONS',
   allowedHeaders: ['Content-Type', 'Authorization'],
