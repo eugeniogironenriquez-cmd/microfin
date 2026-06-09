@@ -74,7 +74,19 @@ export class ImportLoansService {
   async importFromBuffer(buffer: Buffer, userId: string) {
     const wb = XLSX.read(buffer, { type: 'buffer', cellDates: true });
     const sheet = wb.Sheets[wb.SheetNames[0]];
-    const rows: FilaCredito[] = XLSX.utils.sheet_to_json(sheet, { defval: '' });
+
+    // El layout tiene: fila 1 = título, fila 2 = instrucciones, fila 3 = encabezados,
+    // datos desde la fila 4. Definimos los encabezados explícitamente y empezamos
+    // a leer desde la fila 4 (range: 3 en base 0) para evitar que tome el título.
+    const headers = [
+      'CURP_CLIENTE', 'MONTO', 'CUOTA_DIARIA', 'DIAS_PLAZO',
+      'PAGOS_REALIZADOS', 'FECHA_DESEMBOLSO', 'FECHA_PRIMER_PAGO', 'OBSERVACIONES',
+    ];
+    const rows: FilaCredito[] = XLSX.utils.sheet_to_json(sheet, {
+      header: headers as any,
+      range: 3,        // empezar en la fila 4 (índice 3): salta título, instrucciones y encabezados
+      defval: '',
+    });
 
     if (!rows.length) throw new BadRequestException('El archivo no tiene filas de datos');
 
@@ -82,7 +94,7 @@ export class ImportLoansService {
 
     for (let idx = 0; idx < rows.length; idx++) {
       const fila = rows[idx];
-      const numFila = idx + 4; // fila real en Excel (encabezado en 3, datos desde 4)
+      const numFila = idx + 4; // fila real en Excel (datos desde la fila 4)
       try {
         const curp = String(fila.CURP_CLIENTE || '').toUpperCase().trim();
         // Saltar fila de ejemplo o vacías
