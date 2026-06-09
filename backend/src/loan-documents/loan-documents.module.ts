@@ -11,7 +11,7 @@ import { extname, join } from 'path';
 import { existsSync, mkdirSync, unlinkSync } from 'fs';
 import { Response } from 'express';
 import { ApiTags, ApiBearerAuth } from '@nestjs/swagger';
-import { Auth, AuthPermission, CurrentUser } from '../common/index';
+import { Auth, AuthPermission, CurrentUser } from '../common/guards/roles.guard';
 import { UserRole } from '../common/entities';
 
 // ── SERVICE ───────────────────────────────────────────────────
