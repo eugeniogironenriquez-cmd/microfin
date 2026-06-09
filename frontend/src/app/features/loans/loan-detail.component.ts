@@ -233,9 +233,10 @@ export class LoanDetailComponent implements OnInit {
   daysOverdue(s: any): number {
     if (s.status === 'PAGADO') return 0;
     const MX = 6 * 60 * 60 * 1000;
+    // La fecha de vencimiento ya está anclada a medianoche UTC (día-calendario
+    // de México), así que NO se le aplica el offset. Solo a 'now'.
     const due = new Date(s.dueDate);
-    const dueDay = new Date(due.getTime() - MX);
-    const dueUTC = Date.UTC(dueDay.getUTCFullYear(), dueDay.getUTCMonth(), dueDay.getUTCDate());
+    const dueUTC = Date.UTC(due.getUTCFullYear(), due.getUTCMonth(), due.getUTCDate());
     const now = new Date();
     const nowDay = new Date(now.getTime() - MX);
     const todayUTC = Date.UTC(nowDay.getUTCFullYear(), nowDay.getUTCMonth(), nowDay.getUTCDate());

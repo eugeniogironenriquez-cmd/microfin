@@ -65,9 +65,11 @@ export class SemaforoService implements OnModuleInit {
     let count = 0;
     for (const s of schedules) {
       if (s.status === ScheduleStatus.PAGADO) continue;
+      // La fecha de vencimiento ya está anclada a medianoche UTC (día-calendario
+      // de México), así que NO se le aplica el offset MX. Solo a 'now' (arriba).
       const due = new Date(s.dueDate);
-      const dueDay = new Date(due.getTime() - MX);
-      const dueUTC = Date.UTC(dueDay.getUTCFullYear(), dueDay.getUTCMonth(), dueDay.getUTCDate());
+      const dueUTC = Date.UTC(due.getUTCFullYear(), due.getUTCMonth(), due.getUTCDate());
+      // Vencida solo si su día es estrictamente anterior a hoy (la que vence hoy no cuenta)
       if (dueUTC < todayUTC) count++;
     }
     return count;

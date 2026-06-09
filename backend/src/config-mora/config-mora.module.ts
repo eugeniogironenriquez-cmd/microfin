@@ -42,18 +42,25 @@ export class ConfigMoraService implements OnModuleInit {
     return this.repo.save(cfg);
   }
 
-  // Calcula la mora total de un crédito según sus cuotas vencidas.
-  // mora = (suma de días hábiles de atraso de cada cuota pendiente) * moraPorDia
-  // Días hábiles de atraso se calculan en día-calendario de México (UTC-6).
+  // Días hábiles de atraso de una cuota (Opción A: la mora empieza el día
+  // hábil SIGUIENTE al vencimiento; el día que vence NO genera mora).
+  //
+  // La fecha de vencimiento ya se guarda anclada a medianoche UTC, que
+  // representa directamente el día-calendario de México, así que NO se le
+  // vuelve a aplicar el offset. A 'today' (timestamp real) sí se le aplica
+  // el offset de México (UTC-6) para obtener el día-calendario local.
   businessDaysOverdue(dueDate: Date, today: Date): number {
     const MX = 6 * 60 * 60 * 1000;
-    const dueDay = new Date(new Date(dueDate).getTime() - MX);
-    let cursor = Date.UTC(dueDay.getUTCFullYear(), dueDay.getUTCMonth(), dueDay.getUTCDate());
+    // dueDate: ya es día-calendario (medianoche UTC). Tomar su día directo.
+    const due = new Date(dueDate);
+    let cursor = Date.UTC(due.getUTCFullYear(), due.getUTCMonth(), due.getUTCDate());
+    // today: timestamp real → anclar al día-calendario de México
     const todayDay = new Date(today.getTime() - MX);
     const end = Date.UTC(todayDay.getUTCFullYear(), todayDay.getUTCMonth(), todayDay.getUTCDate());
 
     let count = 0;
-    // Contar días hábiles transcurridos DESPUÉS del vencimiento hasta hoy
+    // Contar días hábiles transcurridos DESPUÉS del vencimiento hasta hoy.
+    // El día de vencimiento no cuenta (la mora corre desde el día siguiente).
     while (cursor < end) {
       cursor += 24 * 60 * 60 * 1000;
       const d = new Date(cursor);
