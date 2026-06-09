@@ -12,7 +12,10 @@ async function bootstrap() {
   app.enableCors({
   origin: [
     'https://microcapital-ixtepec.com',
-    'http://localhost:4200'
+    'https://sitio.microcapital-ixtepec.com',   // ← el nuevo subdominio del frontend
+    'http://localhost:4200',                      // desarrollo local (opcional)
+    'capacitor://localhost',                      // app móvil Capacitor (Android)
+    'http://localhost',                           // app móvil (WebView)
   ],
   methods: 'GET,HEAD,PUT,PATCH,POST,DELETE,OPTIONS',
   allowedHeaders: ['Content-Type', 'Authorization'],
