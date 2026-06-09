@@ -64,3 +64,22 @@ export interface PaymentInfo {
   totalDiasMora: number;
   proximaCuota?: { periodo: number; vence: string; monto: number } | null;
 }
+
+// ── Visitas ──────────────────────────────────────────────────
+export type TipoVisita = 'NO_LOCALIZADO' | 'PROMESA_PAGO';
+
+export interface LocalVisit {
+  localId: string;
+  loanId: string;
+  tipo: TipoVisita;
+  notas?: string;
+  fechaPromesa?: string;   // 'YYYY-MM-DD' (solo PROMESA_PAGO)
+  montoPromesa?: number;   // solo PROMESA_PAGO
+  lat?: number;
+  lng?: number;
+  capturedAt: string;
+  synced: boolean;
+  syncedAt?: string;
+  serverId?: string;
+  error?: string;
+}

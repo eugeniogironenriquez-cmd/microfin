@@ -7,7 +7,7 @@ import {
   IonSpinner, IonItem, IonLabel, IonBadge,
 } from '@ionic/angular/standalone';
 import { addIcons } from 'ionicons';
-import { cashOutline, walletOutline, alertCircleOutline, callOutline } from 'ionicons/icons';
+import { cashOutline, walletOutline, alertCircleOutline, callOutline, walkOutline } from 'ionicons/icons';
 
 import { CollectionService } from '../../core/collection.service';
 import { NetworkService } from '../../core/network.service';
@@ -87,6 +87,10 @@ import { AssignedClient, PaymentInfo } from '../../core/models';
           <ion-icon slot="start" name="cash-outline"></ion-icon>
           Registrar pago
         </ion-button>
+        <ion-button expand="block" fill="outline" color="secondary" (click)="goVisit()">
+          <ion-icon slot="start" name="walk-outline"></ion-icon>
+          Registrar visita
+        </ion-button>
       } @else {
         <div class="center"><ion-spinner name="crescent"></ion-spinner></div>
       }
@@ -116,7 +120,7 @@ export class ClientDetailPage implements OnInit {
   loadingInfo = signal(true);
 
   constructor() {
-    addIcons({ cashOutline, walletOutline, alertCircleOutline, callOutline });
+    addIcons({ cashOutline, walletOutline, alertCircleOutline, callOutline, walkOutline });
   }
 
   async ngOnInit() {
@@ -135,5 +139,9 @@ export class ClientDetailPage implements OnInit {
 
   goPay() {
     this.router.navigate(['/payment', this.client()!.loanId]);
+  }
+
+  goVisit() {
+    this.router.navigate(['/visit', this.client()!.loanId]);
   }
 }

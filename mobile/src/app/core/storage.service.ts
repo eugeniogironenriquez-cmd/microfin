@@ -1,6 +1,6 @@
 import { Injectable } from '@angular/core';
 import { Preferences } from '@capacitor/preferences';
-import { AuthUser, AssignedClient, LocalPayment } from './models';
+import { AuthUser, AssignedClient, LocalPayment, LocalVisit } from './models';
 
 // Claves de almacenamiento local
 const K_TOKEN    = 'access_token';
@@ -8,6 +8,7 @@ const K_REFRESH  = 'refresh_token';
 const K_USER     = 'user';
 const K_CLIENTS  = 'assigned_clients';
 const K_PAYMENTS = 'local_payments';
+const K_VISITS   = 'local_visits';
 
 /**
  * Servicio de almacenamiento local (offline-first).
@@ -84,5 +85,34 @@ export class StorageService {
 
   async getPendingPayments(): Promise<LocalPayment[]> {
     return (await this.getPayments()).filter(p => !p.synced);
+  }
+
+  // ── Visitas locales (cola de sincronización) ───────────────
+  async getVisits(): Promise<LocalVisit[]> {
+    const raw = (await Preferences.get({ key: K_VISITS })).value;
+    try { return raw ? JSON.parse(raw) : []; } catch { return []; }
+  }
+
+  async saveVisits(visits: LocalVisit[]) {
+    await Preferences.set({ key: K_VISITS, value: JSON.stringify(visits) });
+  }
+
+  async addVisit(visit: LocalVisit) {
+    const all = await this.getVisits();
+    all.unshift(visit);
+    await this.saveVisits(all);
+  }
+
+  async updateVisit(localId: string, patch: Partial<LocalVisit>) {
+    const all = await this.getVisits();
+    const idx = all.findIndex(v => v.localId === localId);
+    if (idx >= 0) {
+      all[idx] = { ...all[idx], ...patch };
+      await this.saveVisits(all);
+    }
+  }
+
+  async getPendingVisits(): Promise<LocalVisit[]> {
+    return (await this.getVisits()).filter(v => !v.synced);
   }
 }

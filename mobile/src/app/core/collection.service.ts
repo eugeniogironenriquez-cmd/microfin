@@ -4,7 +4,7 @@ import { firstValueFrom } from 'rxjs';
 import { environment } from '../../environments/environment';
 import { StorageService } from './storage.service';
 import { NetworkService } from './network.service';
-import { AssignedClient, LocalPayment, PaymentInfo } from './models';
+import { AssignedClient, LocalPayment, PaymentInfo, LocalVisit, TipoVisita } from './models';
 
 interface ApiEnvelope<T> { success: boolean; data: T; timestamp: string; }
 
@@ -101,6 +101,12 @@ export class CollectionService {
       const success = await this.syncOne(p);
       success ? ok++ : fail++;
     }
+    // Sincronizar también visitas pendientes
+    const pendingVisits = await this.storage.getPendingVisits();
+    for (const v of pendingVisits) {
+      const success = await this.syncOneVisit(v);
+      success ? ok++ : fail++;
+    }
     this.syncing.set(false);
     await this.refreshPendingCount();
     return { ok, fail };
@@ -144,7 +150,55 @@ export class CollectionService {
 
   async refreshPendingCount() {
     const pending = await this.storage.getPendingPayments();
-    this.pendingCount.set(pending.length);
+    const pendingVisits = await this.storage.getPendingVisits();
+    this.pendingCount.set(pending.length + pendingVisits.length);
+  }
+
+  // ── Visitas (offline-first) ────────────────────────────────
+  async registerVisit(v: Omit<LocalVisit, 'localId' | 'capturedAt' | 'synced'>): Promise<LocalVisit> {
+    const visit: LocalVisit = {
+      ...v,
+      localId: this.uuid(),
+      capturedAt: new Date().toISOString(),
+      synced: false,
+    };
+    await this.storage.addVisit(visit);
+    await this.refreshPendingCount();
+    if (await this.network.isOnline()) {
+      await this.syncOneVisit(visit);
+    }
+    return visit;
+  }
+
+  private async syncOneVisit(v: LocalVisit): Promise<boolean> {
+    try {
+      const res = await firstValueFrom(
+        this.http.post<ApiEnvelope<any> | any>(`${this.base}/visitas`, {
+          loanId: v.loanId,
+          tipo: v.tipo,
+          notas: v.notas,
+          fechaPromesa: v.fechaPromesa,
+          montoPromesa: v.montoPromesa,
+          lat: v.lat,
+          lng: v.lng,
+          localId: v.localId,
+        })
+      );
+      const data = this.unwrap(res);
+      const serverId = data?.visita?.id;
+      await this.storage.updateVisit(v.localId, {
+        synced: true,
+        syncedAt: new Date().toISOString(),
+        serverId,
+        error: undefined,
+      });
+      return true;
+    } catch (e: any) {
+      await this.storage.updateVisit(v.localId, {
+        error: e?.error?.message || 'Error de sincronización',
+      });
+      return false;
+    }
   }
 
   // ── Utilidades ─────────────────────────────────────────────

@@ -23,6 +23,7 @@ export const routes: Routes = [
       { path: 'payments', loadChildren: () => import('./features/payments/payments.routes').then((m) => m.paymentsRoutes), canActivate: [permissionGuard(['pagos.ver'])] },
       { path: 'restructuring', loadChildren: () => import('./features/restructuring/restructuring.routes').then((m) => m.restructuringRoutes), canActivate: [permissionGuard(['prestamos.reestructurar'])] },
       { path: 'collection', loadChildren: () => import('./features/collection/collection.routes').then((m) => m.collectionRoutes), canActivate: [permissionGuard(['cobranza.ver'])] },
+      { path: 'monitor-geo', canActivate: [permissionGuard(['cobranza.monitor', 'cobranza.ver'])], loadComponent: () => import('./features/cartera/geo-monitor.component').then(m => m.GeoMonitorComponent), },
       { path: 'cash', loadChildren: () => import('./features/cash/cash.routes').then((m) => m.cashRoutes), canActivate: [permissionGuard(['caja.ver'])] },
       { path: 'reports', loadChildren: () => import('./features/reports/reports.routes').then((m) => m.reportsRoutes), canActivate: [permissionGuard(['reportes.ver'])] },
       { path: 'plazos', loadComponent: () => import('./features/settings/plazos-config.component').then(m => m.PlazosConfigComponent), canActivate: [permissionGuard(['config.editar'])] },
