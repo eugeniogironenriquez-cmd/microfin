@@ -58,18 +58,20 @@ import { ApiService, AuthService } from '../../core/index';
         </div>
       </div>
 
-      <!-- Accesos rápidos según rol -->
-      <div class="quick-actions">
-        <h2 class="section-title">Accesos rápidos</h2>
-        <div class="quick-grid">
-          @for (item of quickItems(); track item.route) {
-            <a class="quick-card" [routerLink]="item.route">
-              <mat-icon>{{ item.icon }}</mat-icon>
-              <span>{{ item.label }}</span>
-            </a>
-          }
+      <!-- Accesos rápidos según permisos -->
+      @if (quickItems().length > 0) {
+        <div class="quick-actions">
+          <h2 class="section-title">Accesos rápidos</h2>
+          <div class="quick-grid">
+            @for (item of quickItems(); track item.route) {
+              <a class="quick-card" [routerLink]="item.route">
+                <mat-icon>{{ item.icon }}</mat-icon>
+                <span>{{ item.label }}</span>
+              </a>
+            }
+          </div>
         </div>
-      </div>
+      }
     }
   `,
   styles: [`
@@ -111,20 +113,22 @@ export class DashboardComponent implements OnInit {
 
   isCobrador = computed(() => this.auth.role() === 'COBRADOR');
 
-  // Accesos según rol
+  // Accesos rápidos filtrados por PERMISO (no por rol legacy)
   quickItems = computed(() => {
-    const role = this.auth.role();
+    // forzar reactividad al usuario actual
+    const u = this.auth.user();
+    if (!u) return [];
     const all = [
-      { label:'Nueva solicitud', icon:'add_circle',   route:'/loans/new',      roles:['ADMIN','CAJERO','AUTORIZADOR'] },
-      { label:'Registrar pago',  icon:'payment',      route:'/payments',       roles:['ADMIN','CAJERO','COBRADOR'] },
-      { label:'Nuevo cliente',   icon:'person_add',   route:'/customers/new',  roles:['ADMIN','CAJERO'] },
-      { label:'Desembolsos',     icon:'payments',     route:'/disbursements',  roles:['ADMIN','CAJERO'] },
-      { label:'Ver cartera',     icon:'bar_chart',    route:'/portfolio',      roles:['ADMIN','CAJERO','AUTORIZADOR'] },
-      { label:'Registrar gasto', icon:'receipt_long', route:'/expenses',       roles:['ADMIN','CAJERO'] },
-      { label:'Cobranza',        icon:'directions_bike', route:'/collection',  roles:['COBRADOR','ADMIN'] },
-      { label:'Monitor pagos',   icon:'monitor',      route:'/payments/monitor', roles:['ADMIN','CAJERO'] },
+      { label:'Nueva solicitud', icon:'add_circle',      route:'/loans/new',        perm:'prestamos.crear' },
+      { label:'Registrar pago',  icon:'payment',         route:'/payments',         perm:'pagos.registrar' },
+      { label:'Nuevo cliente',   icon:'person_add',      route:'/customers/new',    perm:'clientes.crear' },
+      { label:'Desembolsos',     icon:'payments',        route:'/disbursements',    perm:'prestamos.desembolsar' },
+      { label:'Ver cartera',     icon:'bar_chart',       route:'/portfolio',        perm:'cartera.ver' },
+      { label:'Registrar gasto', icon:'receipt_long',    route:'/expenses',         perm:'gastos.registrar' },
+      { label:'Cobranza',        icon:'directions_bike', route:'/collection',       perm:'cobranza.ver' },
+      { label:'Monitor pagos',   icon:'monitor',         route:'/payments/monitor', perm:'pagos.monitor' },
     ];
-    return all.filter(i => !role || i.roles.includes(role));
+    return all.filter(i => this.auth.can(i.perm));
   });
 
   ngOnInit() {
