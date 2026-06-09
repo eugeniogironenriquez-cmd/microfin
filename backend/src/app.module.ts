@@ -33,6 +33,7 @@ import { LoanDocumentsModule } from './loan-documents/loan-documents.module';
 import { PlazosCreditoModule } from './plazos-credito/plazos-credito.module';
 import { ConfigMoraModule } from './config-mora/config-mora.module';
 import { SemaforoModule } from './semaforo/semaforo.module';
+import { ImportLoansModule } from './import-loans/import-loans.module';
 
 @Module({
   imports: [
@@ -63,7 +64,7 @@ import { SemaforoModule } from './semaforo/semaforo.module';
     CashModule, CollectionModule, ReportsModule, SettingsModule, RateRangesModule,
     CompanyModule, LateFeeRulesModule, LocationModule, GuarantorModule,
     DisbursementModule, ExpensesModule, OverdueJobModule, LoanDocumentsModule,
-    PlazosCreditoModule, ConfigMoraModule, SemaforoModule,
+    PlazosCreditoModule, ConfigMoraModule, SemaforoModule, ImportLoansModule,
   ],
 })
 export class AppModule implements OnApplicationBootstrap, NestModule {

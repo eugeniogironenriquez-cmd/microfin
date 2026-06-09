@@ -98,6 +98,7 @@ export class ShellComponent {
     { label: 'Clientes',         icon: 'people',                 route: '/customers',        perm: 'clientes.ver' },
     { label: 'Préstamos',        icon: 'attach_money',           route: '/loans',            perm: 'prestamos.ver' },
     { label: 'Próximos a liquidar', icon: 'flag',                route: '/proximos-liquidar', perm: 'prestamos.ver' },
+    { label: 'Cargar créditos',  icon: 'upload_file',            route: '/importar-creditos', perm: 'prestamos.crear' },
     { label: 'Pagos',            icon: 'payment',                route: '/payments',         perm: 'pagos.ver', exact: true },
     { label: 'Monitor de pagos', icon: 'monitor',                route: '/payments/monitor', perm: 'pagos.monitor' },
     { label: 'Reestructuración', icon: 'refresh',                route: '/restructuring',    perm: 'prestamos.reestructurar' },

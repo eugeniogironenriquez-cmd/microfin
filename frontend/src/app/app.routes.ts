@@ -19,6 +19,7 @@ export const routes: Routes = [
       { path: 'loans/:id/convenio', loadComponent: () => import('./features/loans/loan-convenio.component').then(m => m.LoanConvenioComponent), canActivate: [permissionGuard(['prestamos.reestructurar'])] },
       { path: 'loans', loadChildren: () => import('./features/loans/loans.routes').then((m) => m.loansRoutes), canActivate: [permissionGuard(['prestamos.ver'])] },
       { path: 'proximos-liquidar', loadComponent: () => import('./features/loans/proximos-liquidar.component').then(m => m.ProximosLiquidarComponent), canActivate: [permissionGuard(['prestamos.ver'])] },
+      { path: 'importar-creditos', loadComponent: () => import('./features/loans/import-loans.component').then(m => m.ImportLoansComponent), canActivate: [permissionGuard(['prestamos.crear'])] },
       { path: 'payments', loadChildren: () => import('./features/payments/payments.routes').then((m) => m.paymentsRoutes), canActivate: [permissionGuard(['pagos.ver'])] },
       { path: 'restructuring', loadChildren: () => import('./features/restructuring/restructuring.routes').then((m) => m.restructuringRoutes), canActivate: [permissionGuard(['prestamos.reestructurar'])] },
       { path: 'collection', loadChildren: () => import('./features/collection/collection.routes').then((m) => m.collectionRoutes), canActivate: [permissionGuard(['cobranza.ver'])] },
