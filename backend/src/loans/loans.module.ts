@@ -40,6 +40,24 @@ export class FinancialCalculator {
     return { totalAmount, totalInterest, periodicPayment };
   }
 
+  // Cálculo con cuota personalizada (Opción A: la cuota manda).
+  // La cuota no puede ser menor a la calculada por la fórmula.
+  // El total pasa a ser cuota * días.
+  calculateWithPayment(principal: number, percentage: number, days: number, customPayment?: number) {
+    const base = this.calculate(principal, percentage, days);
+    if (customPayment == null || Number(customPayment) <= 0) {
+      return base; // sin cuota personalizada, usa el cálculo normal
+    }
+    const cuota = this.round(Number(customPayment));
+    if (cuota < base.periodicPayment) {
+      // No permitir cuota menor a la calculada
+      return { ...base, error: `La cuota no puede ser menor a ${base.periodicPayment}` };
+    }
+    const totalAmount = this.round(cuota * days);
+    const totalInterest = this.round(totalAmount - principal);
+    return { totalAmount, totalInterest, periodicPayment: cuota };
+  }
+
   // ── DÍAS HÁBILES (Lunes a Viernes) ───────────────────────────
   // IMPORTANTE: todo el cálculo se hace en UTC para evitar que la zona
   // horaria del servidor (Hostinger corre en UTC) corra las fechas un día.
@@ -128,8 +146,11 @@ export class FinancialCalculator {
   // days = número de pagos (un pago por día hábil)
   generateScheduleTable(
     principal: number, percentage: number, days: number, startDate: Date,
+    customPayment?: number,
   ) {
-    const { totalAmount, periodicPayment } = this.calculate(principal, percentage, days);
+    const calc = this.calculateWithPayment(principal, percentage, days, customPayment);
+    const totalAmount = calc.totalAmount;
+    const periodicPayment = calc.periodicPayment;
     const interestTotal     = this.round(totalAmount - principal);
     const interestPerPeriod = this.round(interestTotal / days);
     const capitalPerPeriod  = this.round(principal / days);
@@ -205,25 +226,25 @@ export class LoansService {
   // days = plazo en días (determina el % automáticamente)
   async simulate(dto: {
     principalAmount: number; termWeeks: number; frequency?: string;
-    days?: number; percentage?: number;
+    days?: number; percentage?: number; customPayment?: number;
   }) {
     const principal = Number(dto.principalAmount);
     const days = Number(dto.days ?? dto.termWeeks);
-    // El % se resuelve automáticamente por el plazo configurado,
-    // salvo que venga uno explícito (preview manual)
     const percentage = dto.percentage != null
       ? Number(dto.percentage)
       : await this.plazosService.getPercentageForDays(days);
 
-    const { totalAmount, totalInterest, periodicPayment } =
-      this.calculator.calculate(principal, percentage, days);
+    const calc = this.calculator.calculateWithPayment(principal, percentage, days, dto.customPayment);
+    if ((calc as any).error) throw new BadRequestException((calc as any).error);
+
     const table = this.calculator.generateScheduleTable(
-      principal, percentage, days, new Date(),
+      principal, percentage, days, new Date(), dto.customPayment,
     );
     return {
-      periodicPayment,
-      totalPayment: totalAmount,
-      totalInterest,
+      periodicPayment: calc.periodicPayment,
+      totalPayment: calc.totalAmount,
+      totalInterest: calc.totalInterest,
+      minPayment: this.calculator.calculate(principal, percentage, days).periodicPayment,
       percentage,
       days,
       schedule: table,
@@ -236,17 +257,17 @@ export class LoansService {
     // Resolver % por el plazo configurado
     const percentage = await this.plazosService.getPercentageForDays(days);
 
-    const { totalAmount, periodicPayment } =
-      this.calculator.calculate(principal, percentage, days);
+    const calc = this.calculator.calculateWithPayment(principal, percentage, days, dto.customPayment);
+    if ((calc as any).error) throw new BadRequestException((calc as any).error);
 
     const loan = this.loanRepo.create({
       ...dto,
       termWeeks:       days,
       frequency:       'DIARIO',
-      interestRate:    percentage,       // guardamos el % aplicado
-      totalRate:       percentage,       // compatibilidad con PDFs
-      periodicPayment: this.calculator.round(periodicPayment),
-      totalAmount:     this.calculator.round(totalAmount),
+      interestRate:    percentage,
+      totalRate:       percentage,
+      periodicPayment: this.calculator.round(calc.periodicPayment),
+      totalAmount:     this.calculator.round(calc.totalAmount),
       createdBy:       userId,
     } as any);
     return this.loanRepo.save(loan as any);
@@ -282,10 +303,12 @@ export class LoansService {
 
       const days       = Math.round(loan.termWeeks);
       const percentage = Number((loan as any).totalRate || loan.interestRate);
+      // Usamos la cuota guardada del crédito (puede venir ajustada por el usuario)
+      const cuotaGuardada = Number(loan.periodicPayment);
 
       // Calendario L-V empezando el día hábil siguiente al desembolso
       const table = this.calculator.generateScheduleTable(
-        Number(loan.principalAmount), percentage, days, loan.disbursedAt,
+        Number(loan.principalAmount), percentage, days, loan.disbursedAt, cuotaGuardada,
       );
 
       const schedules = table.map((row) =>
@@ -325,8 +348,8 @@ export class LoansService {
         ? Number(dto.percentage)
         : await this.plazosService.getPercentageForDays(days);
 
-      const { totalAmount, periodicPayment } =
-        this.calculator.calculate(principal, percentage, days);
+      const calc = this.calculator.calculateWithPayment(principal, percentage, days, dto.customPayment);
+      if ((calc as any).error) throw new BadRequestException((calc as any).error);
 
       const newLoan = this.loanRepo.create({
         customerId:         loan.customerId,
@@ -341,8 +364,8 @@ export class LoansService {
         disbursedAt:        new Date(),
         disbursedBy:        userId,
         disbursementMethod: 'REESTRUCTURA',
-        periodicPayment:    this.calculator.round(periodicPayment),
-        totalAmount:        this.calculator.round(totalAmount),
+        periodicPayment:    this.calculator.round(calc.periodicPayment),
+        totalAmount:        this.calculator.round(calc.totalAmount),
         restructureCount:   (loan.restructureCount || 0) + 1,
         restructureReason:  dto.restructureReason,
         createdBy:          userId,
@@ -350,7 +373,7 @@ export class LoansService {
       const saved = await qr.manager.save(newLoan as any);
 
       const table = this.calculator.generateScheduleTable(
-        principal, percentage, days, new Date(),
+        principal, percentage, days, new Date(), dto.customPayment,
       );
       const schedules = table.map((row: any) =>
         this.scheduleRepo.create({

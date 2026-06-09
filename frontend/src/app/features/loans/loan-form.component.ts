@@ -168,8 +168,22 @@ import { PdfDownloadService } from '../../core/pdf-download.service';
                 </mat-form-field>
               </div>
 
-              <!-- PREVIEW SIMULACIÓN -->
+              <!-- PREVIEW SIMULACIÓN + CUOTA AJUSTABLE -->
               @if (simResult()) {
+                <div class="cuota-ajuste">
+                  <div class="cuota-label">
+                    <span>Cuota diaria (ajustable)</span>
+                    <span class="min-hint">Mínimo: {{ minPayment() | currency:'MXN' }}</span>
+                  </div>
+                  <mat-form-field appearance="outline" class="cuota-field">
+                    <input matInput type="number" step="1" [value]="cuotaActual()"
+                           (input)="onCuotaInput($event)">
+                    <span matPrefix>$&nbsp;</span>
+                  </mat-form-field>
+                  <button mat-stroked-button color="primary" type="button" (click)="recalcConCuota()">
+                    <mat-icon>refresh</mat-icon> Aplicar
+                  </button>
+                </div>
                 <div class="sim-preview">
                   <div class="sim-item">
                     <span>Cuota diaria</span>
@@ -178,10 +192,6 @@ import { PdfDownloadService } from '../../core/pdf-download.service';
                   <div class="sim-item">
                     <span>Total a pagar</span>
                     <strong>{{ simResult()!.totalPayment | currency:'MXN' }}</strong>
-                  </div>
-                  <div class="sim-item">
-                    <span>Total intereses</span>
-                    <strong style="color:#DC2626">{{ simResult()!.totalInterest | currency:'MXN' }}</strong>
                   </div>
                   <button mat-stroked-button type="button" (click)="downloadSimPdf()"
                           [disabled]="downloadingPdf()">
@@ -405,6 +415,13 @@ import { PdfDownloadService } from '../../core/pdf-download.service';
     .comp-num.rojo { color:#DC2626; }
     .comp-num.amarillo { color:#D97706; }
     .comp-lbl { font-size:11px; color:#718096; margin-top:2px; text-align:center; }
+    .cuota-ajuste {
+      display:flex; align-items:center; gap:12px; flex-wrap:wrap;
+      background:#F7FAFC; border-radius:10px; padding:12px 14px; margin:12px 0;
+    }
+    .cuota-ajuste .cuota-label { display:flex; flex-direction:column; font-size:13px; font-weight:600; }
+    .cuota-ajuste .min-hint { font-size:11px; color:#718096; font-weight:400; }
+    .cuota-ajuste .cuota-field { width:140px; margin-bottom:-1.25em; }
   `],
 })
 export class LoanFormComponent implements OnInit {
@@ -422,6 +439,8 @@ export class LoanFormComponent implements OnInit {
   comportamiento   = signal<any>(null);
   selectedCustomer = signal<Customer | null>(null);
   simResult        = signal<any>(null);
+  minPayment       = signal<number>(0);
+  cuotaActual      = signal<number>(0);
   createdLoan      = signal<Loan | null>(null);
   saving           = signal(false);
   savingAval       = signal(false);
@@ -511,15 +530,41 @@ export class LoanFormComponent implements OnInit {
     if (!principalAmount || !days) return;
     this.api.post<any>('/loans/simulate', {
       principalAmount, days,
-    }).subscribe({ next: (r) => this.simResult.set(r) });
+    }).subscribe({ next: (r) => {
+      this.simResult.set(r);
+      this.minPayment.set(r.minPayment ?? r.periodicPayment);
+      this.cuotaActual.set(r.periodicPayment);
+    } });
+  }
+
+  onCuotaInput(event: Event) {
+    this.cuotaActual.set(Number((event.target as HTMLInputElement).value));
+  }
+
+  recalcConCuota() {
+    const { principalAmount, days } = this.form.value;
+    const cuota = Number(this.cuotaActual());
+    if (!principalAmount || !days) return;
+    if (cuota < this.minPayment()) {
+      this.snackbar.open(`La cuota no puede ser menor a ${this.minPayment()}`, 'Cerrar', { duration: 4000 });
+      return;
+    }
+    this.api.post<any>('/loans/simulate', {
+      principalAmount, days, customPayment: cuota,
+    }).subscribe({
+      next: (r) => { this.simResult.set(r); this.minPayment.set(r.minPayment ?? r.periodicPayment); },
+      error: (err) => this.snackbar.open(err.error?.message || 'Error al recalcular', 'Cerrar', { duration: 4000 }),
+    });
   }
 
   downloadSimPdf() {
     const { principalAmount, days } = this.form.value;
     if (!principalAmount || !days) return;
     this.downloadingPdf.set(true);
+    const cuota = Number(this.cuotaActual());
     this.pdfSvc.downloadPost('/loans/simulate/pdf', 'plan-pagos.pdf', {
       principalAmount, days,
+      customPayment: cuota > this.minPayment() ? cuota : undefined,
       customerName: this.selectedCustomer()?.fullName,
     });
     setTimeout(() => this.downloadingPdf.set(false), 2000);
@@ -530,9 +575,11 @@ export class LoanFormComponent implements OnInit {
       this.form.markAllAsTouched(); return;
     }
     this.saving.set(true);
+    const cuota = Number(this.cuotaActual());
     this.api.post<Loan>('/loans', {
       principalAmount: this.form.value.principalAmount,
       days:            this.form.value.days,
+      customPayment:   cuota > this.minPayment() ? cuota : undefined,
       notes:           this.form.value.notes,
       customerId:      this.selectedCustomer()!.id,
     }).subscribe({

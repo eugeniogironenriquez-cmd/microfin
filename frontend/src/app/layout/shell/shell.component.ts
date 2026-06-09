@@ -110,7 +110,6 @@ export class ShellComponent {
     { label: 'Plazos de crédito', icon: 'tune',                  route: '/plazos',           perm: 'config.editar' },
     { label: 'Mora',             icon: 'gavel',                  route: '/config-mora',      perm: 'config.editar' },
     { label: 'Empresa',          icon: 'business',               route: '/company',          perm: 'empresa.editar' },
-    { label: 'Moratorios',       icon: 'rule',                   route: '/late-fee-rules',   perm: 'moratorios.editar' },
     { label: 'Usuarios',         icon: 'manage_accounts',        route: '/users',            perm: 'usuarios.ver' },
     { label: 'Roles y permisos', icon: 'admin_panel_settings',   route: '/roles',            perm: 'roles.ver' },
   ];

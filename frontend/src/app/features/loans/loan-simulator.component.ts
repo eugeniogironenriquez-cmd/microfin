@@ -9,6 +9,7 @@ import { MatButtonModule } from '@angular/material/button';
 import { MatTableModule } from '@angular/material/table';
 import { MatIconModule } from '@angular/material/icon';
 import { MatProgressSpinnerModule } from '@angular/material/progress-spinner';
+import { MatSnackBar, MatSnackBarModule } from '@angular/material/snack-bar';
 import { ApiService } from '../../core/index';
 import { PdfDownloadService } from '../../core/pdf-download.service';
 
@@ -19,6 +20,7 @@ import { PdfDownloadService } from '../../core/pdf-download.service';
     CommonModule, CurrencyPipe, DatePipe, ReactiveFormsModule,
     MatCardModule, MatFormFieldModule, MatInputModule, MatSelectModule,
     MatButtonModule, MatTableModule, MatIconModule, MatProgressSpinnerModule,
+    MatSnackBarModule,
   ],
   template: `
     <div class="page-header">
@@ -67,6 +69,23 @@ import { PdfDownloadService } from '../../core/pdf-download.service';
         <div class="sim-results">
           <mat-card>
             <mat-card-content>
+              <!-- Cuota ajustable -->
+              <div class="cuota-ajuste">
+                <div class="cuota-label">
+                  <span class="label">Cuota diaria</span>
+                  <span class="min-hint">Mínimo: {{ minPayment() | currency:'MXN' }}</span>
+                </div>
+                <mat-form-field appearance="outline" class="cuota-field">
+                  <input matInput type="number" [value]="cuotaActual()"
+                         (input)="onCuotaInput($event)" step="1">
+                  <span matPrefix>$&nbsp;</span>
+                </mat-form-field>
+                <button mat-stroked-button color="primary" (click)="recalcConCuota()"
+                        [disabled]="loading()">
+                  <mat-icon>refresh</mat-icon> Aplicar cuota
+                </button>
+              </div>
+
               <div class="summary-grid">
                 <div class="summary-item">
                   <span class="label">Cuota diaria</span>
@@ -75,10 +94,6 @@ import { PdfDownloadService } from '../../core/pdf-download.service';
                 <div class="summary-item">
                   <span class="label">Total a pagar</span>
                   <span class="value-num">{{ result()!.totalPayment | currency:'MXN' }}</span>
-                </div>
-                <div class="summary-item">
-                  <span class="label">Intereses totales</span>
-                  <span class="value-num value-warn">{{ result()!.totalInterest | currency:'MXN' }}</span>
                 </div>
                 <div class="summary-item">
                   <span class="label">Días de pago</span>
@@ -121,17 +136,30 @@ import { PdfDownloadService } from '../../core/pdf-download.service';
       }
     </div>
   `,
+  styles: [`
+    .cuota-ajuste {
+      display:flex; align-items:center; gap:12px; flex-wrap:wrap;
+      background:#F7FAFC; border-radius:10px; padding:12px 14px; margin-bottom:14px;
+    }
+    .cuota-label { display:flex; flex-direction:column; }
+    .cuota-label .label { font-size:13px; font-weight:600; }
+    .min-hint { font-size:11px; color:#718096; }
+    .cuota-field { width:140px; margin-bottom:-1.25em; }
+  `],
 })
 export class LoanSimulatorComponent implements OnInit {
   private api    = inject(ApiService);
   private fb     = inject(FormBuilder);
   private pdfSvc = inject(PdfDownloadService);
+  private snackbar = inject(MatSnackBar);
 
   loading      = signal(false);
   downloading  = signal(false);
   result       = signal<any>(null);
   plazos       = signal<any[]>([]);
   selectedPlazo = signal<any>(null);
+  minPayment   = signal<number>(0);
+  cuotaActual  = signal<number>(0);
 
   cols = ['period', 'dueDate', 'payment'];
 
@@ -162,17 +190,53 @@ export class LoanSimulatorComponent implements OnInit {
       principalAmount: this.form.value.principalAmount,
       days:            this.form.value.days,
     }).subscribe({
-      next: (r) => { this.result.set(r); this.loading.set(false); },
+      next: (r) => {
+        this.result.set(r);
+        this.minPayment.set(r.minPayment ?? r.periodicPayment);
+        this.cuotaActual.set(r.periodicPayment);
+        this.loading.set(false);
+      },
       error: () => this.loading.set(false),
+    });
+  }
+
+  onCuotaInput(event: Event) {
+    this.cuotaActual.set(Number((event.target as HTMLInputElement).value));
+  }
+
+  // Recalcula con la cuota ajustada (no menor al mínimo)
+  recalcConCuota() {
+    const cuota = Number(this.cuotaActual());
+    if (cuota < this.minPayment()) {
+      this.snackbar.open(`La cuota no puede ser menor a ${this.minPayment()}`, 'Cerrar', { duration: 4000 });
+      return;
+    }
+    this.loading.set(true);
+    this.api.post<any>('/loans/simulate', {
+      principalAmount: this.form.value.principalAmount,
+      days:            this.form.value.days,
+      customPayment:   cuota,
+    }).subscribe({
+      next: (r) => {
+        this.result.set(r);
+        this.minPayment.set(r.minPayment ?? r.periodicPayment);
+        this.loading.set(false);
+      },
+      error: (err) => {
+        this.snackbar.open(err.error?.message || 'Error al recalcular', 'Cerrar', { duration: 4000 });
+        this.loading.set(false);
+      },
     });
   }
 
   downloadPdf() {
     if (!this.result()) return;
     this.downloading.set(true);
+    const cuota = Number(this.cuotaActual());
     this.pdfSvc.downloadPost('/loans/simulate/pdf', 'plan-pagos-simulacion.pdf', {
       principalAmount: this.form.value.principalAmount,
       days:            this.form.value.days,
+      customPayment:   cuota > this.minPayment() ? cuota : undefined,
     });
     setTimeout(() => this.downloading.set(false), 2000);
   }
