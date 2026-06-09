@@ -11,7 +11,7 @@ import {
   Loan, LoanType, PaymentSchedule, Customer, PlazoCredito,
   LoanStatus, ScheduleStatus, UserRole,
 } from '../common/entities';
-import { Auth, CurrentUser } from '../common/guards/roles.guard';
+import { Auth, AuthPermission, CurrentUser } from '../common/guards/roles.guard';
 import { PdfGeneratorService } from '../pdf-generator/pdf-generator.service';
 import { PdfGeneratorModule } from '../pdf-generator/pdf-generator.module';
 import { GuarantorModule } from '../guarantor/guarantor.module';
@@ -744,7 +744,7 @@ export class LoansController {
   constructor(private loansService: LoansService) {}
 
   @Get()      @Auth() findAll(@Query() q: any) { return this.loansService.findAll(q); }
-  @Get('reportes/proximos-liquidar') @Auth() proximosLiquidar(@Query('max') max?: string) {
+  @Get('reportes/proximos-liquidar') @AuthPermission('prestamos.proximos') proximosLiquidar(@Query('max') max?: string) {
     return this.loansService.getProximosLiquidar(max ? Number(max) : 3);
   }
   @Get(':id/renovacion-info') @Auth() renovacionInfo(@Param('id') id: string) {

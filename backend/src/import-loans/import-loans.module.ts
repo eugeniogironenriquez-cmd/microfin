@@ -169,7 +169,7 @@ export class ImportLoansController {
   constructor(private svc: ImportLoansService) {}
 
   @Post()
-  @AuthPermission('prestamos.crear')
+  @AuthPermission('prestamos.importar')
   @UseInterceptors(FileInterceptor('file'))
   async import(@UploadedFile() file: any, @CurrentUser('id') userId: string) {
     if (!file) throw new BadRequestException('No se recibió ningún archivo');
