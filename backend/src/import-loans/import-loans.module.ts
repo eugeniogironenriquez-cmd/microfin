@@ -144,7 +144,7 @@ export class ImportLoansService {
               interestDue: 0,
               totalDue: pmt,
               balanceDue: pagada ? 0 : pmt,
-              paidAmount: pagada ? pmt : 0,
+              lateInterest: 0,
               status: pagada ? ScheduleStatus.PAGADO : ScheduleStatus.PENDIENTE,
               paidAt: pagada ? fechas[i - 1] : null,
             }));
