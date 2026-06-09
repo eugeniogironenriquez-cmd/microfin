@@ -24,7 +24,7 @@ import { ApiService, AuthService, Loan, PagedResponse } from '../../core/index';
   template: `
     <div class="page-header">
       <h1><mat-icon>directions_bike</mat-icon> Cobranza</h1>
-      @if (auth.hasRole('ADMIN')) {
+      @if (auth.can('cobranza.asignar')) {
         <a mat-raised-button color="primary" routerLink="/collection/assignments">
           <mat-icon>assignment</mat-icon> Asignar cobradores
         </a>

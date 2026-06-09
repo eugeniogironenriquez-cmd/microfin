@@ -27,6 +27,7 @@ const STATUS_CONFIG: Record<string, { label: string; color: string }> = {
   REESTRUCTURADO: { label: 'Reestructurado', color: 'accent' },
   LIQUIDADO:      { label: 'Liquidado',      color: '' },
   CASTIGADO:      { label: 'Castigado',      color: 'warn' },
+  CONVENIO:       { label: 'Convenio',       color: 'accent' },
 };
 
 @Component({
@@ -45,10 +46,11 @@ const STATUS_CONFIG: Record<string, { label: string; color: string }> = {
         <a mat-stroked-button routerLink="/loans/simulator">
           <mat-icon>calculate</mat-icon> Simulador
         </a>
-        <a mat-raised-button color="primary" routerLink="/loans/new"
-           *ngIf="auth.hasRole('ADMIN', 'CAJERO')">
-          <mat-icon>add</mat-icon> Nueva solicitud
-        </a>
+        @if (auth.can('prestamos.crear')) {
+          <a mat-raised-button color="primary" routerLink="/loans/new">
+            <mat-icon>add</mat-icon> Nueva solicitud
+          </a>
+        }
       </div>
     </div>
 
@@ -102,16 +104,10 @@ const STATUS_CONFIG: Record<string, { label: string; color: string }> = {
             </td>
           </ng-container>
 
-          <!-- Tipo -->
-          <ng-container matColumnDef="type">
-            <th mat-header-cell *matHeaderCellDef>Tipo</th>
-            <td mat-cell *matCellDef="let row">{{ row.loanType?.name }}</td>
-          </ng-container>
-
           <!-- Plazo -->
           <ng-container matColumnDef="term">
             <th mat-header-cell *matHeaderCellDef>Plazo</th>
-            <td mat-cell *matCellDef="let row">{{ row.termWeeks }} sem.</td>
+            <td mat-cell *matCellDef="let row">{{ row.termWeeks }} días</td>
           </ng-container>
 
           <!-- Cuota -->
@@ -145,7 +141,7 @@ const STATUS_CONFIG: Record<string, { label: string; color: string }> = {
               <button mat-icon-button [routerLink]="['/loans', row.id]" matTooltip="Ver detalle">
                 <mat-icon>visibility</mat-icon>
               </button>
-              @if (['ACTIVO', 'VENCIDO'].includes(row.status) && auth.hasRole('ADMIN', 'AUTORIZADOR')) {
+              @if (['ACTIVO', 'VENCIDO'].includes(row.status) && auth.can('prestamos.reestructurar')) {
                 <button mat-icon-button [routerLink]="['/loans', row.id, 'restructure']" matTooltip="Reestructurar" color="accent">
                   <mat-icon>refresh</mat-icon>
                 </button>
@@ -179,7 +175,7 @@ export class LoansListComponent implements OnInit {
   pageSize = 20;
 
   statusFilter = new FormControl('');
-  displayedColumns = ['id', 'customer', 'amount', 'type', 'term', 'payment', 'status', 'date', 'actions'];
+  displayedColumns = ['id', 'customer', 'amount', 'term', 'payment', 'status', 'date', 'actions'];
   statuses = Object.entries(STATUS_CONFIG).map(([value, cfg]) => ({ value, label: cfg.label }));
 
   ngOnInit() {

@@ -29,14 +29,16 @@ import { ApiService, AuthService, Customer, Loan } from '../../core/index';
           <a mat-stroked-button routerLink="/customers">
             <mat-icon>arrow_back</mat-icon> Clientes
           </a>
-          <a mat-stroked-button [routerLink]="['/customers', customer()!.id, 'edit']"
-             *ngIf="auth.hasRole('ADMIN','CAJERO')">
-            <mat-icon>edit</mat-icon> Editar
-          </a>
-          <a mat-raised-button color="primary" routerLink="/loans/new"
-             *ngIf="auth.hasRole('ADMIN','CAJERO')">
-            <mat-icon>add</mat-icon> Nueva solicitud
-          </a>
+          @if (auth.can('clientes.editar')) {
+            <a mat-stroked-button [routerLink]="['/customers', customer()!.id, 'edit']">
+              <mat-icon>edit</mat-icon> Editar
+            </a>
+          }
+          @if (auth.can('prestamos.crear')) {
+            <a mat-raised-button color="primary" routerLink="/loans/new">
+              <mat-icon>add</mat-icon> Nueva solicitud
+            </a>
+          }
         </div>
       </div>
 
@@ -87,7 +89,9 @@ import { ApiService, AuthService, Customer, Loan } from '../../core/index';
               <div class="empty-state">
                 <mat-icon>account_balance_wallet</mat-icon>
                 <p>El cliente no tiene créditos registrados</p>
-                <a mat-raised-button color="primary" routerLink="/loans/new">Crear primera solicitud</a>
+                @if (auth.can('prestamos.crear')) {
+                  <a mat-raised-button color="primary" routerLink="/loans/new">Crear primera solicitud</a>
+                }
               </div>
             } @else {
               <table mat-table [dataSource]="loans()">
@@ -98,10 +102,6 @@ import { ApiService, AuthService, Customer, Loan } from '../../core/index';
                 <ng-container matColumnDef="amount">
                   <th mat-header-cell *matHeaderCellDef>Monto</th>
                   <td mat-cell *matCellDef="let r">{{ r.principalAmount | currency:'MXN' }}</td>
-                </ng-container>
-                <ng-container matColumnDef="type">
-                  <th mat-header-cell *matHeaderCellDef>Tipo</th>
-                  <td mat-cell *matCellDef="let r">{{ r.loanType?.name }}</td>
                 </ng-container>
                 <ng-container matColumnDef="status">
                   <th mat-header-cell *matHeaderCellDef>Estado</th>
@@ -139,7 +139,7 @@ export class CustomerDetailComponent implements OnInit {
   photoUrl = signal<string | null>(null);
   loans = signal<Loan[]>([]);
   loading = signal(true);
-  loanCols = ['id', 'amount', 'type', 'status', 'date', 'actions'];
+  loanCols = ['id', 'amount', 'status', 'date', 'actions'];
 
   edad(): string {
     const b = this.customer()?.birthDate;

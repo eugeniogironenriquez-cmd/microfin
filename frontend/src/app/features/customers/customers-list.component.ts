@@ -25,10 +25,11 @@ import { ApiService, AuthService, Customer, PagedResponse } from '../../core/ind
   template: `
     <div class="page-header">
       <h1>Clientes</h1>
-      <a mat-raised-button color="primary" routerLink="/customers/new"
-         *ngIf="auth.hasRole('ADMIN','CAJERO')">
-        <mat-icon>person_add</mat-icon> Nuevo cliente
-      </a>
+      @if (auth.can('clientes.crear')) {
+        <a mat-raised-button color="primary" routerLink="/customers/new">
+          <mat-icon>person_add</mat-icon> Nuevo cliente
+        </a>
+      }
     </div>
 
     <mat-card class="mb-16">
@@ -82,10 +83,11 @@ import { ApiService, AuthService, Customer, PagedResponse } from '../../core/ind
               <button mat-icon-button [routerLink]="['/customers', r.id]" matTooltip="Ver detalle">
                 <mat-icon>visibility</mat-icon>
               </button>
-              <button mat-icon-button [routerLink]="['/customers', r.id, 'edit']"
-                      *ngIf="auth.hasRole('ADMIN','CAJERO')" matTooltip="Editar">
-                <mat-icon>edit</mat-icon>
-              </button>
+              @if (auth.can('clientes.editar')) {
+                <button mat-icon-button [routerLink]="['/customers', r.id, 'edit']" matTooltip="Editar">
+                  <mat-icon>edit</mat-icon>
+                </button>
+              }
             </td>
           </ng-container>
 

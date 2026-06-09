@@ -31,7 +31,7 @@ import { GuarantorFormComponent } from './guarantor-form.component';
         <a mat-stroked-button routerLink="/loans">
           <mat-icon>arrow_back</mat-icon> Volver
         </a>
-        @if (loan()?.status === 'SOLICITUD' && auth.hasRole('AUTORIZADOR','ADMIN')) {
+        @if (loan()?.status === 'SOLICITUD' && auth.can('prestamos.autorizar')) {
           <button mat-raised-button color="primary" (click)="authorize('APPROVE')">
             <mat-icon>check_circle</mat-icon> Autorizar
           </button>
@@ -39,7 +39,7 @@ import { GuarantorFormComponent } from './guarantor-form.component';
             <mat-icon>cancel</mat-icon> Rechazar
           </button>
         }
-        @if (loan()?.status === 'AUTORIZADO' && auth.hasRole('ADMIN','CAJERO')) {
+        @if (loan()?.status === 'AUTORIZADO' && auth.can('prestamos.desembolsar')) {
           <button mat-raised-button color="primary" (click)="disburse()">
             <mat-icon>payments</mat-icon> Desembolsar
           </button>
@@ -82,7 +82,6 @@ import { GuarantorFormComponent } from './guarantor-form.component';
                     <div class="info-row"><span>Estado</span>
                       <span class="badge badge-{{ loan()!.status | lowercase }}">{{ loan()!.status }}</span>
                     </div>
-                    <div class="info-row"><span>Tipo</span><strong>{{ loan()!.loanType?.name }}</strong></div>
                     <div class="info-row"><span>Monto</span><strong>{{ loan()!.principalAmount | currency:'MXN' }}</strong></div>
                     <div class="info-row"><span>Plazo</span><strong>{{ loan()!.termWeeks }} días</strong></div>
                     <div class="info-row"><span>Cuota diaria</span><strong>{{ loan()!.periodicPayment | currency:'MXN' }}</strong></div>
