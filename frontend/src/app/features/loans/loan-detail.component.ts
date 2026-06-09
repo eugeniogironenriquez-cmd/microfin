@@ -232,6 +232,12 @@ import { GuarantorFormComponent } from './guarantor-form.component';
                                   matTooltip="Ver documento">
                             <mat-icon>visibility</mat-icon>
                           </button>
+                          @if (auth.can('prestamos.crear')) {
+                            <button mat-icon-button color="warn" (click)="eliminarDoc(d)"
+                                    matTooltip="Eliminar documento">
+                              <mat-icon>delete_outline</mat-icon>
+                            </button>
+                          }
                         </div>
                       }
                     </div>
@@ -467,6 +473,24 @@ export class LoanDetailComponent implements OnInit {
   // Intenta varias formas según lo que devuelva el backend:
   //  - d.url / d.fileUrl: enlace directo → abrir en pestaña nueva
   //  - d.id: pedir el archivo al endpoint con el token (vía PdfDownloadService.open)
+  eliminarDoc(d: any) {
+    if (!d?.id) return;
+    if (!confirm('¿Eliminar este documento? Esta acción no se puede deshacer.')) return;
+    this.api.delete('/loans/documents/' + d.id).subscribe({
+      next: () => {
+        this.snackbar.open('Documento eliminado', 'OK', { duration: 3000 });
+        const loanId = this.loan()?.id;
+        if (loanId) this.loadDocs(loanId);
+      },
+      error: (err) => {
+        const msg = err?.status === 403
+          ? 'No tienes permiso para eliminar documentos'
+          : (err.error?.message || 'Error al eliminar');
+        this.snackbar.open(msg, 'Cerrar', { duration: 4000 });
+      },
+    });
+  }
+
   verDoc(d: any) {
     if (!d?.id) {
       this.snackbar.open('No se pudo abrir el documento', 'Cerrar', { duration: 4000 });

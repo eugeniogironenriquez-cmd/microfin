@@ -11,7 +11,7 @@ import { extname, join } from 'path';
 import { existsSync, mkdirSync, unlinkSync } from 'fs';
 import { Response } from 'express';
 import { ApiTags, ApiBearerAuth } from '@nestjs/swagger';
-import { Auth, CurrentUser } from '../common/index';
+import { Auth, AuthPermission, CurrentUser } from '../common/index';
 import { UserRole } from '../common/entities';
 
 // ── SERVICE ───────────────────────────────────────────────────
@@ -80,7 +80,7 @@ export class LoanDocumentsController {
   constructor(private svc: LoanDocumentsService) {}
 
   @Post(':id/documents')
-  @Auth()
+  @AuthPermission('prestamos.crear')
   @UseInterceptors(FileInterceptor('file', {
     storage: diskStorage({
       destination: (req, file, cb) => {
@@ -125,7 +125,7 @@ export class LoanDocumentsController {
   }
 
   @Delete('documents/:docId')
-  @Auth(UserRole.ADMIN)
+  @AuthPermission('prestamos.crear')
   delete(@Param('docId') docId: string) {
     return this.svc.delete(docId);
   }
