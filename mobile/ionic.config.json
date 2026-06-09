@@ -1,0 +1,7 @@
+{
+  "name": "microcapital-cobranza",
+  "integrations": {
+    "capacitor": {}
+  },
+  "type": "angular-standalone"
+}

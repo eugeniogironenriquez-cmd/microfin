@@ -1,0 +1,19 @@
+@import "@ionic/angular/css/core.css";
+@import "@ionic/angular/css/normalize.css";
+@import "@ionic/angular/css/structure.css";
+@import "@ionic/angular/css/typography.css";
+@import "@ionic/angular/css/display.css";
+@import "@ionic/angular/css/padding.css";
+@import "@ionic/angular/css/float-elements.css";
+@import "@ionic/angular/css/text-alignment.css";
+@import "@ionic/angular/css/text-transformation.css";
+@import "@ionic/angular/css/flex-utils.css";
+
+/* Estado de sincronización / badges */
+.estado-corriente { --background: #DEF7EC; color: #03543F; }
+.estado-vencido   { --background: #FDE8E8; color: #9B1C1C; }
+
+.offline-banner {
+  background: #92400E; color: #fff; text-align: center;
+  font-size: 13px; padding: 6px; font-weight: 600;
+}

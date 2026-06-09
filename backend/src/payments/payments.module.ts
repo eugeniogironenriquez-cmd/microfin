@@ -18,10 +18,8 @@ import { PdfGeneratorModule } from '../pdf-generator/pdf-generator.module';
 import { PdfGeneratorService } from '../pdf-generator/pdf-generator.service';
 import { ConfigMoraModule, ConfigMoraService } from '../config-mora/config-mora.module';
 
-// Tipos de pago
 type PaymentType = 'DIA' | 'TOTAL' | 'MORATORIO';
 
-// ── PAYMENTS SERVICE ──────────────────────────────────────────
 @Injectable()
 export class PaymentsService {
   constructor(
@@ -36,21 +34,14 @@ export class PaymentsService {
     private moraService: ConfigMoraService,
   ) {}
 
-  // ── MORA PENDIENTE DE UN CRÉDITO ─────────────────────────────
-  // Suma los días hábiles de atraso de cada cuota pendiente/parcial,
-  // multiplicado por la mora diaria global. Descuenta la mora ya pagada.
   async getMoraInfo(loanId: string) {
     const moraPorDia = await this.moraService.getMoraPorDia();
     const today = new Date();
-
     const schedules = await this.scheduleRepo.find({
-      where: { loanId },
-      order: { periodNumber: 'ASC' },
+      where: { loanId }, order: { periodNumber: 'ASC' },
     });
-
     let totalDiasMora = 0;
     const detalle: Array<{ periodo: number; dias: number; mora: number }> = [];
-
     for (const s of schedules) {
       if (s.status === ScheduleStatus.PAGADO) continue;
       const dias = this.moraService.businessDaysOverdue(new Date(s.dueDate), today);
@@ -59,43 +50,32 @@ export class PaymentsService {
         detalle.push({ periodo: s.periodNumber, dias, mora: this.calculator.round(dias * moraPorDia) });
       }
     }
-
     const moraGenerada = this.calculator.round(totalDiasMora * moraPorDia);
-
-    // Mora ya pagada (suma de lateInterestApplied de pagos previos)
     const pagosPrevios = await this.paymentRepo.find({ where: { loanId } });
     const moraPagada = this.calculator.round(
       pagosPrevios.reduce((sum, p) => sum + Number(p.lateInterestApplied || 0), 0)
     );
-
     const moraPendiente = this.calculator.round(Math.max(0, moraGenerada - moraPagada));
-
     return { moraPorDia, totalDiasMora, moraGenerada, moraPagada, moraPendiente, detalle };
   }
 
-  // ── SALDO TOTAL PENDIENTE ────────────────────────────────────
   async getSaldoPendiente(loanId: string): Promise<number> {
-    const schedules = await this.scheduleRepo.find({
-      where: { loanId },
-    });
+    const schedules = await this.scheduleRepo.find({ where: { loanId } });
     const saldo = schedules
       .filter(s => s.status !== ScheduleStatus.PAGADO)
       .reduce((sum, s) => sum + Number(s.balanceDue), 0);
     return this.calculator.round(saldo);
   }
 
-  // Información para la pantalla de pago (cuota, saldo, mora)
   async getPaymentInfo(loanId: string) {
     const loan = await this.loanRepo.findOne({ where: { id: loanId } });
     if (!loan) throw new NotFoundException('Préstamo no encontrado');
-
     const mora = await this.getMoraInfo(loanId);
     const saldoPendiente = await this.getSaldoPendiente(loanId);
     const nextDue = await this.scheduleRepo.findOne({
       where: { loanId, status: ScheduleStatus.PENDIENTE },
       order: { periodNumber: 'ASC' },
     });
-
     return {
       cuotaDiaria: Number(loan.periodicPayment),
       saldoPendiente,
@@ -103,78 +83,70 @@ export class PaymentsService {
       moraPorDia: mora.moraPorDia,
       totalDiasMora: mora.totalDiasMora,
       proximaCuota: nextDue ? {
-        periodo: nextDue.periodNumber,
-        vence: nextDue.dueDate,
-        monto: Number(nextDue.balanceDue),
+        periodo: nextDue.periodNumber, vence: nextDue.dueDate, monto: Number(nextDue.balanceDue),
       } : null,
     };
   }
 
-  // ── REGISTRAR PAGO ───────────────────────────────────────────
   async register(dto: {
     loanId: string; amountPaid: number;
-    paymentType?: PaymentType;       // DIA | TOTAL | MORATORIO
-    applyExcedenteToMora?: boolean;  // check: abonar excedente a mora
+    paymentType?: PaymentType; applyExcedenteToMora?: boolean;
     method?: PaymentMethod; source?: PaymentSource;
     reference?: string; notes?: string; localId?: string;
+    lat?: number; lng?: number;
   }, userId: string, source: PaymentSource = PaymentSource.CAJA) {
-    const loan = await this.loanRepo.findOne({
-      where: { id: dto.loanId },
-      relations: ['loanType'],
-    });
+
+    // IDEMPOTENCIA: si ya existe un pago con este localId, devolverlo (no duplicar)
+    if (dto.localId) {
+      const existing = await this.paymentRepo.findOne({ where: { localId: dto.localId } });
+      if (existing) {
+        return {
+          payment: existing,
+          applied: {
+            capitalApplied: Number(existing.capitalApplied),
+            interestApplied: Number(existing.interestApplied),
+            lateInterestApplied: Number(existing.lateInterestApplied),
+          },
+          excedente: 0, liquidado: false, duplicate: true,
+        };
+      }
+    }
+
+    const loan = await this.loanRepo.findOne({ where: { id: dto.loanId }, relations: ['loanType'] });
     if (!loan) throw new NotFoundException('Préstamo no encontrado');
     if (![LoanStatus.ACTIVO, LoanStatus.VENCIDO].includes(loan.status as LoanStatus))
       throw new BadRequestException('El préstamo no está activo');
 
     const paymentType: PaymentType = dto.paymentType || 'DIA';
     const today = new Date();
-
-    const cashSession = await this.cashRepo.findOne({
-      where: { cashierId: userId, closedAt: null as any },
-    });
-
-    const moraInfo = await this.moraService.getMoraPorDia();
+    const cashSession = await this.cashRepo.findOne({ where: { cashierId: userId, closedAt: null as any } });
 
     let remaining = Number(dto.amountPaid);
-    let capitalApplied = 0;
-    let interestApplied = 0;
-    let lateInterestApplied = 0;
+    let capitalApplied = 0, interestApplied = 0, lateInterestApplied = 0;
 
-    // ── PAGO MORATORIO: solo abona a la mora, no toca cuotas ──
     if (paymentType === 'MORATORIO') {
       const mora = await this.getMoraInfo(dto.loanId);
       lateInterestApplied = this.calculator.round(Math.min(remaining, mora.moraPendiente));
       remaining = this.calculator.round(remaining - lateInterestApplied);
     } else {
-      // ── PAGO DÍA o TOTAL: aplicar a cuotas ──
       const schedules = await this.scheduleRepo.find({
         where: { loanId: dto.loanId, status: ScheduleStatus.PENDIENTE },
         order: { periodNumber: 'ASC' },
       });
-
-      // PAGO DÍA: solo la siguiente cuota. PAGO TOTAL: todas.
-      const targetSchedules = paymentType === 'DIA'
-        ? schedules.slice(0, 1)
-        : schedules;
-
+      const targetSchedules = paymentType === 'DIA' ? schedules.slice(0, 1) : schedules;
       for (const schedule of targetSchedules) {
         if (remaining <= 0) break;
-
         const applyAmount = Math.min(remaining, Number(schedule.balanceDue));
         const interestPart = Math.min(applyAmount, Number(schedule.interestDue));
         const capitalPart = this.calculator.round(applyAmount - interestPart);
-
         interestApplied += interestPart;
         capitalApplied  += capitalPart;
         remaining        = this.calculator.round(remaining - applyAmount);
-
         schedule.balanceDue = this.calculator.round(Math.max(0, Number(schedule.balanceDue) - applyAmount));
         schedule.status = schedule.balanceDue <= 0 ? ScheduleStatus.PAGADO : ScheduleStatus.PARCIAL;
         if (schedule.status === ScheduleStatus.PAGADO) schedule.paidAt = today;
         await this.scheduleRepo.save(schedule);
       }
-
-      // ── EXCEDENTE A MORA (check activado) ──
       if (dto.applyExcedenteToMora && remaining > 0) {
         const mora = await this.getMoraInfo(dto.loanId);
         const aplicarMora = this.calculator.round(Math.min(remaining, mora.moraPendiente));
@@ -183,7 +155,6 @@ export class PaymentsService {
       }
     }
 
-    // Folio de comprobante
     const todayStart = new Date(); todayStart.setHours(0,0,0,0);
     const countResult = await this.dataSource.query(
       'SELECT COUNT(*) as cnt FROM pagos WHERE fecha_pago >= ?', [todayStart]
@@ -206,13 +177,14 @@ export class PaymentsService {
       reference: dto.reference,
       notes: dto.notes,
       localId: dto.localId,
+      lat: dto.lat ?? null,
+      lng: dto.lng ?? null,
       syncStatus: SyncStatus.SYNCED,
       receiptNumber,
       createdBy: userId,
     });
     const saved = await this.paymentRepo.save(payment);
 
-    // ¿Liquidado?
     const pendingCount = await this.scheduleRepo.count({
       where: { loanId: dto.loanId, status: ScheduleStatus.PENDIENTE },
     });
@@ -229,18 +201,12 @@ export class PaymentsService {
   }
 
   async getHistory(loanId: string): Promise<Payment[]> {
-    return this.paymentRepo.find({
-      where: { loanId },
-      order: { createdAt: 'DESC' },
-    });
+    return this.paymentRepo.find({ where: { loanId }, order: { createdAt: 'DESC' } });
   }
 
   async getTodayPayments() {
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
-    const tomorrow = new Date(today);
-    tomorrow.setDate(tomorrow.getDate() + 1);
-
+    const today = new Date(); today.setHours(0, 0, 0, 0);
+    const tomorrow = new Date(today); tomorrow.setDate(tomorrow.getDate() + 1);
     return this.paymentRepo.createQueryBuilder('p')
       .leftJoinAndSelect('p.loan', 'l')
       .leftJoinAndSelect('l.customer', 'c')
@@ -250,19 +216,38 @@ export class PaymentsService {
       .getMany();
   }
 
+  // Pagos con geolocalización para el monitor web (mapa de cobranza)
+  async getGeoPayments(date?: string) {
+    const day = date ? new Date(date) : new Date();
+    day.setHours(0, 0, 0, 0);
+    const next = new Date(day); next.setDate(next.getDate() + 1);
+    const rows = await this.paymentRepo.createQueryBuilder('p')
+      .leftJoinAndSelect('p.loan', 'l')
+      .leftJoinAndSelect('l.customer', 'c')
+      .where('p.paymentDate >= :day', { day })
+      .andWhere('p.paymentDate < :next', { next })
+      .andWhere('p.lat IS NOT NULL')
+      .orderBy('p.paymentDate', 'DESC')
+      .getMany();
+    return rows.map((p: any) => ({
+      id: p.id, lat: Number(p.lat), lng: Number(p.lng),
+      amount: Number(p.amountPaid), collectorId: p.collectorId,
+      customerName: p.loan?.customer?.fullName,
+      paymentDate: p.paymentDate, receiptNumber: p.receiptNumber,
+    }));
+  }
+
   async generateReceipt(paymentId: string, res: Response): Promise<void> {
     const payment = await this.paymentRepo.findOne({ where: { id: paymentId } });
     if (!payment) throw new NotFoundException('Pago no encontrado');
     const loan = await this.loanRepo.findOne({
-      where: { id: payment.loanId },
-      relations: ['customer', 'loanType'],
+      where: { id: payment.loanId }, relations: ['customer', 'loanType'],
     });
     const company = await this.companyService.get();
     return this.pdfService.generatePaymentReceipt({ payment, loan, company }, res);
   }
 }
 
-// ── PAYMENTS CONTROLLER ───────────────────────────────────────
 @ApiTags('payments')
 @ApiBearerAuth()
 @Controller('payments')
@@ -271,10 +256,10 @@ export class PaymentsController {
 
   @Post() @Auth()
   register(@Body() dto: any, @CurrentUser('id') userId: string) {
-    return this.paymentsService.register(dto, userId);
+    const source = dto.source === 'COBRADOR' ? PaymentSource.COBRADOR : PaymentSource.CAJA;
+    return this.paymentsService.register(dto, userId, source);
   }
 
-  // Info de pago: cuota, saldo total y mora pendiente
   @Get('info/:loanId') @Auth()
   paymentInfo(@Param('loanId') loanId: string) {
     return this.paymentsService.getPaymentInfo(loanId);
@@ -288,6 +273,11 @@ export class PaymentsController {
   @Get('today') @Auth()
   today() { return this.paymentsService.getTodayPayments(); }
 
+  @Get('geo') @Auth()
+  geo(@Query('date') date?: string) {
+    return this.paymentsService.getGeoPayments(date);
+  }
+
   @Get('history/:loanId') @Auth()
   history(@Param('loanId') loanId: string) {
     return this.paymentsService.getHistory(loanId);
@@ -299,14 +289,10 @@ export class PaymentsController {
   }
 }
 
-// ── MODULE ───────────────────────────────────────────────────
 @Module({
   imports: [
     TypeOrmModule.forFeature([Payment, PaymentSchedule, Loan, CashSession]),
-    LoansModule,
-    CompanyModule,
-    PdfGeneratorModule,
-    ConfigMoraModule,
+    LoansModule, CompanyModule, PdfGeneratorModule, ConfigMoraModule,
   ],
   providers: [PaymentsService],
   controllers: [PaymentsController],
