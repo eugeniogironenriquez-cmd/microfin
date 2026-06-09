@@ -104,7 +104,7 @@ export class ShellComponent {
     { label: 'Reestructuración', icon: 'refresh',                route: '/restructuring',    perm: 'prestamos.reestructurar' },
     { label: 'Desembolso',       icon: 'payments',               route: '/disbursements',    perm: 'prestamos.desembolsar' },
     { label: 'Cobranza',         icon: 'directions_bike',        route: '/collection',       perm: 'cobranza.ver' },
-    { label: 'Monitor de cobranza', icon: 'map', route: '/monitor-geo', perm: 'cobranza.monitor' },
+    { label: 'Monitor de cobranza', icon: 'map',                 route: '/monitor-geo',      perm: 'cobranza.monitor' },
     { label: 'Caja',             icon: 'point_of_sale',          route: '/cash',             perm: 'caja.ver' },
     { label: 'Gastos',           icon: 'receipt_long',           route: '/expenses',         perm: 'gastos.ver' },
     { label: 'Reportes',         icon: 'bar_chart',              route: '/reports',          perm: 'reportes.ver' },

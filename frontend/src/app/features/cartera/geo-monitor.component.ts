@@ -14,11 +14,14 @@ declare const L: any;
 
 interface GeoPayment {
   id: string; lat: number; lng: number; amount: number;
-  collectorId?: string; customerName?: string; paymentDate: string; receiptNumber?: string;
+  collectorId?: string; collectorName?: string;
+  customerName?: string; paymentDate: string; receiptNumber?: string;
 }
 interface GeoVisit {
   id: string; loanId: string; tipo: string; lat: number; lng: number;
-  notas?: string; registradoPor?: string; creadoEn: string;
+  notas?: string; fechaPromesa?: string; montoPromesa?: number;
+  customerName?: string; collectorName?: string;
+  registradoPor?: string; creadoEn: string;
 }
 
 @Component({
@@ -241,13 +244,33 @@ export class GeoMonitorComponent implements OnInit, OnDestroy {
   private popupPago(p: GeoPayment): string {
     const monto = (p.amount || 0).toLocaleString('es-MX', { style: 'currency', currency: 'MXN' });
     const fecha = new Date(p.paymentDate).toLocaleString('es-MX');
-    return `<strong>Pago</strong><br>${p.customerName || ''}<br>${monto}<br><small>${fecha}</small>`
-      + (p.receiptNumber ? `<br><small>${p.receiptNumber}</small>` : '');
+    let html = `<strong>Pago</strong>`;
+    if (p.customerName) html += `<br>Cliente: ${p.customerName}`;
+    html += `<br>Monto: ${monto}`;
+    if (p.collectorName) html += `<br>Cobrador: ${p.collectorName}`;
+    html += `<br><small>${fecha}</small>`;
+    if (p.receiptNumber) html += `<br><small>${p.receiptNumber}</small>`;
+    return html;
   }
 
   private popupVisita(v: GeoVisit): string {
     const tipo = v.tipo === 'PROMESA_PAGO' ? 'Promesa de pago' : 'No localizado';
     const fecha = new Date(v.creadoEn).toLocaleString('es-MX');
-    return `<strong>Visita: ${tipo}</strong>` + (v.notas ? `<br>${v.notas}` : '') + `<br><small>${fecha}</small>`;
+    let html = `<strong>Visita: ${tipo}</strong>`;
+    if (v.customerName) html += `<br>Cliente: ${v.customerName}`;
+    if (v.collectorName) html += `<br>Registró: ${v.collectorName}`;
+    // Datos de promesa de pago
+    if (v.tipo === 'PROMESA_PAGO') {
+      if (v.montoPromesa != null) {
+        const m = v.montoPromesa.toLocaleString('es-MX', { style: 'currency', currency: 'MXN' });
+        html += `<br>Prometió: ${m}`;
+      }
+      if (v.fechaPromesa) {
+        html += `<br>Para: ${new Date(v.fechaPromesa).toLocaleDateString('es-MX', { timeZone: 'UTC' })}`;
+      }
+    }
+    if (v.notas) html += `<br><em>${v.notas}</em>`;
+    html += `<br><small>${fecha}</small>`;
+    return html;
   }
 }

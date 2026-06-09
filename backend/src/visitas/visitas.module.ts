@@ -100,26 +100,40 @@ export class VisitasService {
   }
 
   // Visitas con geolocalización para el monitor web (por día)
+  // Incluye nombre del cliente y del cobrador/gestor que registró.
   async geoDelDia(date?: string) {
     const day = date ? new Date(date) : new Date();
     day.setHours(0, 0, 0, 0);
     const next = new Date(day);
     next.setDate(next.getDate() + 1);
 
-    const rows = await this.repo.createQueryBuilder('v')
-      .where('v.creado_en >= :day', { day })
-      .andWhere('v.creado_en < :next', { next })
-      .andWhere('v.lat IS NOT NULL')
-      .orderBy('v.creado_en', 'DESC')
-      .getMany();
+    // Join manual por SQL para traer nombres (cliente y usuario que registró)
+    const rows = await this.repo.query(
+      `SELECT v.id, v.prestamo_id AS loanId, v.tipo, v.notas,
+              v.fecha_promesa AS fechaPromesa, v.monto_promesa AS montoPromesa,
+              v.lat, v.lng, v.registrado_por AS registradoPor, v.creado_en AS creadoEn,
+              c.nombre_completo AS customerName,
+              u.nombre AS collectorName
+       FROM visitas v
+       LEFT JOIN prestamos p ON p.id = v.prestamo_id
+       LEFT JOIN clientes  c ON c.id = p.cliente_id
+       LEFT JOIN usuarios  u ON u.id = v.registrado_por
+       WHERE v.creado_en >= ? AND v.creado_en < ? AND v.lat IS NOT NULL
+       ORDER BY v.creado_en DESC`,
+      [day, next]
+    );
 
-    return rows.map((v) => ({
+    return rows.map((v: any) => ({
       id: v.id,
       loanId: v.loanId,
       tipo: v.tipo,
       lat: Number(v.lat),
       lng: Number(v.lng),
       notas: v.notas,
+      fechaPromesa: v.fechaPromesa,
+      montoPromesa: v.montoPromesa != null ? Number(v.montoPromesa) : null,
+      customerName: v.customerName,
+      collectorName: v.collectorName,
       registradoPor: v.registradoPor,
       creadoEn: v.creadoEn,
     }));

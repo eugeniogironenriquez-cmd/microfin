@@ -229,9 +229,22 @@ export class PaymentsService {
       .andWhere('p.lat IS NOT NULL')
       .orderBy('p.paymentDate', 'DESC')
       .getMany();
+
+    // Resolver nombres de cobradores en una sola consulta
+    const collectorIds = [...new Set(rows.map((p: any) => p.collectorId).filter(Boolean))];
+    const collectorMap: Record<string, string> = {};
+    if (collectorIds.length > 0) {
+      const users = await this.dataSource.query(
+        `SELECT id, nombre FROM usuarios WHERE id IN (${collectorIds.map(() => '?').join(',')})`,
+        collectorIds
+      );
+      for (const u of users) collectorMap[u.id] = u.nombre;
+    }
+
     return rows.map((p: any) => ({
       id: p.id, lat: Number(p.lat), lng: Number(p.lng),
       amount: Number(p.amountPaid), collectorId: p.collectorId,
+      collectorName: p.collectorId ? (collectorMap[p.collectorId] || null) : null,
       customerName: p.loan?.customer?.fullName,
       paymentDate: p.paymentDate, receiptNumber: p.receiptNumber,
     }));
