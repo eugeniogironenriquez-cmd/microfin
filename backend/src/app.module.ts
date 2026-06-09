@@ -34,6 +34,8 @@ import { PlazosCreditoModule } from './plazos-credito/plazos-credito.module';
 import { ConfigMoraModule } from './config-mora/config-mora.module';
 import { SemaforoModule } from './semaforo/semaforo.module';
 import { ImportLoansModule } from './import-loans/import-loans.module';
+import { VisitasModule, Visita } from './visitas/visitas.module';
+
 
 @Module({
   imports: [
@@ -54,7 +56,7 @@ import { ImportLoansModule } from './import-loans/import-loans.module';
           CashSession, AuditLog, CompanySettings, LateFeeRule,
           State, Municipality, Guarantor, ExpenseCategory, Expense,
           Role, Permiso, PlazoCredito, ConfigMora,
-          ConfigSemaforo, HistorialComportamiento,
+          ConfigSemaforo, HistorialComportamiento,Visita,
         ],
         synchronize: false,
         logging: config.get('NODE_ENV') === 'development',
@@ -64,7 +66,7 @@ import { ImportLoansModule } from './import-loans/import-loans.module';
     CashModule, CollectionModule, ReportsModule, SettingsModule, RateRangesModule,
     CompanyModule, LateFeeRulesModule, LocationModule, GuarantorModule,
     DisbursementModule, ExpensesModule, OverdueJobModule, LoanDocumentsModule,
-    PlazosCreditoModule, ConfigMoraModule, SemaforoModule, ImportLoansModule,
+    PlazosCreditoModule, ConfigMoraModule, SemaforoModule, ImportLoansModule,VisitasModule,
   ],
 })
 export class AppModule implements OnApplicationBootstrap, NestModule {
