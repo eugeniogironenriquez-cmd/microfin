@@ -750,12 +750,12 @@ export class LoansController {
   @Get(':id/renovacion-info') @Auth() renovacionInfo(@Param('id') id: string) {
     return this.loansService.getRenovacionInfo(id);
   }
-  @Post(':id/renovar') @Auth(UserRole.ADMIN, UserRole.AUTORIZADOR)
+  @Post(':id/renovar') @AuthPermission('prestamos.reestructurar')
   renovar(@Param('id') id: string, @Body() dto: any, @CurrentUser('id') uid: string) {
     return this.loansService.renovar(id, dto, uid);
   }
 
-  @Post(':id/convenio') @Auth(UserRole.ADMIN, UserRole.AUTORIZADOR)
+  @Post(':id/convenio') @AuthPermission('prestamos.reestructurar')
   convenio(@Param('id') id: string, @Body() dto: any, @CurrentUser('id') uid: string) {
     return this.loansService.convenio(id, dto, uid);
   }
@@ -780,7 +780,7 @@ export class LoansController {
     return this.loansService.disburse(id, dto, uid);
   }
 
-  @Post(':id/restructure') @Auth(UserRole.ADMIN, UserRole.AUTORIZADOR)
+  @Post(':id/restructure') @AuthPermission('prestamos.reestructurar')
   restructure(@Param('id') id: string, @Body() dto: any, @CurrentUser('id') uid: string) {
     return this.loansService.restructure(id, dto, uid);
   }
