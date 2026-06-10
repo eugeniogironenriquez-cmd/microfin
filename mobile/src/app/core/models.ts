@@ -83,3 +83,20 @@ export interface LocalVisit {
   serverId?: string;
   error?: string;
 }
+
+// ── Acciones de gestor (reestructura / convenio) ─────────────
+export type GestorAccionTipo = 'REESTRUCTURA' | 'CONVENIO';
+
+export interface LocalGestorAccion {
+  localId: string;
+  loanId: string;
+  tipo: GestorAccionTipo;
+  // Reestructura: principalAmount, days, customPayment, restructureReason
+  // Convenio: montoConvenio, numeroPagos, periodicidad, fechaPrimerPago, notes
+  payload: Record<string, any>;
+  capturedAt: string;
+  synced: boolean;
+  syncedAt?: string;
+  serverId?: string;
+  error?: string;
+}

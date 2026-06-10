@@ -1,6 +1,6 @@
 import { Injectable } from '@angular/core';
 import { Preferences } from '@capacitor/preferences';
-import { AuthUser, AssignedClient, LocalPayment, LocalVisit } from './models';
+import { AuthUser, AssignedClient, LocalPayment, LocalVisit, LocalGestorAccion } from './models';
 
 // Claves de almacenamiento local
 const K_TOKEN    = 'access_token';
@@ -9,6 +9,7 @@ const K_USER     = 'user';
 const K_CLIENTS  = 'assigned_clients';
 const K_PAYMENTS = 'local_payments';
 const K_VISITS   = 'local_visits';
+const K_GESTOR   = 'local_gestor_acciones';
 
 /**
  * Servicio de almacenamiento local (offline-first).
@@ -114,5 +115,34 @@ export class StorageService {
 
   async getPendingVisits(): Promise<LocalVisit[]> {
     return (await this.getVisits()).filter(v => !v.synced);
+  }
+
+  // ── Acciones de gestor (cola de sincronización) ────────────
+  async getGestorAcciones(): Promise<LocalGestorAccion[]> {
+    const raw = (await Preferences.get({ key: K_GESTOR })).value;
+    try { return raw ? JSON.parse(raw) : []; } catch { return []; }
+  }
+
+  async saveGestorAcciones(items: LocalGestorAccion[]) {
+    await Preferences.set({ key: K_GESTOR, value: JSON.stringify(items) });
+  }
+
+  async addGestorAccion(item: LocalGestorAccion) {
+    const all = await this.getGestorAcciones();
+    all.unshift(item);
+    await this.saveGestorAcciones(all);
+  }
+
+  async updateGestorAccion(localId: string, patch: Partial<LocalGestorAccion>) {
+    const all = await this.getGestorAcciones();
+    const idx = all.findIndex(x => x.localId === localId);
+    if (idx >= 0) {
+      all[idx] = { ...all[idx], ...patch };
+      await this.saveGestorAcciones(all);
+    }
+  }
+
+  async getPendingGestorAcciones(): Promise<LocalGestorAccion[]> {
+    return (await this.getGestorAcciones()).filter(x => !x.synced);
   }
 }

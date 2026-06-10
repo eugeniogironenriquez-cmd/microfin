@@ -4,7 +4,7 @@ import { firstValueFrom } from 'rxjs';
 import { environment } from '../../environments/environment';
 import { StorageService } from './storage.service';
 import { NetworkService } from './network.service';
-import { AssignedClient, LocalPayment, PaymentInfo, LocalVisit, TipoVisita } from './models';
+import { AssignedClient, LocalPayment, PaymentInfo, LocalVisit, TipoVisita, LocalGestorAccion, GestorAccionTipo } from './models';
 
 interface ApiEnvelope<T> { success: boolean; data: T; timestamp: string; }
 
@@ -107,6 +107,12 @@ export class CollectionService {
       const success = await this.syncOneVisit(v);
       success ? ok++ : fail++;
     }
+    // Sincronizar acciones de gestor pendientes (reestructura/convenio)
+    const pendingGestor = await this.storage.getPendingGestorAcciones();
+    for (const g of pendingGestor) {
+      const success = await this.syncOneGestor(g);
+      success ? ok++ : fail++;
+    }
     this.syncing.set(false);
     await this.refreshPendingCount();
     return { ok, fail };
@@ -151,7 +157,67 @@ export class CollectionService {
   async refreshPendingCount() {
     const pending = await this.storage.getPendingPayments();
     const pendingVisits = await this.storage.getPendingVisits();
-    this.pendingCount.set(pending.length + pendingVisits.length);
+    const pendingGestor = await this.storage.getPendingGestorAcciones();
+    this.pendingCount.set(pending.length + pendingVisits.length + pendingGestor.length);
+  }
+
+  // ── Acciones de gestor: reestructura / convenio (offline diferido) ──
+  /**
+   * Simula una reestructura (requiere conexión). Devuelve nueva cuota,
+   * total y calendario, usando el mismo endpoint que la web (/loans/simulate).
+   */
+  async simularReestructura(principalAmount: number, days: number, customPayment?: number): Promise<any> {
+    return firstValueFrom(
+      this.http.post<ApiEnvelope<any> | any>(`${this.base}/loans/simulate`, {
+        principalAmount, days, customPayment,
+      })
+    ).then((r) => this.unwrap(r));
+  }
+
+  /**
+   * Encola una acción de gestor (reestructura o convenio) y trata de aplicarla.
+   * Offline diferido: si no hay red, queda pendiente y se aplica al sincronizar.
+   */
+  async registrarGestorAccion(tipo: GestorAccionTipo, loanId: string, payload: Record<string, any>): Promise<LocalGestorAccion> {
+    const accion: LocalGestorAccion = {
+      localId: this.uuid(),
+      loanId,
+      tipo,
+      payload,
+      capturedAt: new Date().toISOString(),
+      synced: false,
+    };
+    await this.storage.addGestorAccion(accion);
+    await this.refreshPendingCount();
+    if (await this.network.isOnline()) {
+      await this.syncOneGestor(accion);
+    }
+    return accion;
+  }
+
+  private async syncOneGestor(g: LocalGestorAccion): Promise<boolean> {
+    try {
+      const endpoint = g.tipo === 'REESTRUCTURA'
+        ? `${this.base}/loans/${g.loanId}/restructure`
+        : `${this.base}/loans/${g.loanId}/convenio`;
+      const res = await firstValueFrom(
+        this.http.post<ApiEnvelope<any> | any>(endpoint, g.payload)
+      );
+      const data = this.unwrap(res);
+      const serverId = data?.loan?.id;
+      await this.storage.updateGestorAccion(g.localId, {
+        synced: true,
+        syncedAt: new Date().toISOString(),
+        serverId,
+        error: undefined,
+      });
+      return true;
+    } catch (e: any) {
+      await this.storage.updateGestorAccion(g.localId, {
+        error: e?.error?.message || 'Error de sincronización',
+      });
+      return false;
+    }
   }
 
   // ── Visitas (offline-first) ────────────────────────────────

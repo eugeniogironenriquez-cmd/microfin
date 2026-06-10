@@ -16,6 +16,7 @@ async function bootstrap() {
     'http://localhost:4200',                      // desarrollo local (opcional)
     'capacitor://localhost',                      // app móvil Capacitor (Android)
     'http://localhost',                           // app móvil (WebView),
+    'https://localhost',                           // app móvil (WebView),
     'http://localhost:8100',                           // app móvil (WebView)
   ],
   methods: 'GET,HEAD,PUT,PATCH,POST,DELETE,OPTIONS',

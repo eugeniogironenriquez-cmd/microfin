@@ -7,10 +7,11 @@ import {
   IonSpinner, IonItem, IonLabel, IonBadge,
 } from '@ionic/angular/standalone';
 import { addIcons } from 'ionicons';
-import { cashOutline, walletOutline, alertCircleOutline, callOutline, walkOutline } from 'ionicons/icons';
+import { cashOutline, walletOutline, alertCircleOutline, callOutline, walkOutline, refreshOutline, documentTextOutline } from 'ionicons/icons';
 
 import { CollectionService } from '../../core/collection.service';
 import { NetworkService } from '../../core/network.service';
+import { AuthService } from '../../core/auth.service';
 import { AssignedClient, PaymentInfo } from '../../core/models';
 
 @Component({
@@ -91,6 +92,18 @@ import { AssignedClient, PaymentInfo } from '../../core/models';
           <ion-icon slot="start" name="walk-outline"></ion-icon>
           Registrar visita
         </ion-button>
+
+        <!-- Acciones de gestor: solo si tiene el permiso -->
+        @if (auth.can('prestamos.reestructurar')) {
+          <ion-button expand="block" fill="outline" (click)="goRestructure()">
+            <ion-icon slot="start" name="refresh-outline"></ion-icon>
+            Reestructurar
+          </ion-button>
+          <ion-button expand="block" fill="outline" color="warning" (click)="goConvenio()">
+            <ion-icon slot="start" name="document-text-outline"></ion-icon>
+            Convenio de pago
+          </ion-button>
+        }
       } @else {
         <div class="center"><ion-spinner name="crescent"></ion-spinner></div>
       }
@@ -112,6 +125,7 @@ import { AssignedClient, PaymentInfo } from '../../core/models';
 export class ClientDetailPage implements OnInit {
   readonly collection = inject(CollectionService);
   readonly network = inject(NetworkService);
+  readonly auth = inject(AuthService);
   private route = inject(ActivatedRoute);
   private router = inject(Router);
 
@@ -120,7 +134,7 @@ export class ClientDetailPage implements OnInit {
   loadingInfo = signal(true);
 
   constructor() {
-    addIcons({ cashOutline, walletOutline, alertCircleOutline, callOutline, walkOutline });
+    addIcons({ cashOutline, walletOutline, alertCircleOutline, callOutline, walkOutline, refreshOutline, documentTextOutline });
   }
 
   async ngOnInit() {
@@ -143,5 +157,13 @@ export class ClientDetailPage implements OnInit {
 
   goVisit() {
     this.router.navigate(['/visit', this.client()!.loanId]);
+  }
+
+  goRestructure() {
+    this.router.navigate(['/restructure', this.client()!.loanId]);
+  }
+
+  goConvenio() {
+    this.router.navigate(['/convenio', this.client()!.loanId]);
   }
 }
