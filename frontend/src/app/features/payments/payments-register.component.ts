@@ -136,6 +136,9 @@ import { ApiService, Loan, PaymentSchedule } from '../../core/index';
                     <mat-button-toggle value="DIA">
                       <mat-icon>today</mat-icon> Pago Día
                     </mat-button-toggle>
+                    <mat-button-toggle value="SELECTIVO">
+                      <mat-icon>checklist</mat-icon> Por cuotas
+                    </mat-button-toggle>
                     <mat-button-toggle value="TOTAL">
                       <mat-icon>done_all</mat-icon> Pago Total
                     </mat-button-toggle>
@@ -146,6 +149,13 @@ import { ApiService, Loan, PaymentSchedule } from '../../core/index';
 
                   <p class="type-hint">{{ typeHint() }}</p>
 
+                  @if (paymentForm.value.paymentType === 'SELECTIVO') {
+                    <div class="selectivo-info">
+                      <mat-icon>info</mat-icon>
+                      <span>Marca en el calendario (derecha) las cuotas que paga el cliente. El monto se suma automáticamente y puedes ajustarlo.</span>
+                    </div>
+                  }
+
                   <mat-form-field appearance="outline" class="w-full">
                     <mat-label>Monto recibido *</mat-label>
                     <input matInput type="number" step="0.01" formControlName="amountPaid">
@@ -153,10 +163,21 @@ import { ApiService, Loan, PaymentSchedule } from '../../core/index';
                   </mat-form-field>
 
                   <!-- Check excedente a mora (solo DIA/TOTAL con mora pendiente) -->
-                  @if (paymentForm.value.paymentType !== 'MORATORIO' && info() && info()!.moraPendiente > 0) {
+                  @if (paymentForm.value.paymentType !== 'MORATORIO' && paymentForm.value.paymentType !== 'SELECTIVO' && info() && info()!.moraPendiente > 0) {
                     <div class="mora-check">
                       <mat-checkbox formControlName="applyExcedenteToMora" color="primary">
                         Abonar el excedente del pago a la mora pendiente
+                        ({{ info()!.moraPendiente | currency:'MXN' }})
+                      </mat-checkbox>
+                    </div>
+                  }
+
+                  <!-- Check cobrar mora junto con las cuotas (modo selectivo) -->
+                  @if (paymentForm.value.paymentType === 'SELECTIVO' && info() && info()!.moraPendiente > 0) {
+                    <div class="mora-check">
+                      <mat-checkbox formControlName="cobrarMora" color="primary"
+                                    (change)="recalcSelectivo()">
+                        Cobrar también la mora registrada
                         ({{ info()!.moraPendiente | currency:'MXN' }})
                       </mat-checkbox>
                     </div>
@@ -250,6 +271,17 @@ import { ApiService, Loan, PaymentSchedule } from '../../core/index';
             </mat-card-header>
             <mat-card-content>
               <table mat-table [dataSource]="schedule()">
+                <ng-container matColumnDef="select">
+                  <th mat-header-cell *matHeaderCellDef></th>
+                  <td mat-cell *matCellDef="let r">
+                    @if (r.status !== 'PAGADO') {
+                      <mat-checkbox [checked]="selectedPeriodos().has(r.periodNumber)"
+                                    [disabled]="paymentForm.value.paymentType !== 'SELECTIVO'"
+                                    (change)="togglePeriodo(r.periodNumber)"
+                                    color="primary"></mat-checkbox>
+                    }
+                  </td>
+                </ng-container>
                 <ng-container matColumnDef="period">
                   <th mat-header-cell *matHeaderCellDef>#</th>
                   <td mat-cell *matCellDef="let r">{{ r.periodNumber }}</td>
@@ -270,9 +302,10 @@ import { ApiService, Loan, PaymentSchedule } from '../../core/index';
                     <span class="badge badge-{{ r.status | lowercase }}">{{ r.status }}</span>
                   </td>
                 </ng-container>
-                <tr mat-header-row *matHeaderRowDef="scheduleCols"></tr>
-                <tr mat-row *matRowDef="let row; columns: scheduleCols;"
-                    [class.paid-row]="row.status === 'PAGADO'"></tr>
+                <tr mat-header-row *matHeaderRowDef="displayedCols()"></tr>
+                <tr mat-row *matRowDef="let row; columns: displayedCols();"
+                    [class.paid-row]="row.status === 'PAGADO'"
+                    [class.sel-row]="selectedPeriodos().has(row.periodNumber)"></tr>
               </table>
             </mat-card-content>
           </mat-card>
@@ -340,6 +373,14 @@ import { ApiService, Loan, PaymentSchedule } from '../../core/index';
       padding:10px 12px; margin-bottom:12px; font-size:13px;
     }
 
+    .selectivo-info {
+      display:flex; align-items:flex-start; gap:8px; padding:10px 12px;
+      background:#EFF6FF; border:1px solid #BFDBFE; border-radius:8px;
+      margin-bottom:12px; font-size:13px; color:#1E40AF;
+    }
+    .selectivo-info mat-icon { color:#3B82F6; flex-shrink:0; font-size:20px; width:20px; height:20px; }
+    .sel-row { background:#F0FFF4 !important; }
+
     .payment-form { display:flex; flex-direction:column; gap:12px; }
     .pay-btn { height:48px; font-size:15px; font-weight:600; width:100%; }
     .w-full { width:100%; }
@@ -389,6 +430,14 @@ export class PaymentsRegisterComponent implements OnInit {
   lastPaymentId = signal<string | null>(null);
 
   scheduleCols = ['period', 'dueDate', 'balance', 'status'];
+  scheduleColsSelectivo = ['select', 'period', 'dueDate', 'balance', 'status'];
+
+  // Cuotas marcadas en modo selectivo
+  selectedPeriodos = signal<Set<number>>(new Set());
+
+  displayedCols = computed(() =>
+    this.paymentForm.value.paymentType === 'SELECTIVO' ? this.scheduleColsSelectivo : this.scheduleCols
+  );
 
   private searchSubject = new Subject<string>();
 
@@ -396,6 +445,7 @@ export class PaymentsRegisterComponent implements OnInit {
     paymentType:          ['DIA', Validators.required],
     amountPaid:           [null as number | null, [Validators.required, Validators.min(0.01)]],
     applyExcedenteToMora: [false],
+    cobrarMora:           [false],
     method:               ['EFECTIVO', Validators.required],
     reference:            [''],
     notes:                [''],
@@ -404,6 +454,7 @@ export class PaymentsRegisterComponent implements OnInit {
   typeHint = computed(() => {
     const t = this.paymentForm.value.paymentType;
     if (t === 'DIA')       return 'Cubre la siguiente cuota pendiente.';
+    if (t === 'SELECTIVO') return 'Selecciona en el calendario qué cuotas paga el cliente, aunque se salte días.';
     if (t === 'TOTAL')     return 'Liquida todo el saldo pendiente del crédito.';
     if (t === 'MORATORIO') return 'Abona únicamente a la mora acumulada, sin tocar las cuotas.';
     return '';
@@ -466,6 +517,9 @@ export class PaymentsRegisterComponent implements OnInit {
     const loan = this.selectedLoan();
     const i = this.info();
     if (!loan || !i) return;
+    // Al cambiar de tipo, limpiar selección de cuotas
+    this.selectedPeriodos.set(new Set());
+    this.paymentForm.patchValue({ cobrarMora: false });
     // Pre-llenar el monto según el tipo
     if (type === 'DIA') {
       this.paymentForm.patchValue({ amountPaid: i.cuotaDiaria, applyExcedenteToMora: false });
@@ -473,7 +527,32 @@ export class PaymentsRegisterComponent implements OnInit {
       this.paymentForm.patchValue({ amountPaid: i.saldoPendiente, applyExcedenteToMora: false });
     } else if (type === 'MORATORIO') {
       this.paymentForm.patchValue({ amountPaid: i.moraPendiente, applyExcedenteToMora: false });
+    } else if (type === 'SELECTIVO') {
+      this.paymentForm.patchValue({ amountPaid: 0, applyExcedenteToMora: false });
     }
+  }
+
+  // Marca/desmarca una cuota en modo selectivo y recalcula el monto
+  togglePeriodo(periodNumber: number) {
+    if (this.paymentForm.value.paymentType !== 'SELECTIVO') return;
+    const set = new Set(this.selectedPeriodos());
+    if (set.has(periodNumber)) set.delete(periodNumber);
+    else set.add(periodNumber);
+    this.selectedPeriodos.set(set);
+    this.recalcSelectivo();
+  }
+
+  // Suma el saldo de las cuotas marcadas (+ mora si la casilla está activa)
+  recalcSelectivo() {
+    const set = this.selectedPeriodos();
+    let total = 0;
+    for (const s of this.schedule()) {
+      if (set.has(s.periodNumber)) total += Number(s.balanceDue);
+    }
+    if (this.paymentForm.value.cobrarMora && this.info()) {
+      total += Number(this.info()!.moraPendiente || 0);
+    }
+    this.paymentForm.patchValue({ amountPaid: Math.round(total * 100) / 100 });
   }
 
   nextDue() {
@@ -482,15 +561,37 @@ export class PaymentsRegisterComponent implements OnInit {
 
   registerPayment() {
     if (this.paymentForm.invalid || !this.selectedLoan()) return;
-    this.saving.set(true);
-    this.api.post<any>('/payments', {
+
+    const fv = this.paymentForm.value;
+    const isSelectivo = fv.paymentType === 'SELECTIVO';
+
+    if (isSelectivo && this.selectedPeriodos().size === 0) {
+      this.snackbar.open('Marca al menos una cuota a pagar', 'Cerrar', { duration: 4000 });
+      return;
+    }
+
+    // En modo selectivo el backend usa paymentType TOTAL + periodos (paga esas cuotas).
+    // Si además se marcó "cobrar mora", se envía applyExcedenteToMora para abonar el resto.
+    const body: any = {
       loanId: this.selectedLoan()!.id,
-      ...this.paymentForm.value,
-    }).subscribe({
+      amountPaid: fv.amountPaid,
+      method: fv.method,
+      reference: fv.reference,
+      notes: fv.notes,
+      paymentType: isSelectivo ? 'TOTAL' : fv.paymentType,
+      applyExcedenteToMora: isSelectivo ? !!fv.cobrarMora : !!fv.applyExcedenteToMora,
+    };
+    if (isSelectivo) {
+      body.periodos = Array.from(this.selectedPeriodos()).sort((a, b) => a - b);
+    }
+
+    this.saving.set(true);
+    this.api.post<any>('/payments', body).subscribe({
       next: (result) => {
         this.paymentResult.set(result);
         this.lastPaymentId.set(result?.payment?.id || null);
         this.saving.set(false);
+        this.selectedPeriodos.set(new Set());
         // Recargar calendario e info
         this.setActiveLoan(this.selectedLoan()!);
         if (result?.payment?.id) {
@@ -522,6 +623,7 @@ export class PaymentsRegisterComponent implements OnInit {
     this.searchTerm.set('');
     this.schedule.set([]);
     this.info.set(null);
-    this.paymentForm.reset({ method: 'EFECTIVO', paymentType: 'DIA', applyExcedenteToMora: false });
+    this.selectedPeriodos.set(new Set());
+    this.paymentForm.reset({ method: 'EFECTIVO', paymentType: 'DIA', applyExcedenteToMora: false, cobrarMora: false });
   }
 }

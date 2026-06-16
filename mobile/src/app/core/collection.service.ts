@@ -4,7 +4,7 @@ import { firstValueFrom } from 'rxjs';
 import { environment } from '../../environments/environment';
 import { StorageService } from './storage.service';
 import { NetworkService } from './network.service';
-import { AssignedClient, LocalPayment, PaymentInfo, LocalVisit, TipoVisita, LocalGestorAccion, GestorAccionTipo } from './models';
+import { AssignedClient, LocalPayment, PaymentInfo, CuotaPendiente, LocalVisit, TipoVisita, LocalGestorAccion, GestorAccionTipo } from './models';
 
 interface ApiEnvelope<T> { success: boolean; data: T; timestamp: string; }
 
@@ -68,6 +68,15 @@ export class CollectionService {
     return this.unwrap(res);
   }
 
+  /** Lista de cuotas pendientes (para el modo selectivo). Requiere conexión. */
+  async getCuotasPendientes(loanId: string): Promise<CuotaPendiente[]> {
+    const res = await firstValueFrom(
+      this.http.get<ApiEnvelope<CuotaPendiente[]> | CuotaPendiente[]>(`${this.base}/payments/cuotas/${loanId}`)
+    );
+    const data = this.unwrap(res);
+    return Array.isArray(data) ? data : [];
+  }
+
   // ── Registro de pago (offline-first) ───────────────────────
   /**
    * Guarda el pago en la cola local y trata de sincronizarlo.
@@ -121,11 +130,15 @@ export class CollectionService {
   /** Envía un pago al backend. Marca synced=true si tiene éxito. */
   private async syncOne(p: LocalPayment): Promise<boolean> {
     try {
+      // En modo selectivo (hay periodos), el backend recibe periodos + TOTAL
+      // y aplica solo a esas cuotas. Sin periodos, el tipo se usa tal cual.
+      const hasPeriodos = Array.isArray(p.periodos) && p.periodos.length > 0;
       const res = await firstValueFrom(
         this.http.post<ApiEnvelope<any> | any>(`${this.base}/payments`, {
           loanId: p.loanId,
           amountPaid: p.amountPaid,
-          paymentType: p.paymentType,
+          paymentType: hasPeriodos ? 'TOTAL' : p.paymentType,
+          periodos: hasPeriodos ? p.periodos : undefined,
           method: p.method,
           applyExcedenteToMora: p.applyExcedenteToMora,
           notes: p.notes,

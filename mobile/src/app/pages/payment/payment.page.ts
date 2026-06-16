@@ -1,4 +1,4 @@
-import { Component, OnInit, inject, signal } from '@angular/core';
+import { Component, OnInit, inject, signal, computed } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { ActivatedRoute, Router } from '@angular/router';
@@ -6,19 +6,21 @@ import {
   IonHeader, IonToolbar, IonTitle, IonContent, IonButtons, IonBackButton,
   IonItem, IonLabel, IonInput, IonSelect, IonSelectOption, IonButton,
   IonIcon, IonSpinner, IonCard, IonCardContent, IonSegment, IonSegmentButton,
-  IonText, IonChip, ToastController,
+  IonText, IonChip, IonCheckbox, IonList, IonListHeader, ToastController,
 } from '@ionic/angular/standalone';
 import { addIcons } from 'ionicons';
 import {
   locationOutline, cashOutline, checkmarkCircle, shareOutline,
-  documentTextOutline, cloudOfflineOutline,
+  documentTextOutline, cloudOfflineOutline, checkboxOutline,
 } from 'ionicons/icons';
 
 import { CollectionService } from '../../core/collection.service';
 import { GeoService } from '../../core/geo.service';
 import { NetworkService } from '../../core/network.service';
 import { TicketService } from '../../core/ticket.service';
-import { AssignedClient, LocalPayment, PaymentType, PaymentMethod } from '../../core/models';
+import { AssignedClient, LocalPayment, PaymentType, PaymentMethod, CuotaPendiente, PaymentInfo } from '../../core/models';
+
+type ModoPago = 'DIA' | 'SELECTIVO' | 'TOTAL' | 'MORATORIO';
 
 @Component({
   selector: 'app-payment',
@@ -28,7 +30,7 @@ import { AssignedClient, LocalPayment, PaymentType, PaymentMethod } from '../../
     IonHeader, IonToolbar, IonTitle, IonContent, IonButtons, IonBackButton,
     IonItem, IonLabel, IonInput, IonSelect, IonSelectOption, IonButton,
     IonIcon, IonSpinner, IonCard, IonCardContent, IonSegment, IonSegmentButton,
-    IonText, IonChip,
+    IonText, IonChip, IonCheckbox, IonList, IonListHeader,
   ],
   template: `
     <ion-header>
@@ -46,11 +48,53 @@ import { AssignedClient, LocalPayment, PaymentType, PaymentMethod } from '../../
 
             <!-- Tipo de pago -->
             <ion-label class="lbl">Tipo de pago</ion-label>
-            <ion-segment [(ngModel)]="paymentType" value="DIA">
+            <ion-segment [(ngModel)]="paymentType" (ionChange)="onTypeChange()" value="DIA" scrollable>
               <ion-segment-button value="DIA"><ion-label>Día</ion-label></ion-segment-button>
+              <ion-segment-button value="SELECTIVO"><ion-label>Cuotas</ion-label></ion-segment-button>
               <ion-segment-button value="TOTAL"><ion-label>Total</ion-label></ion-segment-button>
               <ion-segment-button value="MORATORIO"><ion-label>Mora</ion-label></ion-segment-button>
             </ion-segment>
+
+            <!-- Modo selectivo: lista de cuotas con casillas -->
+            @if (paymentType === 'SELECTIVO') {
+              @if (loadingCuotas()) {
+                <div class="loading-c"><ion-spinner name="crescent"></ion-spinner> Cargando cuotas...</div>
+              } @else if (!network.online()) {
+                <ion-text color="warning">
+                  <p class="hint"><ion-icon name="cloud-offline-outline"></ion-icon>
+                    Sin conexión: no se pueden listar las cuotas. Usa otro tipo de pago o conéctate.</p>
+                </ion-text>
+              } @else if (cuotas().length === 0) {
+                <p class="muted">No hay cuotas pendientes.</p>
+              } @else {
+                <ion-list class="cuotas">
+                  <ion-list-header>Marca las cuotas que paga</ion-list-header>
+                  @for (c of cuotas(); track c.periodo) {
+                    <ion-item button (click)="toggleCuota(c.periodo)">
+                      <ion-checkbox slot="start" [checked]="seleccionadas().has(c.periodo)"></ion-checkbox>
+                      <ion-label>
+                        <h3>Cuota {{ c.periodo }} — {{ c.monto | currency:'MXN' }}</h3>
+                        <p>
+                          Vence {{ c.vence | date:'dd/MM/yyyy':'UTC' }}
+                          @if (c.vencida) { <span class="venc">· vencida</span> }
+                          @if (c.mora > 0) { <span class="mora">· mora {{ c.mora | currency:'MXN' }}</span> }
+                        </p>
+                      </ion-label>
+                    </ion-item>
+                  }
+                </ion-list>
+
+                <!-- Casilla aparte para cobrar la mora -->
+                @if (moraPendiente() > 0) {
+                  <ion-item lines="none" class="mora-check">
+                    <ion-checkbox slot="start" [(ngModel)]="cobrarMora" (ionChange)="recalc()"></ion-checkbox>
+                    <ion-label class="ion-text-wrap">
+                      Cobrar también la mora ({{ moraPendiente() | currency:'MXN' }})
+                    </ion-label>
+                  </ion-item>
+                }
+              }
+            }
 
             <!-- Monto -->
             <ion-item>
@@ -118,8 +162,15 @@ import { AssignedClient, LocalPayment, PaymentType, PaymentMethod } from '../../
   styles: [`
     .cli { margin:0 0 12px; font-size:18px; font-weight:700; color:#1C4532; }
     .lbl { font-size:13px; color:#718096; margin:8px 0 4px; display:block; }
+    .muted { color:#718096; font-size:13px; }
     .hint { font-size:13px; display:flex; align-items:center; gap:6px; }
     ion-segment { margin-bottom:8px; }
+    .loading-c { display:flex; align-items:center; gap:8px; color:#718096; margin:12px 0; font-size:14px; }
+    .cuotas { margin:8px 0; }
+    .cuotas ion-list-header { font-size:13px; color:#4A5568; min-height:auto; }
+    .venc { color:#DC2626; font-weight:600; }
+    .mora { color:#D97706; font-weight:600; }
+    .mora-check { --background:#FFFBEB; border:1px solid #FDE68A; border-radius:8px; margin:8px 0; font-size:13px; }
     .ok { text-align:center; padding:24px 0 8px; }
     .ok ion-icon { font-size:64px; }
     .ok h2 { margin:8px 0 4px; }
@@ -141,8 +192,14 @@ export class PaymentPage implements OnInit {
 
   client = signal<AssignedClient | null>(null);
   amount: number | null = null;
-  paymentType: PaymentType = 'DIA';
+  paymentType: ModoPago = 'DIA';
   method: PaymentMethod = 'EFECTIVO';
+  cobrarMora = false;
+
+  cuotas = signal<CuotaPendiente[]>([]);
+  seleccionadas = signal<Set<number>>(new Set());
+  loadingCuotas = signal(false);
+  info = signal<PaymentInfo | null>(null);
 
   geo = signal<{ lat: number; lng: number } | null>(null);
   capturingGeo = signal(false);
@@ -151,10 +208,12 @@ export class PaymentPage implements OnInit {
   saved = signal<LocalPayment | null>(null);
   ticketText = signal('');
 
+  moraPendiente = computed(() => Number(this.info()?.moraPendiente || 0));
+
   constructor() {
     addIcons({
       locationOutline, cashOutline, checkmarkCircle, shareOutline,
-      documentTextOutline, cloudOfflineOutline,
+      documentTextOutline, cloudOfflineOutline, checkboxOutline,
     });
   }
 
@@ -162,17 +221,65 @@ export class PaymentPage implements OnInit {
     const loanId = this.route.snapshot.paramMap.get('loanId')!;
     const c = this.collection.clients().find(x => x.loanId === loanId) || null;
     this.client.set(c);
-    // Sugerir la cuota diaria como monto por defecto
     if (c?.periodicPayment) this.amount = c.periodicPayment;
 
-    // Capturar geolocalización al abrir (no bloqueante)
     this.capturingGeo.set(true);
     const pos = await this.geoSvc.getCurrentPosition();
     this.geo.set(pos);
     this.capturingGeo.set(false);
+
+    if (await this.network.isOnline()) {
+      try { this.info.set(await this.collection.getPaymentInfo(loanId)); } catch { /* sin info */ }
+    }
+  }
+
+  async onTypeChange() {
+    this.seleccionadas.set(new Set());
+    this.cobrarMora = false;
+    if (this.paymentType === 'SELECTIVO') {
+      this.amount = 0;
+      if (await this.network.isOnline()) {
+        this.loadingCuotas.set(true);
+        try {
+          this.cuotas.set(await this.collection.getCuotasPendientes(this.client()!.loanId));
+        } catch {
+          this.cuotas.set([]);
+        } finally {
+          this.loadingCuotas.set(false);
+        }
+      }
+    } else if (this.paymentType === 'DIA') {
+      this.amount = this.client()?.periodicPayment || null;
+    } else if (this.paymentType === 'TOTAL') {
+      this.amount = this.info()?.saldoPendiente || null;
+    } else if (this.paymentType === 'MORATORIO') {
+      this.amount = this.moraPendiente() || null;
+    }
+  }
+
+  toggleCuota(periodo: number) {
+    const set = new Set(this.seleccionadas());
+    if (set.has(periodo)) set.delete(periodo);
+    else set.add(periodo);
+    this.seleccionadas.set(set);
+    this.recalc();
+  }
+
+  recalc() {
+    let total = 0;
+    for (const c of this.cuotas()) {
+      if (this.seleccionadas().has(c.periodo)) total += Number(c.monto);
+    }
+    if (this.cobrarMora) total += this.moraPendiente();
+    this.amount = Math.round(total * 100) / 100;
   }
 
   async submit() {
+    const isSelectivo = this.paymentType === 'SELECTIVO';
+    if (isSelectivo && this.seleccionadas().size === 0) {
+      this.notify('Marca al menos una cuota');
+      return;
+    }
     if (!this.amount || this.amount <= 0) {
       this.notify('Ingresa un monto válido');
       return;
@@ -182,7 +289,9 @@ export class PaymentPage implements OnInit {
       const payment = await this.collection.registerPayment({
         loanId: this.client()!.loanId,
         amountPaid: Number(this.amount),
-        paymentType: this.paymentType,
+        paymentType: isSelectivo ? 'TOTAL' : (this.paymentType as PaymentType),
+        periodos: isSelectivo ? Array.from(this.seleccionadas()).sort((a, b) => a - b) : undefined,
+        applyExcedenteToMora: isSelectivo ? this.cobrarMora : undefined,
         method: this.method,
         lat: this.geo()?.lat,
         lng: this.geo()?.lng,
@@ -199,11 +308,9 @@ export class PaymentPage implements OnInit {
 
   async share() {
     const text = this.ticketText();
-    // Web Share API si está disponible (Capacitor la soporta en Android)
     if ((navigator as any).share) {
       try { await (navigator as any).share({ text }); return; } catch { /* cancelado */ }
     }
-    // Fallback: copiar al portapapeles
     try {
       await navigator.clipboard.writeText(text);
       this.notify('Ticket copiado');

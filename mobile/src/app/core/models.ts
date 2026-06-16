@@ -43,6 +43,7 @@ export interface LocalPayment {
   paymentType: PaymentType;
   method: PaymentMethod;
   applyExcedenteToMora?: boolean;
+  periodos?: number[];       // cuotas específicas marcadas (modo selectivo)
   notes?: string;
   // Geolocalización capturada al registrar
   lat?: number;
@@ -63,6 +64,16 @@ export interface PaymentInfo {
   moraPorDia: number;
   totalDiasMora: number;
   proximaCuota?: { periodo: number; vence: string; monto: number } | null;
+}
+
+// Cuota pendiente para el modo selectivo (marcar cuáles paga)
+export interface CuotaPendiente {
+  periodo: number;
+  vence: string;
+  monto: number;
+  estatus: string;
+  vencida: boolean;
+  mora: number;
 }
 
 // ── Visitas ──────────────────────────────────────────────────
