@@ -5,6 +5,7 @@ import { Loan, PaymentSchedule, LoanStatus, ScheduleStatus } from '../common/ent
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { Auth } from '../common/index';
 import { UserRole } from '../common/entities';
+import { ConfigMoraModule, ConfigMoraService } from '../config-mora/config-mora.module';
 
 @Injectable()
 export class OverdueJobService {
@@ -14,6 +15,7 @@ export class OverdueJobService {
   constructor(
     @InjectRepository(Loan)            private loanRepo: Repository<Loan>,
     @InjectRepository(PaymentSchedule) private scheduleRepo: Repository<PaymentSchedule>,
+    private moraService: ConfigMoraService,
   ) {}
 
   // Verifica si debe correr (máximo 1 vez por día)
@@ -28,12 +30,25 @@ export class OverdueJobService {
     }
     this.lastRun = now;
     const result = await this.markOverdueLoans();
-    console.log(`[OverdueJob] ${now.toISOString()}: ${result.marked} vencidos, ${result.restored} restaurados`);
+    console.log(`[OverdueJob] ${now.toISOString()}: ${result.marked} vencidos, ${result.restored} restaurados, ${result.moraStamped} moras estampadas`);
   }
 
-  async markOverdueLoans(): Promise<{ marked: number; restored: number }> {
+  async markOverdueLoans(): Promise<{ marked: number; restored: number; moraStamped: number }> {
     const today = new Date();
     today.setHours(0, 0, 0, 0);
+
+    // ── 1. ESTAMPAR MORA FIJA a cuotas recién vencidas ───────────
+    // Cada cuota vencida y sin pagar que aún NO tenga mora estampada
+    // recibe su mora fija (= monto configurado), UNA sola vez.
+    // La condición `mora_generada = 0` evita duplicar si el job corre de nuevo.
+    const moraPorDia = await this.moraService.getMoraPorDia();
+    const rMora = await this.scheduleRepo.query(`
+      UPDATE calendario_pagos
+      SET mora_generada = ?
+      WHERE estatus IN ('PENDIENTE','PARCIAL')
+        AND fecha_vencimiento < ?
+        AND mora_generada = 0
+    `, [moraPorDia, today]);
 
     // Marcar VENCIDO los ACTIVO con cuotas vencidas
     const r1 = await this.loanRepo.query(`
@@ -49,6 +64,8 @@ export class OverdueJobService {
     `, [today]);
 
     // Restaurar a ACTIVO los VENCIDO que ya no tienen cuotas vencidas
+    // NOTA: aunque la cuota se pague, su mora_generada permanece como adeudo.
+    // Un préstamo puede volver a ACTIVO pero seguir debiendo mora registrada.
     const r2 = await this.loanRepo.query(`
       UPDATE prestamos p
       SET p.estatus = 'ACTIVO'
@@ -64,6 +81,7 @@ export class OverdueJobService {
     return {
       marked:   r1.affectedRows || 0,
       restored: r2.affectedRows || 0,
+      moraStamped: rMora.affectedRows || 0,
     };
   }
 }
@@ -78,7 +96,7 @@ export class OverdueJobController {
 }
 
 @Module({
-  imports: [TypeOrmModule.forFeature([Loan, PaymentSchedule])],
+  imports: [TypeOrmModule.forFeature([Loan, PaymentSchedule]), ConfigMoraModule],
   providers: [OverdueJobService],
   controllers: [OverdueJobController],
   exports: [OverdueJobService],

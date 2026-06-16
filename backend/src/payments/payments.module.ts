@@ -40,23 +40,34 @@ export class PaymentsService {
     const schedules = await this.scheduleRepo.find({
       where: { loanId }, order: { periodNumber: 'ASC' },
     });
-    let totalDiasMora = 0;
-    const detalle: Array<{ periodo: number; dias: number; mora: number }> = [];
+    // MORA FIJA REGISTRADA: la mora vive en cada cuota (mora_generada / mora_pagada),
+    // estampada por el OverdueJob cuando la cuota se venció. Persiste aunque la
+    // cuota se pague después. La mora pendiente = suma de (generada - pagada).
+    let moraGenerada = 0;
+    let moraPagada = 0;
+    let cuotasConMora = 0;
+    const detalle: Array<{ periodo: number; dias: number; mora: number; pagada: number; pendiente: number }> = [];
     for (const s of schedules) {
-      if (s.status === ScheduleStatus.PAGADO) continue;
-      const dias = this.moraService.businessDaysOverdue(new Date(s.dueDate), today);
-      if (dias > 0) {
-        totalDiasMora += dias;
-        detalle.push({ periodo: s.periodNumber, dias, mora: this.calculator.round(dias * moraPorDia) });
+      const gen = Number(s.moraGenerada || 0);
+      const pag = Number(s.moraPagada || 0);
+      if (gen > 0) {
+        moraGenerada += gen;
+        moraPagada += pag;
+        cuotasConMora += 1;
+        const dias = this.moraService.businessDaysOverdue(new Date(s.dueDate), today);
+        detalle.push({
+          periodo: s.periodNumber, dias,
+          mora: this.calculator.round(gen),
+          pagada: this.calculator.round(pag),
+          pendiente: this.calculator.round(Math.max(0, gen - pag)),
+        });
       }
     }
-    const moraGenerada = this.calculator.round(totalDiasMora * moraPorDia);
-    const pagosPrevios = await this.paymentRepo.find({ where: { loanId } });
-    const moraPagada = this.calculator.round(
-      pagosPrevios.reduce((sum, p) => sum + Number(p.lateInterestApplied || 0), 0)
-    );
+    moraGenerada = this.calculator.round(moraGenerada);
+    moraPagada = this.calculator.round(moraPagada);
     const moraPendiente = this.calculator.round(Math.max(0, moraGenerada - moraPagada));
-    return { moraPorDia, totalDiasMora, moraGenerada, moraPagada, moraPendiente, detalle };
+    // totalDiasMora ahora = número de cuotas con mora (compatibilidad de nombre)
+    return { moraPorDia, totalDiasMora: cuotasConMora, cuotasConMora, moraGenerada, moraPagada, moraPendiente, detalle };
   }
 
   async getSaldoPendiente(loanId: string): Promise<number> {
@@ -65,6 +76,33 @@ export class PaymentsService {
       .filter(s => s.status !== ScheduleStatus.PAGADO)
       .reduce((sum, s) => sum + Number(s.balanceDue), 0);
     return this.calculator.round(saldo);
+  }
+
+  // Lista de cuotas pendientes (para que el cobrador marque cuáles paga).
+  // Incluye si cada cuota está vencida y su mora fija registrada.
+  async getCuotasPendientes(loanId: string) {
+    const today = new Date();
+    const schedules = await this.scheduleRepo.find({
+      where: { loanId },
+      order: { periodNumber: 'ASC' },
+    });
+    return schedules
+      .filter((s) => s.status !== ScheduleStatus.PAGADO)
+      .map((s) => {
+        const dias = this.moraService.businessDaysOverdue(new Date(s.dueDate), today);
+        const vencida = dias > 0;
+        const gen = Number(s.moraGenerada || 0);
+        const pag = Number(s.moraPagada || 0);
+        return {
+          periodo: s.periodNumber,
+          vence: s.dueDate,
+          monto: Number(s.balanceDue),
+          estatus: s.status,
+          vencida,
+          // Mora registrada de esta cuota (estampada por el job)
+          mora: this.calculator.round(Math.max(0, gen - pag)),
+        };
+      });
   }
 
   async getPaymentInfo(loanId: string) {
@@ -91,6 +129,7 @@ export class PaymentsService {
   async register(dto: {
     loanId: string; amountPaid: number;
     paymentType?: PaymentType; applyExcedenteToMora?: boolean;
+    periodos?: number[];   // cuotas específicas marcadas por el cobrador (pago selectivo)
     method?: PaymentMethod; source?: PaymentSource;
     reference?: string; notes?: string; localId?: string;
     lat?: number; lng?: number;
@@ -125,15 +164,48 @@ export class PaymentsService {
     let capitalApplied = 0, interestApplied = 0, lateInterestApplied = 0;
 
     if (paymentType === 'MORATORIO') {
-      const mora = await this.getMoraInfo(dto.loanId);
-      lateInterestApplied = this.calculator.round(Math.min(remaining, mora.moraPendiente));
-      remaining = this.calculator.round(remaining - lateInterestApplied);
+      // Abonar a la mora REGISTRADA de las cuotas, en orden de periodo.
+      // Cada cuota tiene mora_generada y mora_pagada; se incrementa mora_pagada
+      // hasta agotar el monto recibido.
+      const conMora = await this.scheduleRepo.find({
+        where: { loanId: dto.loanId },
+        order: { periodNumber: 'ASC' },
+      });
+      for (const schedule of conMora) {
+        if (remaining <= 0) break;
+        const gen = Number(schedule.moraGenerada || 0);
+        const pag = Number(schedule.moraPagada || 0);
+        const pendiente = this.calculator.round(Math.max(0, gen - pag));
+        if (pendiente <= 0) continue;
+        const abono = this.calculator.round(Math.min(remaining, pendiente));
+        schedule.moraPagada = this.calculator.round(pag + abono);
+        lateInterestApplied += abono;
+        remaining = this.calculator.round(remaining - abono);
+        await this.scheduleRepo.save(schedule);
+      }
+      lateInterestApplied = this.calculator.round(lateInterestApplied);
     } else {
       const schedules = await this.scheduleRepo.find({
         where: { loanId: dto.loanId, status: ScheduleStatus.PENDIENTE },
         order: { periodNumber: 'ASC' },
       });
-      const targetSchedules = paymentType === 'DIA' ? schedules.slice(0, 1) : schedules;
+
+      // SELECCIÓN DE CUOTAS A PAGAR:
+      // - Si llega `periodos` (lista de números de cuota marcados por el cobrador),
+      //   se pagan exactamente esas cuotas, en orden, aunque se salten días.
+      //   Ej: cliente no pagó la 12, pero paga la 15 y 16 → periodos = [15, 16].
+      // - Si no llega `periodos`: comportamiento clásico
+      //   DIA = la cuota pendiente más antigua; TOTAL = todas.
+      let targetSchedules;
+      if (Array.isArray(dto.periodos) && dto.periodos.length > 0) {
+        const setPeriodos = new Set(dto.periodos.map((n) => Number(n)));
+        targetSchedules = schedules
+          .filter((s) => setPeriodos.has(s.periodNumber))
+          .sort((a, b) => a.periodNumber - b.periodNumber);
+      } else {
+        targetSchedules = paymentType === 'DIA' ? schedules.slice(0, 1) : schedules;
+      }
+
       for (const schedule of targetSchedules) {
         if (remaining <= 0) break;
         const applyAmount = Math.min(remaining, Number(schedule.balanceDue));
@@ -148,10 +220,24 @@ export class PaymentsService {
         await this.scheduleRepo.save(schedule);
       }
       if (dto.applyExcedenteToMora && remaining > 0) {
-        const mora = await this.getMoraInfo(dto.loanId);
-        const aplicarMora = this.calculator.round(Math.min(remaining, mora.moraPendiente));
-        lateInterestApplied += aplicarMora;
-        remaining = this.calculator.round(remaining - aplicarMora);
+        // El excedente abona a la mora registrada de las cuotas, en orden.
+        const conMora = await this.scheduleRepo.find({
+          where: { loanId: dto.loanId },
+          order: { periodNumber: 'ASC' },
+        });
+        for (const schedule of conMora) {
+          if (remaining <= 0) break;
+          const gen = Number(schedule.moraGenerada || 0);
+          const pag = Number(schedule.moraPagada || 0);
+          const pendiente = this.calculator.round(Math.max(0, gen - pag));
+          if (pendiente <= 0) continue;
+          const abono = this.calculator.round(Math.min(remaining, pendiente));
+          schedule.moraPagada = this.calculator.round(pag + abono);
+          lateInterestApplied += abono;
+          remaining = this.calculator.round(remaining - abono);
+          await this.scheduleRepo.save(schedule);
+        }
+        lateInterestApplied = this.calculator.round(lateInterestApplied);
       }
     }
 
@@ -276,6 +362,11 @@ export class PaymentsController {
   @Get('info/:loanId') @Auth()
   paymentInfo(@Param('loanId') loanId: string) {
     return this.paymentsService.getPaymentInfo(loanId);
+  }
+
+  @Get('cuotas/:loanId') @Auth()
+  cuotasPendientes(@Param('loanId') loanId: string) {
+    return this.paymentsService.getCuotasPendientes(loanId);
   }
 
   @Get('mora/:loanId') @Auth()

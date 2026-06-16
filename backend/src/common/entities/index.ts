@@ -534,6 +534,12 @@ export class PaymentSchedule {
   @Column({ name: 'interes_moratorio', type: 'decimal', precision: 12, scale: 2, default: 0 })
   lateInterest: number;
 
+  @Column({ name: 'mora_generada', type: 'decimal', precision: 12, scale: 2, default: 0 })
+  moraGenerada!: number;
+
+  @Column({ name: 'mora_pagada', type: 'decimal', precision: 12, scale: 2, default: 0 })
+  moraPagada!: number;
+
   @Column({ name: 'estatus', type: 'enum', enum: ScheduleStatus, default: ScheduleStatus.PENDIENTE })
   status: ScheduleStatus;
 
