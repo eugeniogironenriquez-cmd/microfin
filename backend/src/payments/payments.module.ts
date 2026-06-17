@@ -158,6 +158,10 @@ export class PaymentsService {
 
     const paymentType: PaymentType = dto.paymentType || 'DIA';
     const today = new Date();
+    // Hora del pago en horario de México (UTC-6). El servidor corre en UTC, así
+    // que restamos 6h para que paymentDate y paidAt queden en hora local de México
+    // (ej. 12:43 en vez de 18:43 UTC). La empresa opera solo en Ixtepec.
+    const fechaPagoMx = new Date(today.getTime() - 6 * 60 * 60 * 1000);
     const cashSession = await this.cashRepo.findOne({ where: { cashierId: userId, closedAt: null as any } });
 
     let remaining = Number(dto.amountPaid);
@@ -249,12 +253,15 @@ export class PaymentsService {
       }
     }
 
-    const todayStart = new Date(); todayStart.setHours(0,0,0,0);
+    // Folio secuencial del día: contamos los pagos del día-calendario de México.
+    // (fecha_pago se guarda en hora MX, así que el límite también va en hora MX.)
+    const mxNow = new Date(Date.now() - 6 * 60 * 60 * 1000);
+    const todayStart = new Date(Date.UTC(mxNow.getUTCFullYear(), mxNow.getUTCMonth(), mxNow.getUTCDate(), 0, 0, 0, 0));
     const countResult = await this.dataSource.query(
       'SELECT COUNT(*) as cnt FROM pagos WHERE fecha_pago >= ?', [todayStart]
     );
     const seq = Number(countResult?.[0]?.cnt || 0) + 1;
-    const dateStr = new Date().toISOString().slice(0,10).replace(/-/g,'');
+    const dateStr = `${mxNow.getUTCFullYear()}${String(mxNow.getUTCMonth()+1).padStart(2,'0')}${String(mxNow.getUTCDate()).padStart(2,'0')}`;
     const receiptNumber = `REC-${dateStr}-${String(seq).padStart(4,'0')}`;
 
     const payment = this.paymentRepo.create({
@@ -265,7 +272,7 @@ export class PaymentsService {
       capitalApplied: this.calculator.round(capitalApplied),
       interestApplied: this.calculator.round(interestApplied),
       lateInterestApplied: this.calculator.round(lateInterestApplied),
-      paymentDate: today,
+      paymentDate: fechaPagoMx,
       method: dto.method || PaymentMethod.EFECTIVO,
       source,
       reference: dto.reference,
@@ -301,8 +308,13 @@ export class PaymentsService {
   }
 
   async getTodayPayments() {
-    const today = new Date(); today.setHours(0, 0, 0, 0);
-    const tomorrow = new Date(today); tomorrow.setDate(tomorrow.getDate() + 1);
+    // Los paymentDate se guardan en hora de México (UTC-6). Para "hoy en México",
+    // tomamos la fecha-calendario de México y construimos medianoche en esa hora.
+    const ahora = new Date();
+    const mx = new Date(ahora.getTime() - 6 * 60 * 60 * 1000); // ahora en hora MX
+    // Medianoche del día-calendario de México, expresada igual que paymentDate
+    const today = new Date(Date.UTC(mx.getUTCFullYear(), mx.getUTCMonth(), mx.getUTCDate(), 0, 0, 0, 0));
+    const tomorrow = new Date(today); tomorrow.setUTCDate(tomorrow.getUTCDate() + 1);
     return this.paymentRepo.createQueryBuilder('p')
       .leftJoinAndSelect('p.loan', 'l')
       .leftJoinAndSelect('l.customer', 'c')
@@ -314,9 +326,17 @@ export class PaymentsService {
 
   // Pagos con geolocalización para el monitor web (mapa de cobranza)
   async getGeoPayments(date?: string) {
-    const day = date ? new Date(date) : new Date();
-    day.setHours(0, 0, 0, 0);
-    const next = new Date(day); next.setDate(next.getDate() + 1);
+    // Los paymentDate están en hora de México. Construimos los límites del día
+    // en hora de México para que el filtro cubra el día-calendario correcto.
+    let day: Date;
+    if (date) {
+      // date = 'YYYY-MM-DD' (día-calendario de México). Medianoche de ese día.
+      day = new Date(`${date}T00:00:00Z`);
+    } else {
+      const mx = new Date(Date.now() - 6 * 60 * 60 * 1000);
+      day = new Date(Date.UTC(mx.getUTCFullYear(), mx.getUTCMonth(), mx.getUTCDate(), 0, 0, 0, 0));
+    }
+    const next = new Date(day); next.setUTCDate(next.getUTCDate() + 1);
     const rows = await this.paymentRepo.createQueryBuilder('p')
       .leftJoinAndSelect('p.loan', 'l')
       .leftJoinAndSelect('l.customer', 'c')

@@ -89,12 +89,12 @@ import * as XLSX from 'xlsx';
         <mat-card-content>
           <table mat-table [dataSource]="payments()">
 
-            <ng-container matColumnDef="hora">
+            <!--<ng-container matColumnDef="hora">
               <th mat-header-cell *matHeaderCellDef>Hora</th>
               <td mat-cell *matCellDef="let r">
                 <strong>{{ r.paymentDate | date:'HH:mm' }}</strong>
               </td>
-            </ng-container>
+            </ng-container>-->
 
             <ng-container matColumnDef="cliente">
               <th mat-header-cell *matHeaderCellDef>Cliente</th>
@@ -111,7 +111,7 @@ import * as XLSX from 'xlsx';
               </td>
             </ng-container>
 
-            <ng-container matColumnDef="capital">
+            <!--<ng-container matColumnDef="capital">
               <th mat-header-cell *matHeaderCellDef>Capital</th>
               <td mat-cell *matCellDef="let r">{{ r.capitalApplied | currency:'MXN' }}</td>
             </ng-container>
@@ -119,7 +119,7 @@ import * as XLSX from 'xlsx';
             <ng-container matColumnDef="interes">
               <th mat-header-cell *matHeaderCellDef>Interés</th>
               <td mat-cell *matCellDef="let r">{{ r.interestApplied | currency:'MXN' }}</td>
-            </ng-container>
+            </ng-container>-->
 
             <ng-container matColumnDef="moratorio">
               <th mat-header-cell *matHeaderCellDef>Moratorio</th>
@@ -223,7 +223,7 @@ export class PaymentsMonitorComponent implements OnInit, OnDestroy {
   loading     = signal(true);
   lastRefresh = signal<Date>(new Date());
 
-  cols = ['hora','cliente','monto','capital','interes','moratorio','forma','folio','ticket'];
+  cols = ['cliente','monto','moratorio','forma','folio','ticket'];
 
   private sub?: Subscription;
 
@@ -316,29 +316,24 @@ export class PaymentsMonitorComponent implements OnInit, OnDestroy {
       </style>
       </head><body>
       <table>
-        <tr><td colspan="9" class="title">REPORTE DE PAGOS DEL DÍA — MICROCAPITAL IXTEPEC</td></tr>
-        <tr><td colspan="9" class="subtitle">${fechaLeg}</td></tr>
-        <tr><td colspan="9" class="meta">
+        <tr><td colspan="6" class="title">REPORTE DE PAGOS DEL DÍA — MICROCAPITAL IXTEPEC</td></tr>
+        <tr><td colspan="6" class="subtitle">${fechaLeg}</td></tr>
+        <tr><td colspan="6" class="meta">
           Total de pagos: ${this.payments().length} &nbsp;|&nbsp;
           Total cobrado: ${cur(this.totalCollected())} &nbsp;|&nbsp;
-          Capital: ${cur(this.totalCapital())} &nbsp;|&nbsp;
-          Interés: ${cur(this.totalInterest())} &nbsp;|&nbsp;
           Moratorio: ${cur(this.totalLate())}
         </td></tr>
-        <tr class="spacer"><td colspan="9"></td></tr>
+        <tr class="spacer"><td colspan="6"></td></tr>
         <tr>
-          <th>Hora</th><th>Cliente</th><th>Teléfono</th>
-          <th>Monto recibido</th><th>Capital</th><th>Interés</th>
+          <th>Cliente</th><th>Teléfono</th>
+          <th>Monto recibido</th>
           <th>Moratorio</th><th>Forma de pago</th><th>Folio</th>
         </tr>
         ${this.payments().map((p, i) => `
         <tr class="${i % 2 === 0 ? 'row-even' : 'row-odd'}">
-          <td class="col-hora">${new Date(p.paymentDate).toLocaleTimeString('es-MX',{hour:'2-digit',minute:'2-digit'})}</td>
           <td><b>${p.loan?.customer?.fullName || '—'}</b></td>
           <td>${p.loan?.customer?.phone || '—'}</td>
           <td class="col-num">${cur(Number(p.amountPaid))}</td>
-          <td class="col-num">${cur(Number(p.capitalApplied||0))}</td>
-          <td class="col-num">${cur(Number(p.interestApplied||0))}</td>
           <td class="${Number(p.lateInterestApplied||0) > 0 ? 'col-mora' : 'col-num'}">
             ${Number(p.lateInterestApplied||0) > 0 ? cur(Number(p.lateInterestApplied)) : '—'}
           </td>
@@ -346,10 +341,8 @@ export class PaymentsMonitorComponent implements OnInit, OnDestroy {
           <td class="col-folio">${p.receiptNumber || p.id?.substring(0,8).toUpperCase()}</td>
         </tr>`).join('')}
         <tr class="totals">
-          <td class="col-label" colspan="3">TOTALES</td>
+          <td class="col-label" colspan="2">TOTALES</td>
           <td class="col-num">${cur(this.totalCollected())}</td>
-          <td class="col-num">${cur(this.totalCapital())}</td>
-          <td class="col-num">${cur(this.totalInterest())}</td>
           <td class="col-num">${cur(this.totalLate())}</td>
           <td colspan="2"></td>
         </tr>
