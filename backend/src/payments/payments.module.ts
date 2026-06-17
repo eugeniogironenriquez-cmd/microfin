@@ -162,6 +162,8 @@ export class PaymentsService {
 
     let remaining = Number(dto.amountPaid);
     let capitalApplied = 0, interestApplied = 0, lateInterestApplied = 0;
+    // Cuotas que cubrió este pago (para el ticket): periodo + fecha de vencimiento
+    const cuotasPagadas: Array<{ periodo: number; fecha: string }> = [];
 
     if (paymentType === 'MORATORIO') {
       // Abonar a la mora REGISTRADA de las cuotas, en orden de periodo.
@@ -218,6 +220,12 @@ export class PaymentsService {
         schedule.status = schedule.balanceDue <= 0 ? ScheduleStatus.PAGADO : ScheduleStatus.PARCIAL;
         if (schedule.status === ScheduleStatus.PAGADO) schedule.paidAt = today;
         await this.scheduleRepo.save(schedule);
+        // Registrar la cuota cubierta para el ticket (fecha de vencimiento en YYYY-MM-DD)
+        if (applyAmount > 0) {
+          const due = new Date(schedule.dueDate);
+          const fechaStr = `${due.getUTCFullYear()}-${String(due.getUTCMonth() + 1).padStart(2, '0')}-${String(due.getUTCDate()).padStart(2, '0')}`;
+          cuotasPagadas.push({ periodo: schedule.periodNumber, fecha: fechaStr });
+        }
       }
       if (dto.applyExcedenteToMora && remaining > 0) {
         // El excedente abona a la mora registrada de las cuotas, en orden.
@@ -267,6 +275,8 @@ export class PaymentsService {
       lng: dto.lng ?? null,
       syncStatus: SyncStatus.SYNCED,
       receiptNumber,
+      // Cuotas que cubrió este pago (JSON), para el ticket
+      cuotasPagadas: cuotasPagadas.length > 0 ? JSON.stringify(cuotasPagadas) : null,
       createdBy: userId,
     });
     const saved = await this.paymentRepo.save(payment);

@@ -44,6 +44,8 @@ import { GuarantorFormComponent } from './guarantor-form.component';
           <button mat-raised-button color="primary" (click)="disburse()">
             <mat-icon>payments</mat-icon> Desembolsar
           </button>
+        }
+        @if (loan() && loan()!.status !== 'SOLICITUD' && loan()!.status !== 'RECHAZADO') {
           <button mat-stroked-button (click)="downloadPlanPdf()">
             <mat-icon>picture_as_pdf</mat-icon> Plan de pagos
           </button>
@@ -147,15 +149,6 @@ import { GuarantorFormComponent } from './guarantor-form.component';
                     <td mat-cell *matCellDef="let s">{{ s.totalDue | currency:'MXN' }}</td>
                   </ng-container>
 
-                  <ng-container matColumnDef="capital">
-                    <th mat-header-cell *matHeaderCellDef>Capital</th>
-                    <td mat-cell *matCellDef="let s">{{ s.principalDue | currency:'MXN' }}</td>
-                  </ng-container>
-
-                  <ng-container matColumnDef="interes">
-                    <th mat-header-cell *matHeaderCellDef>Interés</th>
-                    <td mat-cell *matCellDef="let s">{{ s.interestDue | currency:'MXN' }}</td>
-                  </ng-container>
 
                   <ng-container matColumnDef="moratorio">
                     <th mat-header-cell *matHeaderCellDef>Moratorio</th>
@@ -316,7 +309,7 @@ export class LoanDetailComponent implements OnInit {
   loan      = signal<Loan | null>(null);
   schedules = signal<PaymentSchedule[]>([]);
   loading   = signal(true);
-  scheduleCols = ['periodo', 'vence', 'total', 'capital', 'interes', 'moratorio', 'estatus'];
+  scheduleCols = ['periodo', 'vence', 'total', 'moratorio', 'estatus'];
 
   // Documentos de garantía
   existingDocs = signal<any[]>([]);
@@ -409,10 +402,20 @@ export class LoanDetailComponent implements OnInit {
   downloadPlanPdf() {
     const l = this.loan();
     if (!l) return;
-    const totalRate = Number((l as any).totalRate || 0);
+    // Si el crédito YA está desembolsado, el calendario real existe en la BD:
+    // usamos el PDF del crédito (/loans/:id/pdf), que lee las cuotas reales.
+    if (l.disbursedAt) {
+      this.pdfSvc.open('/loans/' + l.id + '/pdf');
+      return;
+    }
+    // Si AÚN no se desembolsa, no hay calendario real todavía: generamos una
+    // proyección con el simulador, pasando la cuota REAL guardada del crédito
+    // como customPayment para que respete la cuota ajustada (ej. $171.00) en
+    // vez de recalcularla con la fórmula (ej. $170.67).
     this.pdfSvc.downloadPost('/loans/simulate/pdf', 'plan-pagos-' + l.id.substring(0,8) + '.pdf', {
       principalAmount: l.principalAmount,
       days:            l.termWeeks,
+      customPayment:   l.periodicPayment,
       customerName:    l.customer?.fullName,
     });
   }

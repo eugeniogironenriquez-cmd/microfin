@@ -149,7 +149,7 @@ import { ApiService, Loan, PaymentSchedule } from '../../core/index';
 
                   <p class="type-hint">{{ typeHint() }}</p>
 
-                  @if (paymentForm.value.paymentType === 'SELECTIVO') {
+                  @if (esSelectivo()) {
                     <div class="selectivo-info">
                       <mat-icon>info</mat-icon>
                       <span>Marca en el calendario (derecha) las cuotas que paga el cliente. El monto se suma automáticamente y puedes ajustarlo.</span>
@@ -163,7 +163,7 @@ import { ApiService, Loan, PaymentSchedule } from '../../core/index';
                   </mat-form-field>
 
                   <!-- Check excedente a mora (solo DIA/TOTAL con mora pendiente) -->
-                  @if (paymentForm.value.paymentType !== 'MORATORIO' && paymentForm.value.paymentType !== 'SELECTIVO' && info() && info()!.moraPendiente > 0) {
+                  @if (paymentForm.value.paymentType !== 'MORATORIO' && !esSelectivo() && info() && info()!.moraPendiente > 0) {
                     <div class="mora-check">
                       <mat-checkbox formControlName="applyExcedenteToMora" color="primary">
                         Abonar el excedente del pago a la mora pendiente
@@ -173,7 +173,7 @@ import { ApiService, Loan, PaymentSchedule } from '../../core/index';
                   }
 
                   <!-- Check cobrar mora junto con las cuotas (modo selectivo) -->
-                  @if (paymentForm.value.paymentType === 'SELECTIVO' && info() && info()!.moraPendiente > 0) {
+                  @if (esSelectivo() && info() && info()!.moraPendiente > 0) {
                     <div class="mora-check">
                       <mat-checkbox formControlName="cobrarMora" color="primary"
                                     (change)="recalcSelectivo()">
@@ -276,8 +276,8 @@ import { ApiService, Loan, PaymentSchedule } from '../../core/index';
                   <td mat-cell *matCellDef="let r">
                     @if (r.status !== 'PAGADO') {
                       <mat-checkbox [checked]="selectedPeriodos().has(r.periodNumber)"
-                                    [disabled]="paymentForm.value.paymentType !== 'SELECTIVO'"
-                                    (change)="togglePeriodo(r.periodNumber)"
+                                    [disabled]="!esSelectivo()"
+                                    (click)="$event.stopPropagation(); togglePeriodo(r.periodNumber)"
                                     color="primary"></mat-checkbox>
                     }
                   </td>
@@ -435,8 +435,12 @@ export class PaymentsRegisterComponent implements OnInit {
   // Cuotas marcadas en modo selectivo
   selectedPeriodos = signal<Set<number>>(new Set());
 
+  // Tipo de pago como signal (los FormControl no son reactivos para computed)
+  tipoPago = signal<string>('DIA');
+  esSelectivo = computed(() => this.tipoPago() === 'SELECTIVO');
+
   displayedCols = computed(() =>
-    this.paymentForm.value.paymentType === 'SELECTIVO' ? this.scheduleColsSelectivo : this.scheduleCols
+    this.esSelectivo() ? this.scheduleColsSelectivo : this.scheduleCols
   );
 
   private searchSubject = new Subject<string>();
@@ -498,10 +502,13 @@ export class PaymentsRegisterComponent implements OnInit {
     this.selectedLoan.set(loan);
     this.paymentResult.set(null);
     this.info.set(null);
+    this.tipoPago.set('DIA');                 // resetear el signal del tipo
+    this.selectedPeriodos.set(new Set());     // limpiar cuotas marcadas
     this.paymentForm.patchValue({
       paymentType: 'DIA',
       amountPaid: Number(loan.periodicPayment),
       applyExcedenteToMora: false,
+      cobrarMora: false,
     });
     // Calendario
     this.api.get<any>(`/loans/${loan.id}/schedule`).subscribe({
@@ -514,6 +521,7 @@ export class PaymentsRegisterComponent implements OnInit {
   }
 
   onTypeChange(type: string) {
+    this.tipoPago.set(type);   // mantener el signal sincronizado (reactividad)
     const loan = this.selectedLoan();
     const i = this.info();
     if (!loan || !i) return;
@@ -534,7 +542,7 @@ export class PaymentsRegisterComponent implements OnInit {
 
   // Marca/desmarca una cuota en modo selectivo y recalcula el monto
   togglePeriodo(periodNumber: number) {
-    if (this.paymentForm.value.paymentType !== 'SELECTIVO') return;
+    if (!this.esSelectivo()) return;
     const set = new Set(this.selectedPeriodos());
     if (set.has(periodNumber)) set.delete(periodNumber);
     else set.add(periodNumber);
@@ -623,6 +631,7 @@ export class PaymentsRegisterComponent implements OnInit {
     this.searchTerm.set('');
     this.schedule.set([]);
     this.info.set(null);
+    this.tipoPago.set('DIA');
     this.selectedPeriodos.set(new Set());
     this.paymentForm.reset({ method: 'EFECTIVO', paymentType: 'DIA', applyExcedenteToMora: false, cobrarMora: false });
   }

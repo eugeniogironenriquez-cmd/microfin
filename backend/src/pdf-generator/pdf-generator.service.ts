@@ -105,17 +105,44 @@ export class PdfGeneratorService {
        .text(`Tipo: ${loan?.loanType?.name||'—'}`, x2+10, y1+34, {lineBreak:false})
        .text(`Cuota: ${cur(loan?.periodicPayment)}`, x2+10, y1+46, {lineBreak:false});
 
+    // ── DETALLE DEL PAGO: fechas de cuotas pagadas + moratorio si aplica ──
+    // Parsear las cuotas que cubrió este pago (guardadas como JSON en el pago)
+    let cuotasPagadas: Array<{ periodo: number; fecha: string }> = [];
+    try {
+      if (payment.cuotasPagadas) {
+        cuotasPagadas = typeof payment.cuotasPagadas === 'string'
+          ? JSON.parse(payment.cuotasPagadas)
+          : payment.cuotasPagadas;
+      }
+    } catch { cuotasPagadas = []; }
+
+    const tieneMora = Number(payment.lateInterestApplied || 0) > 0;
+    // Texto con las fechas pagadas (ej. "16/06/2026, 17/06/2026")
+    const fechasTexto = cuotasPagadas.length > 0
+      ? cuotasPagadas.map((c) => fdate(c.fecha)).join(', ')
+      : '—';
+
     const y2 = y1+80;
-    doc.rect(40,y2,PW-80,48).fillAndStroke('#F0FFF4','#BBF7D0');
+    // El alto del bloque crece si hay muchas fechas (se ajusta el wrap)
+    const detH = 56;
+    doc.rect(40,y2,PW-80,detH).fillAndStroke('#F0FFF4','#BBF7D0');
     doc.font(BB).fontSize(8.5).fillColor('#16A34A').text('DETALLE DEL PAGO', 50, y2+8, {lineBreak:false});
-    const cw = (PW-100)/4;
-    [['Capital',cur(payment.capitalApplied)],['Interés',cur(payment.interestApplied)],
-     ['Moratorio',cur(payment.lateInterestApplied||0)],['Forma',payment.method||'EFECTIVO']]
-    .forEach(([l,v],i) => {
-      const cx = 50+i*cw;
-      doc.font(RB).fontSize(7).fillColor(GRAY).text(l, cx, y2+24, {lineBreak:false});
-      doc.font(BB).fontSize(8.5).fillColor(TEXT).text(v, cx, y2+34, {lineBreak:false});
-    });
+
+    // Columna izquierda: cuotas pagadas (fechas). Ocupa la mayor parte del ancho.
+    doc.font(RB).fontSize(7).fillColor(GRAY).text('Cuotas pagadas', 50, y2+24, {lineBreak:false});
+    doc.font(BB).fontSize(8.5).fillColor(TEXT)
+       .text(fechasTexto, 50, y2+34, {width:(PW-80)*0.6, lineBreak:true, height:18, ellipsis:true});
+
+    // Columna derecha: Forma de pago, y Moratorio solo si aplica
+    const colDerX = 50 + (PW-80)*0.62;
+    doc.font(RB).fontSize(7).fillColor(GRAY).text('Forma', colDerX, y2+24, {lineBreak:false});
+    doc.font(BB).fontSize(8.5).fillColor(TEXT).text(payment.method||'EFECTIVO', colDerX, y2+34, {lineBreak:false});
+
+    if (tieneMora) {
+      const colMoraX = colDerX + 90;
+      doc.font(RB).fontSize(7).fillColor(GRAY).text('Moratorio', colMoraX, y2+24, {lineBreak:false});
+      doc.font(BB).fontSize(8.5).fillColor('#DC2626').text(cur(payment.lateInterestApplied), colMoraX, y2+34, {lineBreak:false});
+    }
 
     const y3 = y2+56;
     doc.rect(40,y3,PW-80,36).fill(GREEN);
