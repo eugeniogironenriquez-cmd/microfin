@@ -615,6 +615,9 @@ export class Payment {
   @Column({ name: 'forma_pago', type: 'enum', enum: PaymentMethod, default: PaymentMethod.EFECTIVO })
   method: PaymentMethod;
 
+  @Column({ name: 'cuotas_pagadas', type: 'text', nullable: true })
+  cuotasPagadas?: string | null;
+
   @Column({ name: 'fuente', type: 'enum', enum: PaymentSource, default: PaymentSource.CAJA })
   source: PaymentSource;
 
