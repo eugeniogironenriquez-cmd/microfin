@@ -252,6 +252,26 @@ export class LoansService {
   }
 
   async create(dto: any & { customerId: string }, userId: string): Promise<Loan> {
+    // VALIDACIÓN: un cliente solo puede tener un crédito vigente a la vez.
+    // Bloquean los estados "vivos": SOLICITUD, AUTORIZADO, ACTIVO, VENCIDO.
+    // No bloquean LIQUIDADO/RECHAZADO (terminados) ni REESTRUCTURADO/CONVENIO
+    // (históricos; el crédito vivo es el hijo, que estará ACTIVO/VENCIDO).
+    const estadosBloqueantes = [
+      LoanStatus.SOLICITUD,
+      LoanStatus.AUTORIZADO,
+      LoanStatus.ACTIVO,
+      LoanStatus.VENCIDO,
+    ];
+    const existente = await this.loanRepo.findOne({
+      where: estadosBloqueantes.map((status) => ({ customerId: dto.customerId, status })),
+    });
+    if (existente) {
+      throw new BadRequestException(
+        `El cliente ya tiene un crédito vigente (estado: ${existente.status}). ` +
+        `No se puede crear uno nuevo hasta que el actual sea liquidado.`,
+      );
+    }
+
     const principal = Number(dto.principalAmount);
     const days = Number(dto.days ?? dto.termWeeks);
     // Resolver % por el plazo configurado
