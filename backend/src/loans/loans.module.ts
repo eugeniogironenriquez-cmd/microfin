@@ -293,6 +293,183 @@ export class LoansService {
     return this.loanRepo.save(loan as any);
   }
 
+  // ── CARGA MANUAL DE CRÉDITO ACTUAL ───────────────────────────
+  // Crea un crédito que YA existe en la calle: nace ACTIVO, genera el
+  // calendario, marca las cuotas ya pagadas (periodos marcados, pueden saltar
+  // días), estampa la mora inicial en cuotas vencidas y crea el aval.
+  // El frontend calcula las fechas del calendario y las envía aquí (cada cuota
+  // con su fecha), para que coincidan exactamente con lo que el usuario vio.
+  async cargaManual(dto: {
+    customerId: string;
+    principalAmount: number;
+    days: number;
+    periodicPayment: number;        // cuota editable
+    disbursedAt?: string;           // yyyy-mm-dd
+    firstPaymentDate: string;       // yyyy-mm-dd
+    // Calendario calculado en el frontend: una entrada por cuota
+    schedule: Array<{ period: number; dueDate: string }>;
+    periodosPagados: number[];      // qué cuotas ya pagó (pueden saltar días)
+    fechaUltimoPago?: string;       // yyyy-mm-dd (paidAt de la última pagada)
+    totalMoratorio?: number;        // mora que arrastra del sistema anterior
+    aval?: {                        // datos del aval (opcional)
+      fullName?: string; curp?: string; rfc?: string; phone?: string;
+      relationship?: string; address?: string;
+    };
+    notes?: string;
+  }, userId: string) {
+    // VALIDACIÓN: un crédito vigente por cliente (igual que create)
+    const estadosBloqueantes = [
+      LoanStatus.SOLICITUD, LoanStatus.AUTORIZADO, LoanStatus.ACTIVO, LoanStatus.VENCIDO,
+    ];
+    const existente = await this.loanRepo.findOne({
+      where: estadosBloqueantes.map((status) => ({ customerId: dto.customerId, status })),
+    });
+    if (existente) {
+      throw new BadRequestException(
+        `El cliente ya tiene un crédito vigente (estado: ${existente.status}). ` +
+        `No se puede cargar otro hasta que el actual sea liquidado.`,
+      );
+    }
+
+    const principal = Number(dto.principalAmount);
+    const days = Math.round(Number(dto.days));
+    const cuota = this.calculator.round(Number(dto.periodicPayment));
+    const pagados = Array.isArray(dto.periodosPagados) ? dto.periodosPagados.map(Number) : [];
+    const totalMoratorio = Number(dto.totalMoratorio) || 0;
+
+    if (!principal || principal <= 0) throw new BadRequestException('Monto inválido');
+    if (!days || days <= 0) throw new BadRequestException('Plazo inválido');
+    if (!cuota || cuota <= 0) throw new BadRequestException('Cuota inválida');
+    if (!Array.isArray(dto.schedule) || dto.schedule.length !== days)
+      throw new BadRequestException('El calendario no coincide con el número de días');
+
+    const customer = await this.customerRepo.findOne({ where: { id: dto.customerId } });
+    if (!customer) throw new NotFoundException('Cliente no encontrado');
+
+    const total = this.calculator.round(cuota * days);
+    const capitalPorCuota = this.calculator.round(principal / days);
+    const moraPorDia = totalMoratorio; // se distribuye abajo; usamos el total directo
+    const hoy = this.calculator.anchorToMexicoDay(new Date());
+
+    const qr = this.dataSource.createQueryRunner();
+    await qr.connect(); await qr.startTransaction();
+    let savedLoanId = '';
+
+    try {
+      // Crear el crédito (nace ACTIVO; si tiene vencidas, lo ajustamos a VENCIDO al final)
+      const loan = this.loanRepo.create({
+        customerId:      dto.customerId,
+        principalAmount: principal,
+        interestRate:    0,
+        totalRate:       0,
+        termWeeks:       days,
+        frequency:       'DIARIO',
+        status:          LoanStatus.ACTIVO,
+        disbursedAt:     dto.disbursedAt ? new Date(`${dto.disbursedAt}T00:00:00Z`) : new Date(`${dto.firstPaymentDate}T00:00:00Z`),
+        disbursedBy:     userId,
+        disbursementMethod: 'CARGA_MANUAL',
+        periodicPayment: cuota,
+        totalAmount:     total,
+        notes:           dto.notes || 'Crédito cargado manualmente (sistema anterior)',
+        createdBy:       userId,
+      } as any);
+      const saved: Loan = await qr.manager.save(loan as any);
+      savedLoanId = saved.id;
+
+      // Generar el calendario con las fechas que envió el frontend
+      const pagadosSet = new Set(pagados);
+      const fUltimo = dto.fechaUltimoPago ? new Date(`${dto.fechaUltimoPago}T00:00:00Z`) : null;
+      // El número de cuota pagada más alto (para asignarle la fecha de último pago)
+      const ultimoPeriodoPagado = pagados.length > 0 ? Math.max(...pagados) : 0;
+
+      let balance = total;
+      const schedules: PaymentSchedule[] = [];
+      for (let i = 1; i <= days; i++) {
+        const pmt = i < days ? cuota : this.calculator.round(balance);
+        balance = this.calculator.round(Math.max(0, balance - pmt));
+        const pagada = pagadosSet.has(i);
+        const fechaCuota = new Date(`${dto.schedule[i - 1].dueDate}T00:00:00Z`);
+        // paidAt: si es la última pagada y hay fecha de último pago, úsala; si no, su fecha
+        const paidAt = pagada
+          ? (i === ultimoPeriodoPagado && fUltimo ? fUltimo : fechaCuota)
+          : null;
+        schedules.push(this.scheduleRepo.create({
+          loanId: saved.id,
+          periodNumber: i,
+          dueDate: fechaCuota,
+          principalDue: capitalPorCuota,
+          interestDue: 0,
+          totalDue: pmt,
+          balanceDue: pagada ? 0 : pmt,
+          lateInterest: 0,
+          moraGenerada: 0,
+          moraPagada: 0,
+          status: pagada ? ScheduleStatus.PAGADO : ScheduleStatus.PENDIENTE,
+          paidAt,
+        }) as PaymentSchedule);
+      }
+
+      // Estampar la mora inicial distribuida en cuotas pendientes ya vencidas
+      if (totalMoratorio > 0) {
+        const vencidasPendientes = schedules.filter(
+          (s) => s.status !== ScheduleStatus.PAGADO && s.dueDate < hoy,
+        );
+        if (vencidasPendientes.length > 0) {
+          // Repartir el total entre las vencidas; la última absorbe el resto
+          const base = this.calculator.round(totalMoratorio / vencidasPendientes.length);
+          let acum = 0;
+          vencidasPendientes.forEach((s, k) => {
+            const esUltima = k === vencidasPendientes.length - 1;
+            const m = esUltima ? this.calculator.round(totalMoratorio - acum) : base;
+            s.moraGenerada = m;
+            acum = this.calculator.round(acum + m);
+          });
+        } else {
+          // Sin vencidas: estampar todo en la primera pendiente
+          const primera = schedules.find((s) => s.status !== ScheduleStatus.PAGADO);
+          if (primera) primera.moraGenerada = this.calculator.round(totalMoratorio);
+        }
+      }
+
+      await qr.manager.save(schedules);
+
+      // Si tras la carga hay cuotas vencidas, nace VENCIDO
+      const tieneVencidas = schedules.some(
+        (s) => s.status !== ScheduleStatus.PAGADO && s.dueDate < hoy,
+      );
+      if (tieneVencidas) {
+        await qr.manager.update(Loan, saved.id, { status: LoanStatus.VENCIDO });
+      }
+
+      await qr.commitTransaction();
+    } catch (err) {
+      await qr.rollbackTransaction();
+      throw err;
+    } finally {
+      await qr.release();
+    }
+
+    // Crear el aval fuera de la transacción (usa el servicio con su validación)
+    const aval = dto.aval;
+    if (savedLoanId && aval && aval.fullName && aval.curp) {
+      try {
+        await this.guarantorService.upsert(savedLoanId, {
+          fullName: aval.fullName,
+          curp: (aval.curp || '').toUpperCase(),
+          rfc: (aval.rfc || '').toUpperCase() || undefined,
+          phone: aval.phone || undefined,
+          relationship: aval.relationship || undefined,
+          address: aval.address || undefined,
+        } as any, userId);
+      } catch {
+        // No abortar el crédito por un fallo de aval; el crédito ya se creó
+      }
+    }
+
+    const result = await this.loanRepo.findOne({ where: { id: savedLoanId } });
+    return { loan: result, message: 'Crédito cargado correctamente.' };
+  }
+
   async authorize(id: string, decision: 'APPROVE' | 'REJECT', userId: string, rejectionReason?: string): Promise<Loan> {
     const loan = await this.findOne(id);
     if (loan.status !== LoanStatus.SOLICITUD)
@@ -781,6 +958,10 @@ export class LoansController {
   }
   @Get(':id') @Auth() findOne(@Param('id') id: string) { return this.loansService.findOne(id); }
   @Post()     @Auth() create(@Body() dto: any, @CurrentUser('id') uid: string) { return this.loansService.create(dto, uid); }
+
+  @Post('carga-manual') @Auth() cargaManual(@Body() dto: any, @CurrentUser('id') uid: string) {
+    return this.loansService.cargaManual(dto, uid);
+  }
 
   @Post('simulate')     @Auth() simulate(@Body() dto: any) { return this.loansService.simulate(dto); }
   @Post('simulate/pdf') @Auth() simulatePdf(@Body() dto: any, @Res() res: Response) { return this.loansService.generateSimulationPdf(dto, res); }
