@@ -20,22 +20,30 @@ export class OverdueJobService {
 
   // Verifica si debe correr (máximo 1 vez por día)
   async runIfNeeded(): Promise<void> {
-    const now = new Date();
+    const MX = 6 * 60 * 60 * 1000;
+    // Día-calendario de México para el control de "ya corrió hoy", consistente
+    // con el cálculo de mora (que también usa el día de México).
+    const now = new Date(Date.now() - MX);
     if (this.lastRun) {
       const sameDay =
-        this.lastRun.getFullYear() === now.getFullYear() &&
-        this.lastRun.getMonth()    === now.getMonth()    &&
-        this.lastRun.getDate()     === now.getDate();
-      if (sameDay) return; // ya corrió hoy
+        this.lastRun.getUTCFullYear() === now.getUTCFullYear() &&
+        this.lastRun.getUTCMonth()    === now.getUTCMonth()    &&
+        this.lastRun.getUTCDate()     === now.getUTCDate();
+      if (sameDay) return; // ya corrió hoy (día de México)
     }
     this.lastRun = now;
     const result = await this.markOverdueLoans();
-    console.log(`[OverdueJob] ${now.toISOString()}: ${result.marked} vencidos, ${result.restored} restaurados, ${result.moraStamped} moras estampadas`);
+    console.log(`[OverdueJob] ${new Date().toISOString()}: ${result.marked} vencidos, ${result.restored} restaurados, ${result.moraStamped} moras estampadas`);
   }
 
   async markOverdueLoans(): Promise<{ marked: number; restored: number; moraStamped: number }> {
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
+    // El servidor corre en UTC; la empresa opera en México (UTC-6). Las fechas de
+    // vencimiento están ancladas a medianoche UTC = día-calendario de México.
+    // Calculamos "hoy" como el día-calendario de México para que una cuota que
+    // vence HOY no genere mora hasta que el día (en México) haya terminado.
+    const MX = 6 * 60 * 60 * 1000;
+    const mxNow = new Date(Date.now() - MX);
+    const today = new Date(Date.UTC(mxNow.getUTCFullYear(), mxNow.getUTCMonth(), mxNow.getUTCDate(), 0, 0, 0, 0));
 
     // ── 1. ESTAMPAR MORA FIJA a cuotas recién vencidas ───────────
     // Cada cuota vencida y sin pagar que aún NO tenga mora estampada

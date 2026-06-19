@@ -71,6 +71,22 @@ import { PdfDownloadService } from '../../core/pdf-download.service';
                   </button>
                 </div>
 
+                <!-- AVISO: cliente con crédito vigente (bloquea nueva solicitud) -->
+                @if (creditoVigente(); as cv) {
+                  <div class="credito-vigente-box">
+                    <mat-icon style="color:#DC2626">block</mat-icon>
+                    <div>
+                      <strong>Este cliente ya tiene un crédito vigente</strong>
+                      <p>
+                        Folio {{ cv.id.substring(0,8).toUpperCase() }} ·
+                        {{ cv.principalAmount | currency:'MXN' }} ·
+                        <span class="badge badge-{{ cv.status | lowercase }}">{{ cv.status }}</span>
+                      </p>
+                      <p class="cv-hint">No se puede crear una nueva solicitud hasta que el crédito actual sea liquidado.</p>
+                    </div>
+                  </div>
+                }
+
                 @if (loadingHistory()) {
                   <div style="display:flex;align-items:center;gap:8px;margin:12px 0;color:rgba(0,0,0,.5)">
                     <mat-spinner diameter="16"></mat-spinner> Cargando historial...
@@ -210,7 +226,7 @@ import { PdfDownloadService } from '../../core/pdf-download.service';
               <div class="form-actions">
                 <a mat-stroked-button routerLink="/loans">Cancelar</a>
                 <button mat-raised-button color="primary" type="submit"
-                        [disabled]="form.invalid || !selectedCustomer() || saving()">
+                        [disabled]="form.invalid || !selectedCustomer() || !!creditoVigente() || saving()">
                   @if (saving()) { <mat-spinner diameter="20"></mat-spinner> }
                   @else { <mat-icon>send</mat-icon> }
                   Crear solicitud
@@ -422,6 +438,14 @@ import { PdfDownloadService } from '../../core/pdf-download.service';
     .cuota-ajuste .cuota-label { display:flex; flex-direction:column; font-size:13px; font-weight:600; }
     .cuota-ajuste .min-hint { font-size:11px; color:#718096; font-weight:400; }
     .cuota-ajuste .cuota-field { width:140px; margin-bottom:-1.25em; }
+    .credito-vigente-box {
+      display:flex; align-items:flex-start; gap:12px;
+      background:#FEF2F2; border:1px solid #FECACA; border-radius:10px;
+      padding:14px; margin:12px 0;
+    }
+    .credito-vigente-box strong { color:#991B1B; display:block; margin-bottom:4px; }
+    .credito-vigente-box p { margin:2px 0; font-size:13px; color:#7F1D1D; }
+    .credito-vigente-box .cv-hint { font-size:12px; color:#B91C1C; font-style:italic; margin-top:4px; }
   `],
 })
 export class LoanFormComponent implements OnInit {
@@ -438,6 +462,8 @@ export class LoanFormComponent implements OnInit {
   customerLoans    = signal<Loan[]>([]);
   comportamiento   = signal<any>(null);
   selectedCustomer = signal<Customer | null>(null);
+  // Crédito vigente que bloquea una nueva solicitud (si existe)
+  creditoVigente   = signal<Loan | null>(null);
   simResult        = signal<any>(null);
   minPayment       = signal<number>(0);
   cuotaActual      = signal<number>(0);
@@ -500,9 +526,18 @@ export class LoanFormComponent implements OnInit {
     this.selectedCustomer.set(c);
     this.customerSearch.set(c.fullName);
     this.comportamiento.set(null);
+    this.creditoVigente.set(null);
     this.loadingHistory.set(true);
     this.api.get<any>('/loans', { customerId: c.id, limit: 10 }).subscribe({
-      next: (r) => { this.customerLoans.set(r?.data ?? []); this.loadingHistory.set(false); },
+      next: (r) => {
+        const loans = r?.data ?? [];
+        this.customerLoans.set(loans);
+        // Detectar si ya tiene un crédito vigente (mismos estados que bloquea el backend)
+        const bloqueantes = ['SOLICITUD', 'AUTORIZADO', 'ACTIVO', 'VENCIDO'];
+        const vigente = loans.find((l: any) => bloqueantes.includes(l.status));
+        this.creditoVigente.set(vigente || null);
+        this.loadingHistory.set(false);
+      },
       error: () => this.loadingHistory.set(false),
     });
     // Comportamiento de pago (historial de semáforo)
@@ -517,6 +552,7 @@ export class LoanFormComponent implements OnInit {
     this.customerSearch.set('');
     this.customerLoans.set([]);
     this.comportamiento.set(null);
+    this.creditoVigente.set(null);
   }
 
   onPlazoChange() {
@@ -573,6 +609,10 @@ export class LoanFormComponent implements OnInit {
   submit() {
     if (this.form.invalid || !this.selectedCustomer()) {
       this.form.markAllAsTouched(); return;
+    }
+    if (this.creditoVigente()) {
+      this.snackbar.open('El cliente ya tiene un crédito vigente. No se puede crear otro.', 'Cerrar', { duration: 5000 });
+      return;
     }
     this.saving.set(true);
     const cuota = Number(this.cuotaActual());
