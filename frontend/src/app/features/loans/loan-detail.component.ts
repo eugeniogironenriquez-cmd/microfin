@@ -60,7 +60,7 @@ import { GuarantorFormComponent } from './guarantor-form.component';
             <mat-icon>autorenew</mat-icon> Renovar
           </button>
         }
-        @if ((loan()?.status === 'ACTIVO' || loan()?.status === 'VENCIDO') && auth.can('prestamos.reestructurar')) {
+        @if ((loan()?.status === 'VENCIDO' || loan()?.status === 'ATRASADO') && auth.can('prestamos.reestructurar')) {
           <button mat-stroked-button color="warn" (click)="convenio()">
             <mat-icon>handshake</mat-icon> Convenio
           </button>

@@ -23,6 +23,7 @@ const STATUS_CONFIG: Record<string, { label: string; color: string }> = {
   AUTORIZADO:     { label: 'Autorizado',     color: 'accent' },
   RECHAZADO:      { label: 'Rechazado',      color: 'warn' },
   ACTIVO:         { label: 'Activo',         color: '' },
+  ATRASADO:       { label: 'Atrasado',       color: 'warn' },
   VENCIDO:        { label: 'Vencido',        color: 'warn' },
   REESTRUCTURADO: { label: 'Reestructurado', color: 'accent' },
   LIQUIDADO:      { label: 'Liquidado',      color: '' },
@@ -141,7 +142,7 @@ const STATUS_CONFIG: Record<string, { label: string; color: string }> = {
               <button mat-icon-button [routerLink]="['/loans', row.id]" matTooltip="Ver detalle">
                 <mat-icon>visibility</mat-icon>
               </button>
-              @if (['ACTIVO', 'VENCIDO'].includes(row.status) && auth.can('prestamos.reestructurar')) {
+              @if (['ATRASADO', 'VENCIDO'].includes(row.status) && auth.can('prestamos.reestructurar')) {
                 <button mat-icon-button [routerLink]="['/loans', row.id, 'restructure']" matTooltip="Reestructurar" color="accent">
                   <mat-icon>refresh</mat-icon>
                 </button>

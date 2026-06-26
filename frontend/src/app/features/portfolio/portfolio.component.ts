@@ -46,6 +46,13 @@ import { PdfDownloadService } from '../../core/pdf-download.service';
           <div class="kpi-lbl">Activos</div>
         </div>
       </div>
+      <div class="kpi-pill atrasado">
+        <mat-icon>schedule</mat-icon>
+        <div>
+          <div class="kpi-num">{{ summary().atrasados }}</div>
+          <div class="kpi-lbl">Atrasados</div>
+        </div>
+      </div>
       <div class="kpi-pill danger">
         <mat-icon>warning</mat-icon>
         <div>
@@ -90,6 +97,7 @@ import { PdfDownloadService } from '../../core/pdf-download.service';
           <mat-select [formControl]="statusCtrl">
             <mat-option value="">Todos</mat-option>
             <mat-option value="ACTIVO">Activo</mat-option>
+            <mat-option value="ATRASADO">Atrasado</mat-option>
             <mat-option value="VENCIDO">Vencido</mat-option>
             <mat-option value="SOLICITUD">Solicitud</mat-option>
             <mat-option value="AUTORIZADO">Autorizado</mat-option>
@@ -156,7 +164,7 @@ import { PdfDownloadService } from '../../core/pdf-download.service';
               <a mat-icon-button [routerLink]="['/loans', r.id]" matTooltip="Ver detalle">
                 <mat-icon>visibility</mat-icon>
               </a>
-              @if (r.status === 'ACTIVO' || r.status === 'VENCIDO') {
+              @if (r.status === 'ACTIVO' || r.status === 'ATRASADO' || r.status === 'VENCIDO') {
                 <a mat-icon-button [routerLink]="['/payments']" matTooltip="Registrar pago" color="primary">
                   <mat-icon>payment</mat-icon>
                 </a>
@@ -172,6 +180,7 @@ import { PdfDownloadService } from '../../core/pdf-download.service';
           <tr mat-header-row *matHeaderRowDef="cols"></tr>
           <tr mat-row *matRowDef="let row; columns: cols;"
               [class.row-overdue]="row.status === 'VENCIDO'"
+              [class.row-atrasado]="row.status === 'ATRASADO'"
               [routerLink]="['/loans', row.id]"></tr>
         </table>
 
@@ -190,7 +199,11 @@ import { PdfDownloadService } from '../../core/pdf-download.service';
         </mat-paginator>
       }
     </mat-card>
-  `
+  `,
+  styles: [`
+    .kpi-pill.atrasado { background: linear-gradient(135deg, #FB923C, #C2410C); }
+    .row-atrasado { background:#FFF7ED !important; }
+  `],
 })
 export class PortfolioComponent implements OnInit {
   private api = inject(ApiService);
@@ -200,7 +213,7 @@ export class PortfolioComponent implements OnInit {
   total = signal(0);
   loading = signal(true);
   lastUpdate = signal(new Date());
-  summary = signal({ active: 0, overdue: 0, restructured: 0, settled: 0, totalActiveAmount: 0 });
+  summary = signal({ active: 0, atrasados: 0, overdue: 0, restructured: 0, settled: 0, totalActiveAmount: 0 });
 
   cols = ['customer', 'type', 'amount', 'payment', 'disbursed', 'status', 'actions'];
   page = 0;

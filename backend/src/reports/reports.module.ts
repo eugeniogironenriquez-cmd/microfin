@@ -15,10 +15,11 @@ export class ReportsService {
       SELECT
         COUNT(*) AS total,
         SUM(CASE WHEN estatus = 'ACTIVO' THEN 1 ELSE 0 END) AS active,
+        SUM(CASE WHEN estatus = 'ATRASADO' THEN 1 ELSE 0 END) AS atrasados,
         SUM(CASE WHEN estatus = 'VENCIDO' THEN 1 ELSE 0 END) AS overdue,
         SUM(CASE WHEN estatus = 'REESTRUCTURADO' THEN 1 ELSE 0 END) AS restructured,
         SUM(CASE WHEN estatus = 'LIQUIDADO' THEN 1 ELSE 0 END) AS settled,
-        SUM(CASE WHEN estatus = 'ACTIVO' THEN monto_principal ELSE 0 END) AS totalActiveAmount
+        SUM(CASE WHEN estatus IN ('ACTIVO','ATRASADO') THEN monto_principal ELSE 0 END) AS totalActiveAmount
       FROM prestamos
     `);
     return result || {};

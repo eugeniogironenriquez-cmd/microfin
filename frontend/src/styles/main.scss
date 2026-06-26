@@ -242,10 +242,12 @@ mat-toolbar.toolbar * { color: var(--white) !important; }
 .badge-solicitud     { background: #DBEAFE; color: #1E40AF; }
 .badge-autorizado    { background: #FEF3C7; color: #92400E; }
 .badge-rechazado     { background: #FEE2E2; color: #991B1B; }
-.badge-vencido       { background: #FEF9C3; color: #854D0E; border: 1px solid #F59E0B; }
+.badge-atrasado      { background: #FFEDD5; color: #C2410C; border: 1px solid #FB923C; }
+.badge-vencido       { background: #FEE2E2; color: #991B1B; border: 1px solid #EF4444; }
 .badge-reestructurado{ background: #FCE7F3; color: #9D174D; }
 .badge-liquidado     { background: #DCFCE7; color: #166534; }
 .badge-castigado     { background: #F1F5F9; color: #475569; }
+.badge-convenio      { background: #E0E7FF; color: #3730A3; }
 .badge-pendiente     { background: #FEF9C3; color: #854D0E; }
 .badge-pagado        { background: #DCFCE7; color: #166534; }
 .badge-parcial       { background: #DBEAFE; color: #1E40AF; }
