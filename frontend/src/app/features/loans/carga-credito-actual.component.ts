@@ -128,8 +128,7 @@ import { ApiService, Customer, Loan } from '../../core/index';
               </mat-form-field>
             </div>
 
-            <button mat-stroked-button color="primary" type="button" (click)="generarCalendario()"
-                    [disabled]="!puedeGenerar()">
+            <button mat-stroked-button color="primary" type="button" (click)="generarCalendario()">
               <mat-icon>event</mat-icon> Generar calendario
             </button>
           </form>
@@ -304,11 +303,6 @@ export class CargaCreditoActualComponent implements OnInit {
     return Math.round(this.seleccionadas().size * cuota * 100) / 100;
   });
 
-  puedeGenerar = computed(() => {
-    const v = this.form.value;
-    return !!v.principalAmount && !!v.days && !!v.periodicPayment && !!v.firstPaymentDate;
-  });
-
   ngOnInit() {
     this.searchSubject.pipe(debounceTime(350), distinctUntilChanged()).subscribe((term) => {
       if (!term || term.length < 2) { this.customers.set([]); return; }
@@ -364,28 +358,17 @@ export class CargaCreditoActualComponent implements OnInit {
   private parseFechaInput(val: any): Date | null {
     if (!val) return null;
     if (val instanceof Date) {
-      // Objeto Date: tomar su día-calendario local y anclarlo a medianoche UTC
       return new Date(Date.UTC(val.getFullYear(), val.getMonth(), val.getDate(), 0, 0, 0, 0));
     }
     const s = String(val).trim();
     const m = s.match(/^(\d{4})-(\d{2})-(\d{2})/);
     if (m) return new Date(`${m[1]}-${m[2]}-${m[3]}T00:00:00Z`);
-    // Último intento: parsear y anclar
     const d = new Date(s);
     if (isNaN(d.getTime())) return null;
     return new Date(Date.UTC(d.getFullYear(), d.getMonth(), d.getDate(), 0, 0, 0, 0));
   }
 
   generarCalendario() {
-    // ── DIAGNÓSTICO TEMPORAL (quitar después) ──
-    const v0 = this.form.value;
-    alert('Clic detectado.\n' +
-          'days=' + v0.days + '\n' +
-          'firstPaymentDate=' + v0.firstPaymentDate + '\n' +
-          'tipo=' + (typeof v0.firstPaymentDate));
-    console.log('[generarCalendario] form.value:', v0);
-    // ── FIN DIAGNÓSTICO ──
-
     const v = this.form.value;
     const dias = Math.round(Number(v.days));
     const start = this.parseFechaInput(v.firstPaymentDate);
@@ -442,7 +425,6 @@ export class CargaCreditoActualComponent implements OnInit {
     const v = this.form.value;
     const fmt = (d: Date) =>
       `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}-${String(d.getUTCDate()).padStart(2, '0')}`;
-    // Normaliza cualquier fecha del formulario (string o Date) a 'yyyy-mm-dd'
     const fmtInput = (val: any): string | undefined => {
       const d = this.parseFechaInput(val);
       return d ? fmt(d) : undefined;

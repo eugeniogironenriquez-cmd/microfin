@@ -21,11 +21,12 @@ export enum LoanStatus {
   AUTORIZADO     = 'AUTORIZADO',
   RECHAZADO      = 'RECHAZADO',
   ACTIVO         = 'ACTIVO',
-  VENCIDO        = 'VENCIDO',
+  ATRASADO       = 'ATRASADO',      // <-- NUEVO: debe cuotas, pero el plazo sigue
+  VENCIDO        = 'VENCIDO',       // la última fecha del calendario ya pasó y aún debe
   REESTRUCTURADO = 'REESTRUCTURADO',
   LIQUIDADO      = 'LIQUIDADO',
   CASTIGADO      = 'CASTIGADO',
-  CONVENIO       = 'CONVENIO',   // <-- AGREGAR
+  CONVENIO       = 'CONVENIO',
 }
  
 export enum ScheduleStatus {

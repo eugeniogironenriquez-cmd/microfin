@@ -260,6 +260,7 @@ export class LoansService {
       LoanStatus.SOLICITUD,
       LoanStatus.AUTORIZADO,
       LoanStatus.ACTIVO,
+      LoanStatus.ATRASADO,
       LoanStatus.VENCIDO,
     ];
     const existente = await this.loanRepo.findOne({
@@ -319,7 +320,7 @@ export class LoansService {
   }, userId: string) {
     // VALIDACIÓN: un crédito vigente por cliente (igual que create)
     const estadosBloqueantes = [
-      LoanStatus.SOLICITUD, LoanStatus.AUTORIZADO, LoanStatus.ACTIVO, LoanStatus.VENCIDO,
+      LoanStatus.SOLICITUD, LoanStatus.AUTORIZADO, LoanStatus.ACTIVO, LoanStatus.ATRASADO, LoanStatus.VENCIDO,
     ];
     const existente = await this.loanRepo.findOne({
       where: estadosBloqueantes.map((status) => ({ customerId: dto.customerId, status })),
@@ -433,12 +434,16 @@ export class LoansService {
 
       await qr.manager.save(schedules);
 
-      // Si tras la carga hay cuotas vencidas, nace VENCIDO
-      const tieneVencidas = schedules.some(
-        (s) => s.status !== ScheduleStatus.PAGADO && s.dueDate < hoy,
-      );
+      // Estado inicial según situación:
+      //  - VENCIDO  si hay cuotas vencidas y NO quedan cuotas futuras (plazo terminado)
+      //  - ATRASADO si hay cuotas vencidas pero aún quedan futuras (plazo vigente)
+      //  - ACTIVO   si no hay vencidas
+      const pendientes = schedules.filter((s) => s.status !== ScheduleStatus.PAGADO);
+      const tieneVencidas = pendientes.some((s) => s.dueDate < hoy);
+      const tieneFuturas  = pendientes.some((s) => s.dueDate >= hoy);
       if (tieneVencidas) {
-        await qr.manager.update(Loan, saved.id, { status: LoanStatus.VENCIDO });
+        const nuevoEstado = tieneFuturas ? LoanStatus.ATRASADO : LoanStatus.VENCIDO;
+        await qr.manager.update(Loan, saved.id, { status: nuevoEstado });
       }
 
       await qr.commitTransaction();
@@ -529,8 +534,8 @@ export class LoansService {
   // ── REESTRUCTURAR ────────────────────────────────────────────
   async restructure(id: string, dto: any, userId: string) {
     const loan = await this.findOne(id);
-    if (!['ACTIVO', 'VENCIDO', 'REESTRUCTURADO'].includes(loan.status))
-      throw new BadRequestException('Solo se pueden reestructurar créditos ACTIVO o VENCIDO');
+    if (!['ACTIVO', 'ATRASADO', 'VENCIDO', 'REESTRUCTURADO'].includes(loan.status))
+      throw new BadRequestException('Solo se pueden reestructurar créditos ACTIVO, ATRASADO o VENCIDO');
 
     const qr = this.dataSource.createQueryRunner();
     await qr.connect(); await qr.startTransaction();
@@ -601,6 +606,7 @@ export class LoansService {
     const loans = await this.loanRepo.find({
       where: [
         { status: LoanStatus.ACTIVO },
+        { status: LoanStatus.ATRASADO },
         { status: LoanStatus.VENCIDO },
       ],
       relations: ['customer'],
@@ -752,8 +758,8 @@ export class LoansService {
   }, userId: string) {
     const prev = await this.loanRepo.findOne({ where: { id: loanId } });
     if (!prev) throw new NotFoundException('Crédito no encontrado');
-    if (![LoanStatus.ACTIVO, LoanStatus.VENCIDO].includes(prev.status as LoanStatus))
-      throw new BadRequestException('Solo se puede hacer convenio de un crédito activo o vencido');
+    if (![LoanStatus.ACTIVO, LoanStatus.ATRASADO, LoanStatus.VENCIDO].includes(prev.status as LoanStatus))
+      throw new BadRequestException('Solo se puede hacer convenio de un crédito activo, atrasado o vencido');
 
     const monto = Number(dto.montoConvenio);
     const numPagos = Math.round(Number(dto.numeroPagos));
