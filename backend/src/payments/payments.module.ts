@@ -153,7 +153,7 @@ export class PaymentsService {
 
     const loan = await this.loanRepo.findOne({ where: { id: dto.loanId }, relations: ['loanType'] });
     if (!loan) throw new NotFoundException('Préstamo no encontrado');
-    if (![LoanStatus.ACTIVO, LoanStatus.VENCIDO].includes(loan.status as LoanStatus))
+    if (![LoanStatus.ACTIVO, LoanStatus.VENCIDO,LoanStatus.ATRASADO].includes(loan.status as LoanStatus))
       throw new BadRequestException('El préstamo no está activo');
 
     const paymentType: PaymentType = dto.paymentType || 'DIA';
