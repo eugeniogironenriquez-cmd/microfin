@@ -77,7 +77,7 @@ export class AppModule implements OnApplicationBootstrap, NestModule {
     try {
       const svc = this.moduleRef.get(OverdueJobService, { strict: false });
       const result = await svc.markOverdueLoans();
-      console.log(`[OverdueJob] Inicio: ${result.marked} marcados vencidos, ${result.restored} restaurados`);
+     console.log(`[OverdueJob] Inicio: ${result.vencidos} vencidos, ${result.atrasados} atrasados, ${result.restored} al corriente`);
     } catch (e: any) {
       console.warn('[OverdueJob] Error al iniciar:', e.message);
     }
