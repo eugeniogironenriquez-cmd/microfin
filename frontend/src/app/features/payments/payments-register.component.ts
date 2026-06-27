@@ -296,6 +296,21 @@ import { ApiService, Loan, PaymentSchedule } from '../../core/index';
                   <th mat-header-cell *matHeaderCellDef>Saldo</th>
                   <td mat-cell *matCellDef="let r">{{ r.balanceDue | currency:'MXN' }}</td>
                 </ng-container>
+                <ng-container matColumnDef="moratorio">
+                  <th mat-header-cell *matHeaderCellDef>Moratorio</th>
+                  <td mat-cell *matCellDef="let r">
+                    @if (moraGen(r) > 0) {
+                      <div class="mora-cell">
+                        <span class="mora-gen">{{ moraGen(r) | currency:'MXN' }}</span>
+                        @if (moraPend(r) > 0) {
+                          <span class="mora-pend">debe: {{ moraPend(r) | currency:'MXN' }}</span>
+                        } @else {
+                          <span class="mora-ok">saldada</span>
+                        }
+                      </div>
+                    } @else { <span class="mora-none">—</span> }
+                  </td>
+                </ng-container>
                 <ng-container matColumnDef="status">
                   <th mat-header-cell *matHeaderCellDef>Estado</th>
                   <td mat-cell *matCellDef="let r">
@@ -361,10 +376,33 @@ import { ApiService, Loan, PaymentSchedule } from '../../core/index';
 
     /* Tipo de pago */
     .field-label { font-size:12px; font-weight:600; color:#4A5568; display:block; margin-bottom:6px; }
-    .type-toggle { width:100%; margin-bottom:4px; }
-    .type-toggle ::ng-deep .mat-button-toggle { flex:1; }
+    /* Rejilla 2x2: los 4 botones siempre caben y se ven parejos */
+    .type-toggle {
+      width:100%; margin-bottom:4px;
+      display:grid !important;
+      grid-template-columns:1fr 1fr;
+      gap:6px;
+      border:none !important;
+    }
+    .type-toggle ::ng-deep .mat-button-toggle {
+      border-radius:8px !important;
+      border:1px solid #E2E8F0 !important;
+      overflow:hidden;
+    }
+    .type-toggle ::ng-deep .mat-button-toggle-checked {
+      background:#F0FFF4 !important;
+      border-color:#1C4532 !important;
+    }
     .type-toggle ::ng-deep .mat-button-toggle-label-content {
-      display:flex; align-items:center; justify-content:center; gap:4px; font-size:12px;
+      display:flex; align-items:center; justify-content:center; gap:6px;
+      font-size:12px; line-height:1; padding:8px 6px !important;
+      white-space:nowrap;
+    }
+    .type-toggle ::ng-deep .mat-button-toggle-checked .mat-button-toggle-label-content {
+      color:#1C4532; font-weight:600;
+    }
+    .type-toggle ::ng-deep mat-icon {
+      font-size:18px; width:18px; height:18px;
     }
     .type-hint { font-size:12px; color:#718096; margin:4px 0 12px; font-style:italic; }
 
@@ -408,6 +446,12 @@ import { ApiService, Loan, PaymentSchedule } from '../../core/index';
     .paid-row { opacity:.55; }
     .schedule-card { max-height:600px; overflow-y:auto; }
     .mt-16 { margin-top:16px; }
+    /* Celda de moratorio en el calendario */
+    .mora-cell { display:flex; flex-direction:column; gap:1px; }
+    .mora-gen  { color:#C2410C; font-weight:600; font-size:13px; }
+    .mora-pend { font-size:10px; color:#DC2626; font-weight:600; }
+    .mora-ok   { font-size:10px; color:#16A34A; font-style:italic; }
+    .mora-none { color:#CBD5E0; }
   `],
 })
 export class PaymentsRegisterComponent implements OnInit {
@@ -429,8 +473,8 @@ export class PaymentsRegisterComponent implements OnInit {
   paymentResult = signal<any>(null);
   lastPaymentId = signal<string | null>(null);
 
-  scheduleCols = ['period', 'dueDate', 'balance', 'status'];
-  scheduleColsSelectivo = ['select', 'period', 'dueDate', 'balance', 'status'];
+  scheduleCols = ['period', 'dueDate', 'balance', 'moratorio', 'status'];
+  scheduleColsSelectivo = ['select', 'period', 'dueDate', 'balance', 'moratorio', 'status'];
 
   // Cuotas marcadas en modo selectivo
   selectedPeriodos = signal<Set<number>>(new Set());
@@ -471,7 +515,7 @@ export class PaymentsRegisterComponent implements OnInit {
       this.api.get<any>('/loans', { search: term, limit: 10 }).subscribe({
         next: (r) => {
           const all = Array.isArray(r) ? r : r?.data ?? [];
-          const active = all.filter((l: any) => l.status === 'ACTIVO' || l.status === 'VENCIDO' || l.status === 'ATRASADO');
+          const active = all.filter((l: any) => l.status === 'ACTIVO' || l.status === 'ATRASADO' || l.status === 'VENCIDO');
           this.searchResults.set(active);
           this.searchLoading.set(false);
         },
@@ -487,10 +531,12 @@ export class PaymentsRegisterComponent implements OnInit {
   }
 
   selectLoan(loan: Loan) {
+    this.searchResults.set([]);            // ocultar el listado de búsqueda
+    this.searchTerm.set(loan.customer?.fullName || '');
     this.api.get<any>('/loans', { customerId: loan.customerId, limit: 20 }).subscribe({
       next: (r) => {
         const all = Array.isArray(r) ? r : r?.data ?? [];
-        const active = all.filter((l: any) => l.status === 'ACTIVO' || l.status === 'VENCIDO');
+        const active = all.filter((l: any) => l.status === 'ACTIVO' || l.status === 'ATRASADO' || l.status === 'VENCIDO');
         this.multipleLoans.set(active);
         if (active.length === 1) this.setActiveLoan(active[0]);
         else this.setActiveLoan(loan);
@@ -566,6 +612,11 @@ export class PaymentsRegisterComponent implements OnInit {
   nextDue() {
     return this.schedule().find((s) => s.status !== 'PAGADO');
   }
+
+  // Mora registrada de cada cuota (persiste aunque la cuota se pague)
+  moraGen(s: any): number  { return Number(s.moraGenerada || 0); }
+  moraPag(s: any): number  { return Number(s.moraPagada || 0); }
+  moraPend(s: any): number { return Math.max(0, this.moraGen(s) - this.moraPag(s)); }
 
   registerPayment() {
     if (this.paymentForm.invalid || !this.selectedLoan()) return;

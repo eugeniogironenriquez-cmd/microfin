@@ -53,13 +53,15 @@ export class PaymentsService {
       if (gen > 0) {
         moraGenerada += gen;
         moraPagada += pag;
-        cuotasConMora += 1;
+        const pendienteCuota = Math.max(0, gen - pag);
+        // Contar solo las cuotas que AÚN tienen mora pendiente (no las saldadas)
+        if (pendienteCuota > 0) cuotasConMora += 1;
         const dias = this.moraService.businessDaysOverdue(new Date(s.dueDate), today);
         detalle.push({
           periodo: s.periodNumber, dias,
           mora: this.calculator.round(gen),
           pagada: this.calculator.round(pag),
-          pendiente: this.calculator.round(Math.max(0, gen - pag)),
+          pendiente: this.calculator.round(pendienteCuota),
         });
       }
     }
