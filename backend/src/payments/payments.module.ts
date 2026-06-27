@@ -90,6 +90,7 @@ export class PaymentsService {
       .map((s) => {
         const gen = Number(s.moraGenerada || 0);
         const pag = Number(s.moraPagada || 0);
+        const pendiente = Math.max(0, gen - pag);
         return {
           scheduleId: s.id,
           periodo: s.periodNumber,
@@ -98,9 +99,10 @@ export class PaymentsService {
           pagada: s.status === ScheduleStatus.PAGADO,
           moraGenerada: this.calculator.round(gen),
           moraPagada: this.calculator.round(pag),
-          moraPendiente: this.calculator.round(Math.max(0, gen - pag)),
-          // Solo se puede eliminar la mora de cuotas ya pagadas
-          puedeEliminar: s.status === ScheduleStatus.PAGADO,
+          moraPendiente: this.calculator.round(pendiente),
+          // Solo se puede eliminar la mora de cuotas PAGADAS cuya mora
+          // todavía está PENDIENTE (no se elimina mora ya cobrada).
+          puedeEliminar: s.status === ScheduleStatus.PAGADO && pendiente > 0,
         };
       });
 
@@ -132,13 +134,21 @@ export class PaymentsService {
       );
     }
     const gen = Number(schedule.moraGenerada || 0);
+    const pag = Number(schedule.moraPagada || 0);
+    const pendiente = this.calculator.round(Math.max(0, gen - pag));
     if (gen <= 0) {
       throw new BadRequestException('Esta cuota no tiene mora registrada.');
     }
+    if (pendiente <= 0) {
+      throw new BadRequestException(
+        'Esta cuota ya tiene su mora pagada; no hay mora pendiente que eliminar.',
+      );
+    }
 
-    const moraEliminada = this.calculator.round(gen);
-    schedule.moraGenerada = 0;
-    schedule.moraPagada = 0;
+    // Eliminar SOLO la mora pendiente: se reduce la mora generada a lo ya pagado.
+    // Así lo que el cliente ya pagó de mora queda intacto, y se condona el resto.
+    const moraEliminada = pendiente;
+    schedule.moraGenerada = this.calculator.round(pag); // generada = pagada → pendiente queda en 0
     await this.scheduleRepo.save(schedule);
 
     return {
@@ -146,7 +156,7 @@ export class PaymentsService {
       scheduleId,
       periodo: schedule.periodNumber,
       moraEliminada,
-      message: `Mora de la cuota ${schedule.periodNumber} eliminada (${moraEliminada}).`,
+      message: `Mora pendiente de la cuota ${schedule.periodNumber} eliminada (${moraEliminada}).`,
     };
   }
 
