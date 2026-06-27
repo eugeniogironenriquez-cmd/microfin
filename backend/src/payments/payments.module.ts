@@ -280,16 +280,35 @@ export class PaymentsService {
       // - Si llega `periodos` (lista de números de cuota marcados por el cobrador),
       //   se pagan exactamente esas cuotas, en orden, aunque se salten días.
       //   Ej: cliente no pagó la 12, pero paga la 15 y 16 → periodos = [15, 16].
-      // - Si no llega `periodos`: comportamiento clásico
-      //   DIA = la cuota pendiente más antigua; TOTAL = todas.
+      // - DIA: paga ÚNICAMENTE la cuota cuyo vencimiento es HOY (día-calendario
+      //   de México). NO toca las atrasadas. Si hoy no vence ninguna cuota
+      //   (fin de semana o ya pagada), no hay nada que pagar en modo DIA.
+      // - TOTAL: todas las cuotas pendientes.
       let targetSchedules;
       if (Array.isArray(dto.periodos) && dto.periodos.length > 0) {
         const setPeriodos = new Set(dto.periodos.map((n) => Number(n)));
         targetSchedules = schedules
           .filter((s) => setPeriodos.has(s.periodNumber))
           .sort((a, b) => a.periodNumber - b.periodNumber);
+      } else if (paymentType === 'DIA') {
+        // Día-calendario de México (UTC-6). Las fechas de vencimiento están
+        // ancladas a medianoche UTC = día de México, así que comparamos por
+        // año-mes-día sin reanclar la cuota; solo ajustamos "hoy".
+        const mxNow2 = new Date(Date.now() - 6 * 60 * 60 * 1000);
+        const hoyUTC = Date.UTC(mxNow2.getUTCFullYear(), mxNow2.getUTCMonth(), mxNow2.getUTCDate());
+        targetSchedules = schedules.filter((s) => {
+          const due = new Date(s.dueDate);
+          const dueUTC = Date.UTC(due.getUTCFullYear(), due.getUTCMonth(), due.getUTCDate());
+          return dueUTC === hoyUTC;
+        });
+        if (targetSchedules.length === 0) {
+          throw new BadRequestException(
+            'No hay ninguna cuota que venza hoy para este crédito. ' +
+            'Usa "Por cuotas" para elegir cuáles pagar, o "Pago Total".',
+          );
+        }
       } else {
-        targetSchedules = paymentType === 'DIA' ? schedules.slice(0, 1) : schedules;
+        targetSchedules = schedules;
       }
 
       for (const schedule of targetSchedules) {
