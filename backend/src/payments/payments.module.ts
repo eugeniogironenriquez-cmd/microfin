@@ -1,5 +1,5 @@
 import {
-  Module, Controller, Injectable, Get, Post,
+  Module, Controller, Injectable, Get, Post, Delete,
   Body, Param, Query, Res, NotFoundException, BadRequestException,
 } from '@nestjs/common';
 import { TypeOrmModule, InjectRepository } from '@nestjs/typeorm';
@@ -10,7 +10,7 @@ import {
   Payment, PaymentSchedule, Loan, CashSession,
   LoanStatus, ScheduleStatus, PaymentMethod, PaymentSource, SyncStatus, UserRole,
 } from '../common/entities';
-import { Auth, CurrentUser } from '../common/guards/roles.guard';
+import { Auth, AuthPermission, CurrentUser } from '../common/guards/roles.guard';
 import { LoansModule } from '../loans/loans.module';
 import { FinancialCalculator } from '../loans/loans.module';
 import { CompanyModule, CompanyService } from '../company/company.module';
@@ -68,6 +68,84 @@ export class PaymentsService {
     const moraPendiente = this.calculator.round(Math.max(0, moraGenerada - moraPagada));
     // totalDiasMora ahora = número de cuotas con mora (compatibilidad de nombre)
     return { moraPorDia, totalDiasMora: cuotasConMora, cuotasConMora, moraGenerada, moraPagada, moraPendiente, detalle };
+  }
+
+  // ── CUOTAS CON MORA (para la pantalla de eliminar mora) ──────
+  // Devuelve TODAS las cuotas que tienen mora generada (pagadas y no pagadas),
+  // marcando cuáles son elegibles para eliminar (solo las PAGADAS).
+  async getCuotasConMora(loanId: string) {
+    const loan = await this.loanRepo.findOne({
+      where: { id: loanId }, relations: ['customer'],
+    });
+    if (!loan) throw new NotFoundException('Préstamo no encontrado');
+
+    const schedules = await this.scheduleRepo.find({
+      where: { loanId }, order: { periodNumber: 'ASC' },
+    });
+
+    const cuotas = schedules
+      .filter((s) => Number(s.moraGenerada || 0) > 0)
+      .map((s) => {
+        const gen = Number(s.moraGenerada || 0);
+        const pag = Number(s.moraPagada || 0);
+        return {
+          scheduleId: s.id,
+          periodo: s.periodNumber,
+          vence: s.dueDate,
+          estatus: s.status,
+          pagada: s.status === ScheduleStatus.PAGADO,
+          moraGenerada: this.calculator.round(gen),
+          moraPagada: this.calculator.round(pag),
+          moraPendiente: this.calculator.round(Math.max(0, gen - pag)),
+          // Solo se puede eliminar la mora de cuotas ya pagadas
+          puedeEliminar: s.status === ScheduleStatus.PAGADO,
+        };
+      });
+
+    return {
+      loan: {
+        id: loan.id,
+        customerName: loan.customer?.fullName || '',
+        customerPhone: loan.customer?.phone || '',
+        principalAmount: Number(loan.principalAmount),
+        status: loan.status,
+      },
+      cuotas,
+      totalMora: this.calculator.round(
+        cuotas.reduce((sum, c) => sum + c.moraGenerada, 0),
+      ),
+    };
+  }
+
+  // ── ELIMINAR MORA DE UNA CUOTA (solo cuotas pagadas) ─────────
+  // Pone en cero la mora_generada y mora_pagada de una cuota YA PAGADA.
+  // Protegido por permiso 'moratorios.eliminar' en el controller.
+  async eliminarMoraCuota(scheduleId: string, userId: string) {
+    const schedule = await this.scheduleRepo.findOne({ where: { id: scheduleId } });
+    if (!schedule) throw new NotFoundException('Cuota no encontrada');
+
+    if (schedule.status !== ScheduleStatus.PAGADO) {
+      throw new BadRequestException(
+        'Solo se puede eliminar la mora de cuotas que ya están pagadas.',
+      );
+    }
+    const gen = Number(schedule.moraGenerada || 0);
+    if (gen <= 0) {
+      throw new BadRequestException('Esta cuota no tiene mora registrada.');
+    }
+
+    const moraEliminada = this.calculator.round(gen);
+    schedule.moraGenerada = 0;
+    schedule.moraPagada = 0;
+    await this.scheduleRepo.save(schedule);
+
+    return {
+      ok: true,
+      scheduleId,
+      periodo: schedule.periodNumber,
+      moraEliminada,
+      message: `Mora de la cuota ${schedule.periodNumber} eliminada (${moraEliminada}).`,
+    };
   }
 
   async getSaldoPendiente(loanId: string): Promise<number> {
@@ -402,6 +480,18 @@ export class PaymentsController {
   @Get('mora/:loanId') @Auth()
   mora(@Param('loanId') loanId: string) {
     return this.paymentsService.getMoraInfo(loanId);
+  }
+
+  // Cuotas con mora de un crédito (para la pantalla de eliminar mora)
+  @Get('cuotas-con-mora/:loanId') @AuthPermission('moratorios.eliminar')
+  cuotasConMora(@Param('loanId') loanId: string) {
+    return this.paymentsService.getCuotasConMora(loanId);
+  }
+
+  // Eliminar la mora de una cuota PAGADA (protegido por permiso)
+  @Delete('mora/cuota/:scheduleId') @AuthPermission('moratorios.eliminar')
+  eliminarMora(@Param('scheduleId') scheduleId: string, @CurrentUser('id') userId: string) {
+    return this.paymentsService.eliminarMoraCuota(scheduleId, userId);
   }
 
   @Get('today') @Auth()
