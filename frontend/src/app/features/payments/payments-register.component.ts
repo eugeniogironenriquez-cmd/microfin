@@ -471,7 +471,7 @@ export class PaymentsRegisterComponent implements OnInit {
       this.api.get<any>('/loans', { search: term, limit: 10 }).subscribe({
         next: (r) => {
           const all = Array.isArray(r) ? r : r?.data ?? [];
-          const active = all.filter((l: any) => l.status === 'ACTIVO' || l.status === 'VENCIDO');
+          const active = all.filter((l: any) => l.status === 'ACTIVO' || l.status === 'VENCIDO' || l.status === 'ATRASADO');
           this.searchResults.set(active);
           this.searchLoading.set(false);
         },

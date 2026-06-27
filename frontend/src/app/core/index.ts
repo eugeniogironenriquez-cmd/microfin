@@ -11,8 +11,7 @@ export interface User {
   roleId?: string; roleName?: string; isAdmin?: boolean; permissions?: string[];
 }
 export type UserRole = 'ADMIN' | 'CAJERO' | 'AUTORIZADOR' | 'COBRADOR';
-export type LoanStatus = 'SOLICITUD' | 'AUTORIZADO' | 'RECHAZADO' | 'ACTIVO' | 'VENCIDO' | 'REESTRUCTURADO' | 'LIQUIDADO' | 'CASTIGADO';
-
+export type LoanStatus = 'SOLICITUD' | 'AUTORIZADO' | 'RECHAZADO' | 'ACTIVO' | 'ATRASADO' | 'VENCIDO' | 'REESTRUCTURADO' | 'LIQUIDADO' | 'CASTIGADO' | 'CONVENIO';
 export interface Customer {
   id: string; curp: string; rfc?: string; fullName: string;
   phone: string; email?: string; birthDate?: string;
