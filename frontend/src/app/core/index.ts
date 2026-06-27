@@ -42,11 +42,12 @@ export interface Loan {
   createdAt: string;
 }
 export interface PaymentSchedule {
-  id: string; loanId: string; periodNumber: number; dueDate: string;
-  principalDue: number; interestDue: number; totalDue: number;
-  balanceDue: number; lateInterest: number; status: string; paidAt?: string;
-  daysOverdue?: number; estimatedLateInterest?: number;
-}
+    id: string; loanId: string; periodNumber: number; dueDate: string;
+    principalDue: number; interestDue: number; totalDue: number;
+    balanceDue: number; lateInterest: number; status: string; paidAt?: string;
+    daysOverdue?: number; estimatedLateInterest?: number;
+    moraGenerada?: number; moraPagada?: number;
+  }
 export interface Payment {
   id: string; loanId: string; collectorId?: string; amountPaid: number;
   capitalApplied: number; interestApplied: number; lateInterestApplied: number;

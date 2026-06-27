@@ -179,6 +179,8 @@ export class EliminarMoraComponent {
 
   selectLoan(loan: Loan) {
     this.selectedLoan.set(loan);
+    this.searchResults.set([]);   // ocultar el listado de búsqueda
+    this.searchTerm.set(loan.customer?.fullName || '');
     this.loadCuotas(loan.id);
   }
 

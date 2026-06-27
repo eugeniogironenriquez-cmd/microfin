@@ -92,6 +92,11 @@ import { GuarantorFormComponent } from './guarantor-form.component';
                     @if (loan()!.disbursedAt) {
                       <div class="info-row"><span>Desembolso</span><strong>{{ loan()!.disbursedAt | date:'dd/MM/yyyy':'UTC' }}</strong></div>
                     }
+                    @if (totalMoraGenerada() > 0) {
+                      <div class="info-row"><span>Mora generada (total)</span><strong style="color:#C2410C">{{ totalMoraGenerada() | currency:'MXN' }}</strong></div>
+                      <div class="info-row"><span>Mora pagada</span><strong style="color:#16A34A">{{ totalMoraPagada() | currency:'MXN' }}</strong></div>
+                      <div class="info-row"><span>Mora pendiente</span><strong style="color:#DC2626">{{ totalMoraPendiente() | currency:'MXN' }}</strong></div>
+                    }
                   </div>
                 </mat-card-content>
               </mat-card>
@@ -149,15 +154,22 @@ import { GuarantorFormComponent } from './guarantor-form.component';
                     <td mat-cell *matCellDef="let s">{{ s.totalDue | currency:'MXN' }}</td>
                   </ng-container>
 
-
+                  <!-- Mora REGISTRADA en la cuota (persiste aunque se pague) -->
                   <ng-container matColumnDef="moratorio">
                     <th mat-header-cell *matHeaderCellDef>Moratorio</th>
                     <td mat-cell *matCellDef="let s">
-                      @if (mora(s) > 0) {
-                        <span style="color:#DC2626;font-weight:600"
-                              [matTooltip]="'$' + latePerDay() + '/día × ' + daysOverdue(s) + ' días'">
-                          {{ mora(s) | currency:'MXN' }}
-                        </span>
+                      @if (moraGen(s) > 0) {
+                        <div class="mora-cell">
+                          <span class="mora-gen">{{ moraGen(s) | currency:'MXN' }}</span>
+                          @if (moraPag(s) > 0) {
+                            <span class="mora-pag" matTooltip="Mora pagada">pagada: {{ moraPag(s) | currency:'MXN' }}</span>
+                          }
+                          @if (moraPend(s) > 0) {
+                            <span class="mora-pend" matTooltip="Mora pendiente">debe: {{ moraPend(s) | currency:'MXN' }}</span>
+                          } @else {
+                            <span class="mora-ok">saldada</span>
+                          }
+                        </div>
                       } @else { — }
                     </td>
                   </ng-container>
@@ -176,7 +188,8 @@ import { GuarantorFormComponent } from './guarantor-form.component';
                   <tr mat-header-row *matHeaderRowDef="scheduleCols"></tr>
                   <tr mat-row *matRowDef="let row; columns: scheduleCols;"
                       [class.overdue-row]="daysOverdue(row) > 0 && row.status === 'PENDIENTE'"
-                      [class.paid-row]="row.status === 'PAGADO'">
+                      [class.paid-row]="row.status === 'PAGADO'"
+                      [class.had-mora]="moraGen(row) > 0">
                   </tr>
                 </table>
               </mat-card>
@@ -278,6 +291,13 @@ import { GuarantorFormComponent } from './guarantor-form.component';
     }
     .overdue-row { background: #FFF5F5 !important; }
     .paid-row    { opacity: .55; }
+    .had-mora    { background: #FFF7ED; }
+    /* Celda de mora con generada / pagada / pendiente */
+    .mora-cell { display:flex; flex-direction:column; gap:1px; }
+    .mora-gen  { color:#C2410C; font-weight:600; }
+    .mora-pag  { font-size:10px; color:#16A34A; }
+    .mora-pend { font-size:10px; color:#DC2626; font-weight:600; }
+    .mora-ok   { font-size:10px; color:#16A34A; font-style:italic; }
     .garantia-header { display:flex; align-items:flex-start; gap:14px; }
     .upload-zone {
       border:2px dashed #CBD5E0; border-radius:12px; padding:28px;
@@ -337,19 +357,27 @@ export class LoanDetailComponent implements OnInit {
     return Math.max(0, diff);
   }
 
+  // ── MORA REGISTRADA en la cuota (persiste aunque la cuota se pague) ──
+  // Lee los campos reales moraGenerada/moraPagada que el backend guarda,
+  // en vez de recalcular por días vencidos (que daría 0 al pagar la cuota).
+  moraGen(s: any): number  { return Number(s.moraGenerada || 0); }
+  moraPag(s: any): number  { return Number(s.moraPagada || 0); }
+  moraPend(s: any): number { return Math.max(0, this.moraGen(s) - this.moraPag(s)); }
+
+  // Totales de mora del crédito (para el panel de Información)
+  totalMoraGenerada(): number {
+    return Math.round(this.schedules().reduce((sum, s) => sum + this.moraGen(s), 0) * 100) / 100;
+  }
+  totalMoraPagada(): number {
+    return Math.round(this.schedules().reduce((sum, s) => sum + this.moraPag(s), 0) * 100) / 100;
+  }
+  totalMoraPendiente(): number {
+    return Math.round((this.totalMoraGenerada() - this.totalMoraPagada()) * 100) / 100;
+  }
+
   // Monto fijo por día del tipo de préstamo
   latePerDay(): number {
     return Number((this.loan()?.loanType as any)?.lateFeeFixedAmount || 0);
-  }
-
-  // Moratorio calculado
-  mora(s: any): number {
-    const days = this.daysOverdue(s);
-    if (days <= 0) return 0;
-    // Respetar días de gracia
-    const grace = Number((this.loan()?.loanType as any)?.graceDays || 0);
-    const chargeable = Math.max(0, days - grace);
-    return chargeable * this.latePerDay();
   }
 
   ngOnInit() { this.load(); }
@@ -402,16 +430,10 @@ export class LoanDetailComponent implements OnInit {
   downloadPlanPdf() {
     const l = this.loan();
     if (!l) return;
-    // Si el crédito YA está desembolsado, el calendario real existe en la BD:
-    // usamos el PDF del crédito (/loans/:id/pdf), que lee las cuotas reales.
     if (l.disbursedAt) {
       this.pdfSvc.open('/loans/' + l.id + '/pdf');
       return;
     }
-    // Si AÚN no se desembolsa, no hay calendario real todavía: generamos una
-    // proyección con el simulador, pasando la cuota REAL guardada del crédito
-    // como customPayment para que respete la cuota ajustada (ej. $171.00) en
-    // vez de recalcularla con la fórmula (ej. $170.67).
     this.pdfSvc.downloadPost('/loans/simulate/pdf', 'plan-pagos-' + l.id.substring(0,8) + '.pdf', {
       principalAmount: l.principalAmount,
       days:            l.termWeeks,
@@ -432,15 +454,13 @@ export class LoanDetailComponent implements OnInit {
     this.pdfSvc.open('/loans/' + l.id + '/control-card');
   }
 
-  // Cargar documentos ya subidos (si el backend lo soporta)
   loadDocs(loanId: string) {
     this.api.get<any>('/loans/' + loanId + '/documents').subscribe({
       next: (r) => this.existingDocs.set(Array.isArray(r) ? r : r?.data ?? []),
-      error: () => this.existingDocs.set([]), // si no hay endpoint, simplemente no lista
+      error: () => this.existingDocs.set([]),
     });
   }
 
-  // Subir documento de garantía a este crédito (mismo patrón que la solicitud nueva)
   uploadGarantia(event: Event) {
     const file = (event.target as HTMLInputElement).files?.[0];
     const loanId = this.loan()?.id;
@@ -472,10 +492,6 @@ export class LoanDetailComponent implements OnInit {
     });
   }
 
-  // Abrir/descargar un documento cargado.
-  // Intenta varias formas según lo que devuelva el backend:
-  //  - d.url / d.fileUrl: enlace directo → abrir en pestaña nueva
-  //  - d.id: pedir el archivo al endpoint con el token (vía PdfDownloadService.open)
   eliminarDoc(d: any) {
     if (!d?.id) return;
     if (!confirm('¿Eliminar este documento? Esta acción no se puede deshacer.')) return;
@@ -499,7 +515,6 @@ export class LoanDetailComponent implements OnInit {
       this.snackbar.open('No se pudo abrir el documento', 'Cerrar', { duration: 4000 });
       return;
     }
-    // Endpoint real del backend: GET /loans/documents/:docId/file
     this.pdfSvc.open('/loans/documents/' + d.id + '/file');
   }
 
