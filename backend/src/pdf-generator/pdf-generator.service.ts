@@ -111,12 +111,11 @@ export class PdfGeneratorService {
     doc.end();
   }
 
-  // ── COMPROBANTE ───────────────────────────────────────────
+ // ── COMPROBANTE (hoja CARTA completa, una sola columna a todo el ancho) ──
   async generatePaymentReceipt(data: any, res: Response): Promise<void> {
     const { payment, loan, company } = data;
 
-    // ── Parsear cuotas pagadas ANTES de crear el documento, para calcular
-    //    la altura que necesita el bloque y el alto total de la página. ──
+    // ── Parsear cuotas pagadas ──
     let cuotasPagadas: Array<{ periodo: number; fecha: string }> = [];
     try {
       if (payment.cuotasPagadas) {
@@ -131,89 +130,100 @@ export class PdfGeneratorService {
       ? cuotasPagadas.map((c) => fdate(c.fecha)).join(', ')
       : '—';
 
-    // Medir cuánto alto ocupa el texto de fechas con su ancho real.
-    // Usamos un documento temporal solo para medir (no se envía).
-    const fechasWidth = (PW - 80) * 0.6;
-    const measureDoc = new PDFDocument({ size: [PW, 100], margin: 0 });
-    measureDoc.font(BB).fontSize(8.5);
-    const fechasH = Math.max(14, measureDoc.heightOfString(fechasTexto, { width: fechasWidth }));
-    // El bloque de detalle: 34 (título + etiqueta) + alto de fechas + 12 de padding
-    const detH = Math.max(56, 34 + fechasH + 12);
-
-    // Alto total de la página: header(70) + bloques(72+8) + detalle + total(36) + pie(24)
-    // margin: 0 porque todo se dibuja con coordenadas absolutas. Sin margen,
-    // PDFKit no agrega páginas extra por desbordar el área de contenido.
-    const pageH = 70 + 80 + detH + 8 + 36 + 24;
-
-    const doc = new PDFDocument({ size:[PW, pageH], margin: 0, bufferPages: true });
-    res.setHeader('Content-Type','application/pdf');
-    res.setHeader('Content-Disposition',`attachment; filename="comprobante-${payment.id.substring(0,8)}.pdf"`);
+    // Hoja CARTA completa. margin: MT para que el contenido viva dentro del área
+    // útil; el pie de avisos se ancla al fondo de la hoja.
+    const doc = new PDFDocument({ size: 'LETTER', margin: MT, bufferPages: true });
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition',
+      `attachment; filename="comprobante-${payment.id.substring(0, 8)}.pdf"`);
     doc.pipe(res);
 
-    const cName = company?.name||'Microcapital-Ixtepec';
+    const cName = company?.name || 'Microcapital-Ixtepec';
     const customer = loan?.customer;
+    const CW = PW - ML - MR;   // ancho de contenido a todo lo ancho de la hoja
 
-    // Header
-    doc.rect(0,0,PW,60).fill(GREEN);
-    doc.font(BB).fontSize(15).fillColor(WHITE).text(cName, 40, 16, {lineBreak:false});
-    doc.font(RB).fontSize(7).fillColor('rgba(255,255,255,0.7)')
-       .text(`RFC: ${company?.rfc||'—'}  Tel: ${company?.phone||'—'}`, 40, 36, {lineBreak:false});
-    doc.font(BB).fontSize(12).fillColor(WHITE)
-       .text('COMPROBANTE DE PAGO', 300, 18, {width:272,align:'right',lineBreak:false});
-    doc.font(RB).fontSize(7.5).fillColor('rgba(255,255,255,0.75)')
-       .text(`Folio: ${(payment.receiptNumber||payment.id?.substring(0,8)||'—').toUpperCase()}`, 300, 34, {width:272,align:'right',lineBreak:false})
-       .text(`Fecha: ${fdate(payment.paymentDate||new Date())}`, 300, 46, {width:272,align:'right',lineBreak:false});
+    // ── HEADER (ancho completo) ──────────────────────────────
+    doc.rect(0, 0, PW, 76).fill(GREEN);
+    doc.font(BB).fontSize(17).fillColor(WHITE).text(cName, ML, 20, { lineBreak: false });
+    doc.font(RB).fontSize(8).fillColor('rgba(255,255,255,0.7)')
+       .text(`RFC: ${company?.rfc || '—'}    Tel: ${company?.phone || '—'}`, ML, 44, { lineBreak: false });
+    doc.font(BB).fontSize(13).fillColor(WHITE)
+       .text('COMPROBANTE DE PAGO', 0, 22, { width: PW - MR, align: 'right', lineBreak: false });
+    doc.font(RB).fontSize(8).fillColor('rgba(255,255,255,0.75)')
+       .text(`Folio: ${(payment.receiptNumber || payment.id?.substring(0, 8) || '—').toUpperCase()}`,
+         0, 40, { width: PW - MR, align: 'right', lineBreak: false })
+       .text(`Fecha: ${fdate(payment.paymentDate || new Date())}`,
+         0, 52, { width: PW - MR, align: 'right', lineBreak: false });
 
-    // Bloques
-    const y1 = 70, half = (PW-80)/2;
-    doc.rect(40,y1,half-4,72).fillAndStroke(LGRAY,BORDER);
-    doc.font(BB).fontSize(7.5).fillColor(GREEN2).text('CLIENTE', 50, y1+8, {lineBreak:false});
-    doc.font(RB).fontSize(8.5).fillColor(TEXT).text(customer?.fullName||'—', 50, y1+22, {lineBreak:false});
-    doc.font(RB).fontSize(7).fillColor(GRAY)
-       .text(`CURP: ${customer?.curp||'—'}`, 50, y1+36, {lineBreak:false})
-       .text(`Tel: ${customer?.phone||'—'}`, 50, y1+48, {lineBreak:false});
+    // ── BLOQUES CLIENTE / CRÉDITO (dos cajas, ancho completo) ──
+    const y1 = 96;
+    const blkH = 80;
+    const half = (CW - 12) / 2;
 
-    const x2 = 40+half+4;
-    doc.rect(x2,y1,half-4,72).fillAndStroke(LGRAY,BORDER);
-    doc.font(BB).fontSize(7.5).fillColor(GREEN2).text('CRÉDITO', x2+10, y1+8, {lineBreak:false});
-    doc.font(RB).fontSize(7.5).fillColor(TEXT)
-       .text(`ID: ${loan?.id?.substring(0,8).toUpperCase()||'—'}`, x2+10, y1+22, {lineBreak:false})
-       .text(`Tipo: ${loan?.loanType?.name||'—'}`, x2+10, y1+34, {lineBreak:false})
-       .text(`Cuota: ${cur(loan?.periodicPayment)}`, x2+10, y1+46, {lineBreak:false});
+    // Caja CLIENTE (izquierda)
+    doc.rect(ML, y1, half, blkH).fillAndStroke(LGRAY, BORDER);
+    doc.font(BB).fontSize(8.5).fillColor(GREEN2).text('CLIENTE', ML + 12, y1 + 10, { lineBreak: false });
+    doc.font(BB).fontSize(10).fillColor(TEXT).text(customer?.fullName || '—', ML + 12, y1 + 26, { width: half - 24, lineBreak: false });
+    doc.font(RB).fontSize(8).fillColor(GRAY)
+       .text(`CURP: ${customer?.curp || '—'}`, ML + 12, y1 + 44, { lineBreak: false })
+       .text(`Tel: ${customer?.phone || '—'}`, ML + 12, y1 + 58, { lineBreak: false });
 
-    // ── DETALLE DEL PAGO: bloque de alto dinámico (lista TODAS las fechas) ──
-    const y2 = y1+80;
-    doc.rect(40,y2,PW-80,detH).fillAndStroke('#F0FFF4','#BBF7D0');
-    doc.font(BB).fontSize(8.5).fillColor('#16A34A').text('DETALLE DEL PAGO', 50, y2+8, {lineBreak:false});
+    // Caja CRÉDITO (derecha)
+    const x2 = ML + half + 12;
+    doc.rect(x2, y1, half, blkH).fillAndStroke(LGRAY, BORDER);
+    doc.font(BB).fontSize(8.5).fillColor(GREEN2).text('CRÉDITO', x2 + 12, y1 + 10, { lineBreak: false });
+    doc.font(RB).fontSize(8.5).fillColor(TEXT)
+       .text(`ID: ${loan?.id?.substring(0, 8).toUpperCase() || '—'}`, x2 + 12, y1 + 26, { lineBreak: false })
+       .text(`Tipo: ${loan?.loanType?.name || '—'}`, x2 + 12, y1 + 40, { lineBreak: false })
+       .text(`Cuota: ${cur(loan?.periodicPayment)}`, x2 + 12, y1 + 54, { lineBreak: false });
 
-    // Columna izquierda: cuotas pagadas (todas las fechas, con wrap completo).
-    // Se acota con height (= alto del bloque menos cabecera) para que PDFKit NO
-    // cree páginas automáticas si el texto fuera largo.
-    doc.font(RB).fontSize(7).fillColor(GRAY).text('Cuotas pagadas', 50, y2+24, {lineBreak:false});
-    doc.font(BB).fontSize(8.5).fillColor(TEXT)
-       .text(fechasTexto, 50, y2+34, {width:fechasWidth, height:detH-30, lineBreak:true});
+    // ── DETALLE DEL PAGO (caja ancho completo, alto dinámico) ──
+    const y2 = y1 + blkH + 14;
+    doc.font(BB).fontSize(9).fillColor(TEXT);
+    const fechasW = CW * 0.58;
+    const fechasH = Math.max(14, doc.heightOfString(fechasTexto, { width: fechasW }));
+    const detH = Math.max(64, 38 + fechasH + 14);
 
-    // Columna derecha: Forma de pago, y Moratorio solo si aplica
-    const colDerX = 50 + (PW-80)*0.62;
-    doc.font(RB).fontSize(7).fillColor(GRAY).text('Forma', colDerX, y2+24, {lineBreak:false});
-    doc.font(BB).fontSize(8.5).fillColor(TEXT).text(payment.method||'EFECTIVO', colDerX, y2+34, {lineBreak:false});
+    doc.rect(ML, y2, CW, detH).fillAndStroke('#F0FFF4', '#BBF7D0');
+    doc.font(BB).fontSize(9).fillColor('#16A34A').text('DETALLE DEL PAGO', ML + 12, y2 + 10, { lineBreak: false });
+
+    // Columna izquierda: cuotas pagadas
+    doc.font(RB).fontSize(7.5).fillColor(GRAY).text('Cuotas pagadas', ML + 12, y2 + 28, { lineBreak: false });
+    doc.font(BB).fontSize(9).fillColor(TEXT)
+       .text(fechasTexto, ML + 12, y2 + 40, { width: fechasW, height: detH - 36, lineBreak: true });
+
+    // Columna derecha: Forma + Moratorio
+    const colDerX = ML + CW * 0.64;
+    doc.font(RB).fontSize(7.5).fillColor(GRAY).text('Forma', colDerX, y2 + 28, { lineBreak: false });
+    doc.font(BB).fontSize(9).fillColor(TEXT).text(payment.method || 'EFECTIVO', colDerX, y2 + 40, { lineBreak: false });
 
     if (tieneMora) {
-      const colMoraX = colDerX + 90;
-      doc.font(RB).fontSize(7).fillColor(GRAY).text('Moratorio', colMoraX, y2+24, {lineBreak:false});
-      doc.font(BB).fontSize(8.5).fillColor('#DC2626').text(cur(payment.lateInterestApplied), colMoraX, y2+34, {lineBreak:false});
+      const colMoraX = colDerX + 110;
+      doc.font(RB).fontSize(7.5).fillColor(GRAY).text('Moratorio', colMoraX, y2 + 28, { lineBreak: false });
+      doc.font(BB).fontSize(9).fillColor('#DC2626').text(cur(payment.lateInterestApplied), colMoraX, y2 + 40, { lineBreak: false });
     }
 
-    // El total y el pie se posicionan DESPUÉS del bloque dinámico
-    const y3 = y2 + detH + 8;
-    doc.rect(40,y3,PW-80,36).fill(GREEN);
-    doc.font(RB).fontSize(10).fillColor(WHITE).text('TOTAL RECIBIDO:', 50, y3+11, {lineBreak:false});
-    doc.font(BB).fontSize(15).fillColor(WHITE)
-       .text(cur(payment.amountPaid), 200, y3+9, {width:PW-250,align:'right',lineBreak:false});
+    // ── TOTAL RECIBIDO (barra ancho completo) ──
+    const y3 = y2 + detH + 14;
+    doc.rect(ML, y3, CW, 42).fill(GREEN);
+    doc.font(RB).fontSize(11).fillColor(WHITE).text('TOTAL RECIBIDO:', ML + 14, y3 + 14, { lineBreak: false });
+    doc.font(BB).fontSize(17).fillColor(WHITE)
+       .text(cur(payment.amountPaid), 0, y3 + 12, { width: PW - MR - 14, align: 'right', lineBreak: false });
 
-    doc.font(RB).fontSize(7).fillColor(GRAY)
-       .text(company?.legalFooter||'Este comprobante es un documento válido de pago.',
-         40, y3+46, {width:PW-80,align:'center',lineBreak:false});
+    // ── PIE DE PÁGINA: avisos anclados al fondo de la hoja ──
+    // El legalFooter puede traer varias líneas (\n). Se dibuja centrado, ancho
+    // completo, pegado al fondo de la hoja carta.
+    const avisos = company?.legalFooter
+      || 'Este comprobante es un documento válido de pago.';
+    const lineas = String(avisos).split('\n').map((l) => l.trim()).filter(Boolean);
+    const footerY = PH - MT - lineas.length * 11 - 8;
+
+    doc.moveTo(ML, footerY - 6).lineTo(PW - MR, footerY - 6)
+       .strokeColor(BORDER).lineWidth(0.5).stroke();
+    lineas.forEach((linea, i) => {
+      doc.font(RB).fontSize(7.5).fillColor(GRAY)
+         .text(linea, ML, footerY + i * 11, { width: CW, align: 'center', lineBreak: false });
+    });
 
     doc.end();
   }
