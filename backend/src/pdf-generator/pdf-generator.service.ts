@@ -33,22 +33,40 @@ function fdate(d: any) {
 }
 
 // ── Fecha+hora para el ticket térmico ──
-// IMPORTANTE: en este sistema, payment.paymentDate YA se guarda en hora de
-// México (el backend resta 6h al registrar el pago). Por eso aquí NO se vuelve
-// a restar: se formatea el valor tal cual viene (leído como UTC = hora México).
+// El valor payment.paymentDate en la BD representa el instante del pago.
+// Usamos Intl con timeZone 'America/Mexico_City' para mostrarlo en hora de
+// México de forma confiable, sin restas manuales (a prueba de errores de zona).
 function fdatetimeMX(d: any) {
   if (!d) return '—';
   try {
     const dt = typeof d === 'string' ? new Date(d) : d;
-    const dd = String(dt.getUTCDate()).padStart(2, '0');
-    const mm = String(dt.getUTCMonth() + 1).padStart(2, '0');
-    const yyyy = dt.getUTCFullYear();
-    const hh = String(dt.getUTCHours()).padStart(2, '0');
-    const mi = String(dt.getUTCMinutes()).padStart(2, '0');
-    return `${dd}/${mm}/${yyyy} ${hh}:${mi}`;
+    const f = new Intl.DateTimeFormat('es-MX', {
+      timeZone: 'America/Mexico_City',
+      day: '2-digit', month: '2-digit', year: 'numeric',
+      hour: '2-digit', minute: '2-digit', hour12: false,
+    });
+    // es-MX devuelve "dd/mm/aaaa, hh:mm" → quitamos la coma
+    return f.format(dt).replace(',', '');
   } catch { return String(d); }
 }
 function fdateMX(d: any) {
+  if (!d) return '—';
+  try {
+    const dt = typeof d === 'string' ? new Date(d) : d;
+    const f = new Intl.DateTimeFormat('es-MX', {
+      timeZone: 'America/Mexico_City',
+      day: '2-digit', month: '2-digit', year: 'numeric',
+    });
+    return f.format(dt);
+  } catch { return String(d); }
+}
+
+// ── Fecha "pura" (columnas tipo 'date', sin hora) ──
+// fecha_pago es tipo DATE: representa un día-calendario, no un instante.
+// Se formatea en UTC para NO correr el día por conversión de zona horaria
+// (medianoche UTC - 6h retrocedería al día anterior). Igual que las fechas de
+// vencimiento del resto del sistema.
+function fdateOnly(d: any) {
   if (!d) return '—';
   try {
     const dt = typeof d === 'string' ? new Date(d) : d;
@@ -342,8 +360,13 @@ export class PdfGeneratorService {
     y += 32;
 
     // ── FECHAS (hora de México) ─────────────────────────────
-    row('Fecha y hora:', fdatetimeMX(payment.paymentDate || new Date()), 7.5);
-    row('Fecha de aplicación:', fdateMX(payment.paymentDate || new Date()), 7.5);
+    // ── FECHAS ──────────────────────────────────────────────
+    // "Fecha y hora": hora REAL del pago. Se toma de createdAt (creado_en),
+    //   que es un timestamp UTC completo; Intl lo convierte a hora de México.
+    // "Fecha de aplicación": el día contable del pago (fecha_pago / paymentDate),
+    //   que es tipo 'date' (solo fecha, sin hora).
+    row('Fecha y hora:', fdatetimeMX(payment.createdAt || payment.paymentDate || new Date()), 7.5);
+    row('Fecha de aplicación:', fdateOnly(payment.paymentDate || payment.createdAt || new Date()), 7.5);
 
     sep(false);
     center('¡Gracias por su pago!', 8, BB, GREEN2, 2);
