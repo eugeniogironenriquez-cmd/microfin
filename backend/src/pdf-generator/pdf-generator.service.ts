@@ -32,18 +32,19 @@ function fdate(d: any) {
   } catch { return String(d); }
 }
 
-// ── Fecha+hora en horario de México (UTC-6) para el ticket térmico ──
-// El servidor corre en UTC; restamos 6h para obtener el día/hora de México.
+// ── Fecha+hora para el ticket térmico ──
+// IMPORTANTE: en este sistema, payment.paymentDate YA se guarda en hora de
+// México (el backend resta 6h al registrar el pago). Por eso aquí NO se vuelve
+// a restar: se formatea el valor tal cual viene (leído como UTC = hora México).
 function fdatetimeMX(d: any) {
   if (!d) return '—';
   try {
     const dt = typeof d === 'string' ? new Date(d) : d;
-    const mx = new Date(dt.getTime() - 6 * 60 * 60 * 1000);
-    const dd = String(mx.getUTCDate()).padStart(2, '0');
-    const mm = String(mx.getUTCMonth() + 1).padStart(2, '0');
-    const yyyy = mx.getUTCFullYear();
-    const hh = String(mx.getUTCHours()).padStart(2, '0');
-    const mi = String(mx.getUTCMinutes()).padStart(2, '0');
+    const dd = String(dt.getUTCDate()).padStart(2, '0');
+    const mm = String(dt.getUTCMonth() + 1).padStart(2, '0');
+    const yyyy = dt.getUTCFullYear();
+    const hh = String(dt.getUTCHours()).padStart(2, '0');
+    const mi = String(dt.getUTCMinutes()).padStart(2, '0');
     return `${dd}/${mm}/${yyyy} ${hh}:${mi}`;
   } catch { return String(d); }
 }
@@ -51,10 +52,9 @@ function fdateMX(d: any) {
   if (!d) return '—';
   try {
     const dt = typeof d === 'string' ? new Date(d) : d;
-    const mx = new Date(dt.getTime() - 6 * 60 * 60 * 1000);
-    const dd = String(mx.getUTCDate()).padStart(2, '0');
-    const mm = String(mx.getUTCMonth() + 1).padStart(2, '0');
-    const yyyy = mx.getUTCFullYear();
+    const dd = String(dt.getUTCDate()).padStart(2, '0');
+    const mm = String(dt.getUTCMonth() + 1).padStart(2, '0');
+    const yyyy = dt.getUTCFullYear();
     return `${dd}/${mm}/${yyyy}`;
   } catch { return String(d); }
 }
