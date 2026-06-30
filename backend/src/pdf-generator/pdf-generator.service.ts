@@ -134,16 +134,18 @@ export class PdfGeneratorService {
     // Medir cuánto alto ocupa el texto de fechas con su ancho real.
     // Usamos un documento temporal solo para medir (no se envía).
     const fechasWidth = (PW - 80) * 0.6;
-    const measureDoc = new PDFDocument({ size: [PW, 100], margin: 40 });
+    const measureDoc = new PDFDocument({ size: [PW, 100], margin: 0 });
     measureDoc.font(BB).fontSize(8.5);
     const fechasH = Math.max(14, measureDoc.heightOfString(fechasTexto, { width: fechasWidth }));
     // El bloque de detalle: 34 (título + etiqueta) + alto de fechas + 12 de padding
     const detH = Math.max(56, 34 + fechasH + 12);
 
-    // Alto total de la página: header(70) + bloques(72+8) + detalle + total(36) + pie(20)
-    const pageH = 70 + 80 + detH + 8 + 36 + 30;
+    // Alto total de la página: header(70) + bloques(72+8) + detalle + total(36) + pie(24)
+    // margin: 0 porque todo se dibuja con coordenadas absolutas. Sin margen,
+    // PDFKit no agrega páginas extra por desbordar el área de contenido.
+    const pageH = 70 + 80 + detH + 8 + 36 + 24;
 
-    const doc = new PDFDocument({ size:[PW, pageH], margin: 40, bufferPages: true });
+    const doc = new PDFDocument({ size:[PW, pageH], margin: 0, bufferPages: true });
     res.setHeader('Content-Type','application/pdf');
     res.setHeader('Content-Disposition',`attachment; filename="comprobante-${payment.id.substring(0,8)}.pdf"`);
     doc.pipe(res);
@@ -184,10 +186,12 @@ export class PdfGeneratorService {
     doc.rect(40,y2,PW-80,detH).fillAndStroke('#F0FFF4','#BBF7D0');
     doc.font(BB).fontSize(8.5).fillColor('#16A34A').text('DETALLE DEL PAGO', 50, y2+8, {lineBreak:false});
 
-    // Columna izquierda: cuotas pagadas (todas las fechas, con wrap completo)
+    // Columna izquierda: cuotas pagadas (todas las fechas, con wrap completo).
+    // Se acota con height (= alto del bloque menos cabecera) para que PDFKit NO
+    // cree páginas automáticas si el texto fuera largo.
     doc.font(RB).fontSize(7).fillColor(GRAY).text('Cuotas pagadas', 50, y2+24, {lineBreak:false});
     doc.font(BB).fontSize(8.5).fillColor(TEXT)
-       .text(fechasTexto, 50, y2+34, {width:fechasWidth, lineBreak:true});
+       .text(fechasTexto, 50, y2+34, {width:fechasWidth, height:detH-30, lineBreak:true});
 
     // Columna derecha: Forma de pago, y Moratorio solo si aplica
     const colDerX = 50 + (PW-80)*0.62;
