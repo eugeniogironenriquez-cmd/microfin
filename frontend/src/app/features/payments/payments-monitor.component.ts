@@ -92,7 +92,7 @@ import * as XLSX from 'xlsx';
             <ng-container matColumnDef="hora">
               <th mat-header-cell *matHeaderCellDef>Hora</th>
               <td mat-cell *matCellDef="let r">
-                <strong>{{ r.paymentDate | date:'HH:mm' }}</strong>
+                <strong>{{ r.createdAt | date:'HH:mm':'America/Mexico_City' }}</strong>
               </td>
             </ng-container>
 
@@ -161,12 +161,10 @@ import * as XLSX from 'xlsx';
             <tr mat-header-row *matHeaderRowDef="cols; sticky: true"></tr>
             <tr mat-row *matRowDef="let row; columns: cols;"></tr>
 
-            <!-- Fila de totales -->
+            <!-- Fila de totales (7 columnas: hora,cliente,monto,moratorio,forma,folio,ticket) -->
             <tr class="totals-row">
               <td colspan="2"><strong>TOTALES</strong></td>
               <td><strong>{{ totalCollected() | currency:'MXN' }}</strong></td>
-              <td>{{ totalCapital() | currency:'MXN' }}</td>
-              <td>{{ totalInterest() | currency:'MXN' }}</td>
               <td style="color:#DC2626;font-weight:600">{{ totalLate() | currency:'MXN' }}</td>
               <td colspan="3"></td>
             </tr>
@@ -227,7 +225,7 @@ export class PaymentsMonitorComponent implements OnInit, OnDestroy {
   loading     = signal(true);
   lastRefresh = signal<Date>(new Date());
 
-  cols = ['hora','cliente','monto','capital','interes','moratorio','forma','folio','ticket'];
+  cols = ['hora','cliente','monto','moratorio','forma','folio','ticket'];
 
   private sub?: Subscription;
 

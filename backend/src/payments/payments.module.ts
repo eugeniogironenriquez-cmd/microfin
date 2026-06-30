@@ -429,7 +429,7 @@ export class PaymentsService {
       .leftJoinAndSelect('l.customer', 'c')
       .where('p.paymentDate >= :today', { today })
       .andWhere('p.paymentDate < :tomorrow', { tomorrow })
-      .orderBy('p.paymentDate', 'DESC')
+      .orderBy('p.creado_en', 'DESC')
       .getMany();
   }
 
