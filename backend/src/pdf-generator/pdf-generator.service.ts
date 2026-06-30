@@ -96,7 +96,36 @@ export class PdfGeneratorService {
   // ── COMPROBANTE ───────────────────────────────────────────
   async generatePaymentReceipt(data: any, res: Response): Promise<void> {
     const { payment, loan, company } = data;
-    const doc = new PDFDocument({ size:[PW, 380], margin: 40, bufferPages: true });
+
+    // ── Parsear cuotas pagadas ANTES de crear el documento, para calcular
+    //    la altura que necesita el bloque y el alto total de la página. ──
+    let cuotasPagadas: Array<{ periodo: number; fecha: string }> = [];
+    try {
+      if (payment.cuotasPagadas) {
+        cuotasPagadas = typeof payment.cuotasPagadas === 'string'
+          ? JSON.parse(payment.cuotasPagadas)
+          : payment.cuotasPagadas;
+      }
+    } catch { cuotasPagadas = []; }
+
+    const tieneMora = Number(payment.lateInterestApplied || 0) > 0;
+    const fechasTexto = cuotasPagadas.length > 0
+      ? cuotasPagadas.map((c) => fdate(c.fecha)).join(', ')
+      : '—';
+
+    // Medir cuánto alto ocupa el texto de fechas con su ancho real.
+    // Usamos un documento temporal solo para medir (no se envía).
+    const fechasWidth = (PW - 80) * 0.6;
+    const measureDoc = new PDFDocument({ size: [PW, 100], margin: 40 });
+    measureDoc.font(BB).fontSize(8.5);
+    const fechasH = Math.max(14, measureDoc.heightOfString(fechasTexto, { width: fechasWidth }));
+    // El bloque de detalle: 34 (título + etiqueta) + alto de fechas + 12 de padding
+    const detH = Math.max(56, 34 + fechasH + 12);
+
+    // Alto total de la página: header(70) + bloques(72+8) + detalle + total(36) + pie(20)
+    const pageH = 70 + 80 + detH + 8 + 36 + 30;
+
+    const doc = new PDFDocument({ size:[PW, pageH], margin: 40, bufferPages: true });
     res.setHeader('Content-Type','application/pdf');
     res.setHeader('Content-Disposition',`attachment; filename="comprobante-${payment.id.substring(0,8)}.pdf"`);
     doc.pipe(res);
@@ -132,33 +161,15 @@ export class PdfGeneratorService {
        .text(`Tipo: ${loan?.loanType?.name||'—'}`, x2+10, y1+34, {lineBreak:false})
        .text(`Cuota: ${cur(loan?.periodicPayment)}`, x2+10, y1+46, {lineBreak:false});
 
-    // ── DETALLE DEL PAGO: fechas de cuotas pagadas + moratorio si aplica ──
-    // Parsear las cuotas que cubrió este pago (guardadas como JSON en el pago)
-    let cuotasPagadas: Array<{ periodo: number; fecha: string }> = [];
-    try {
-      if (payment.cuotasPagadas) {
-        cuotasPagadas = typeof payment.cuotasPagadas === 'string'
-          ? JSON.parse(payment.cuotasPagadas)
-          : payment.cuotasPagadas;
-      }
-    } catch { cuotasPagadas = []; }
-
-    const tieneMora = Number(payment.lateInterestApplied || 0) > 0;
-    // Texto con las fechas pagadas (ej. "16/06/2026, 17/06/2026")
-    const fechasTexto = cuotasPagadas.length > 0
-      ? cuotasPagadas.map((c) => fdate(c.fecha)).join(', ')
-      : '—';
-
+    // ── DETALLE DEL PAGO: bloque de alto dinámico (lista TODAS las fechas) ──
     const y2 = y1+80;
-    // El alto del bloque crece si hay muchas fechas (se ajusta el wrap)
-    const detH = 56;
     doc.rect(40,y2,PW-80,detH).fillAndStroke('#F0FFF4','#BBF7D0');
     doc.font(BB).fontSize(8.5).fillColor('#16A34A').text('DETALLE DEL PAGO', 50, y2+8, {lineBreak:false});
 
-    // Columna izquierda: cuotas pagadas (fechas). Ocupa la mayor parte del ancho.
+    // Columna izquierda: cuotas pagadas (todas las fechas, con wrap completo)
     doc.font(RB).fontSize(7).fillColor(GRAY).text('Cuotas pagadas', 50, y2+24, {lineBreak:false});
     doc.font(BB).fontSize(8.5).fillColor(TEXT)
-       .text(fechasTexto, 50, y2+34, {width:(PW-80)*0.6, lineBreak:true, height:18, ellipsis:true});
+       .text(fechasTexto, 50, y2+34, {width:fechasWidth, lineBreak:true});
 
     // Columna derecha: Forma de pago, y Moratorio solo si aplica
     const colDerX = 50 + (PW-80)*0.62;
@@ -171,7 +182,8 @@ export class PdfGeneratorService {
       doc.font(BB).fontSize(8.5).fillColor('#DC2626').text(cur(payment.lateInterestApplied), colMoraX, y2+34, {lineBreak:false});
     }
 
-    const y3 = y2+56;
+    // El total y el pie se posicionan DESPUÉS del bloque dinámico
+    const y3 = y2 + detH + 8;
     doc.rect(40,y3,PW-80,36).fill(GREEN);
     doc.font(RB).fontSize(10).fillColor(WHITE).text('TOTAL RECIBIDO:', 50, y3+11, {lineBreak:false});
     doc.font(BB).fontSize(15).fillColor(WHITE)
