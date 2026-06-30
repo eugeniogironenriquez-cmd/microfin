@@ -248,8 +248,11 @@ import { ApiService, Loan, PaymentSchedule } from '../../core/index';
                   </div>
                 }
                 <div class="result-actions">
-                  <button mat-raised-button color="primary" (click)="downloadReceipt()">
-                    <mat-icon>receipt</mat-icon> Descargar ticket
+                  <button mat-raised-button color="primary" (click)="printTicket()">
+                    <mat-icon>receipt_long</mat-icon> Imprimir ticket
+                  </button>
+                  <button mat-stroked-button (click)="downloadReceipt()">
+                    <mat-icon>description</mat-icon> Comprobante
                   </button>
                   <button mat-stroked-button (click)="clearPayment()">
                     <mat-icon>refresh</mat-icon> Nuevo pago
@@ -653,8 +656,9 @@ export class PaymentsRegisterComponent implements OnInit {
         this.selectedPeriodos.set(new Set());
         // Recargar calendario e info
         this.setActiveLoan(this.selectedLoan()!);
+        // Abrir automáticamente el TICKET TÉRMICO 80mm al registrar el pago
         if (result?.payment?.id) {
-          setTimeout(() => this.downloadReceiptById(result.payment.id), 800);
+          setTimeout(() => this.printTicketById(result.payment.id), 800);
         }
       },
       error: (err) => {
@@ -670,7 +674,18 @@ export class PaymentsRegisterComponent implements OnInit {
   }
 
   downloadReceiptById(id: string) {
-    this.pdfSvc.download(`/payments/${id}/receipt`, `ticket-${id.substring(0,8)}.pdf`);
+    this.pdfSvc.download(`/payments/${id}/receipt`, `comprobante-${id.substring(0,8)}.pdf`);
+  }
+
+  // ── TICKET TÉRMICO 80mm ──────────────────────────────────
+  // Reimprimir el ticket del último pago
+  printTicket() {
+    const id = this.lastPaymentId();
+    if (id) this.printTicketById(id);
+  }
+  // Abre el ticket térmico (80mm) para imprimir en la impresora térmica
+  printTicketById(id: string) {
+    this.pdfSvc.open(`/payments/${id}/ticket`);
   }
 
   clearPayment() {

@@ -32,6 +32,33 @@ function fdate(d: any) {
   } catch { return String(d); }
 }
 
+// ── Fecha+hora en horario de México (UTC-6) para el ticket térmico ──
+// El servidor corre en UTC; restamos 6h para obtener el día/hora de México.
+function fdatetimeMX(d: any) {
+  if (!d) return '—';
+  try {
+    const dt = typeof d === 'string' ? new Date(d) : d;
+    const mx = new Date(dt.getTime() - 6 * 60 * 60 * 1000);
+    const dd = String(mx.getUTCDate()).padStart(2, '0');
+    const mm = String(mx.getUTCMonth() + 1).padStart(2, '0');
+    const yyyy = mx.getUTCFullYear();
+    const hh = String(mx.getUTCHours()).padStart(2, '0');
+    const mi = String(mx.getUTCMinutes()).padStart(2, '0');
+    return `${dd}/${mm}/${yyyy} ${hh}:${mi}`;
+  } catch { return String(d); }
+}
+function fdateMX(d: any) {
+  if (!d) return '—';
+  try {
+    const dt = typeof d === 'string' ? new Date(d) : d;
+    const mx = new Date(dt.getTime() - 6 * 60 * 60 * 1000);
+    const dd = String(mx.getUTCDate()).padStart(2, '0');
+    const mm = String(mx.getUTCMonth() + 1).padStart(2, '0');
+    const yyyy = mx.getUTCFullYear();
+    return `${dd}/${mm}/${yyyy}`;
+  } catch { return String(d); }
+}
+
 // Page dimensions (LETTER)
 const PW = 612, PH = 792;
 const ML = 50, MR = 50, MT = 50;
@@ -153,6 +180,162 @@ export class PdfGeneratorService {
     doc.font(RB).fontSize(7).fillColor(GRAY)
        .text(company?.legalFooter||'Este comprobante es un documento válido de pago.',
          40, y3+46, {width:PW-80,align:'center',lineBreak:false});
+
+    doc.end();
+  }
+
+  // ════════════════════════════════════════════════════════════
+  // ── TICKET TÉRMICO 80mm ─────────────────────────────────────
+  // Ancho 226pt ≈ 80mm. Alto dinámico según contenido.
+  // Datos esperados en `data`:
+  //   payment: { id, receiptNumber?, amountPaid, lateInterestApplied,
+  //              method, paymentDate, cuotasPagadas (JSON [{periodo,fecha,mora?}]) }
+  //   loan:    { id, principalAmount, periodicPayment, termWeeks, customer:{fullName} }
+  //   company: { name, phone }
+  //   stats:   { totalCuotas, cuotasPagadas, cuotasPendientes, saldo }
+  // ════════════════════════════════════════════════════════════
+  async generateThermalReceipt(data: any, res: Response): Promise<void> {
+    const { payment, loan, company, stats } = data;
+
+    // Ancho de papel térmico 80mm
+    const TW = 226;             // ancho total en puntos (~80mm)
+    const TM = 10;              // margen lateral
+    const CW = TW - TM * 2;     // ancho de contenido
+    const LX = TM;              // x izquierda
+    const RX = TW - TM;         // x derecha
+
+    // Parsear cuotas pagadas en esta transacción
+    let cuotasPagadas: Array<{ periodo: number; fecha: string; mora?: number }> = [];
+    try {
+      if (payment.cuotasPagadas) {
+        cuotasPagadas = typeof payment.cuotasPagadas === 'string'
+          ? JSON.parse(payment.cuotasPagadas)
+          : payment.cuotasPagadas;
+      }
+    } catch { cuotasPagadas = []; }
+
+    // Cuotas con mora pagada en esta transacción (si el JSON trae mora por cuota)
+    const cuotasConMora = cuotasPagadas.filter((c) => Number(c.mora || 0) > 0);
+    const tieneMora = Number(payment.lateInterestApplied || 0) > 0;
+
+    // Estadísticas del crédito (vienen calculadas del módulo de pagos)
+    const totalCuotas      = Number(stats?.totalCuotas ?? loan?.termWeeks ?? 0);
+    const cuotasPagadasNum = Number(stats?.cuotasPagadas ?? 0);
+    const cuotasPendientes = Number(stats?.cuotasPendientes ?? 0);
+    const saldo            = Number(stats?.saldo ?? 0);
+
+    // Estimar el alto necesario (para el tamaño de página)
+    let estH = 250;                              // base: encabezado + datos + total + pie
+    estH += cuotasPagadas.length * 11 + 18;      // lista de cuotas pagadas
+    if (tieneMora) estH += cuotasConMora.length * 11 + 28;
+    const PAGE_H = Math.max(320, estH);
+
+    const doc = new PDFDocument({ size: [TW, PAGE_H], margin: 0, bufferPages: true });
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition',
+      `attachment; filename="ticket-${(payment.id||'').substring(0,8)}.pdf"`);
+    doc.pipe(res);
+
+    const cName  = (company?.name || 'Microcapital-Ixtepec');
+    const cPhone = company?.phone || '—';
+    const folio  = (payment.receiptNumber || payment.id?.substring(0,8) || '—').toUpperCase();
+    const cliente = loan?.customer?.fullName || '—';
+
+    let y = 12;
+
+    // Helpers de dibujo --------------------------------------------------
+    const center = (txt: string, size: number, font = RB, color = TEXT, gap = 2) => {
+      doc.font(font).fontSize(size).fillColor(color)
+         .text(txt, LX, y, { width: CW, align: 'center', lineBreak: true });
+      y = doc.y + gap;
+    };
+    // Fila etiqueta (izq) + valor (der) en la misma línea
+    const row = (label: string, value: string, size = 8, bold = false) => {
+      doc.font(RB).fontSize(size).fillColor(GRAY).text(label, LX, y, { lineBreak: false });
+      doc.font(bold ? BB : RB).fontSize(size).fillColor(TEXT)
+         .text(value, LX, y, { width: CW, align: 'right', lineBreak: false });
+      y += size + 4;
+    };
+    const sep = (dashed = true) => {
+      y += 2;
+      doc.save().lineWidth(0.5).strokeColor(BORDER);
+      if (dashed) doc.dash(2, { space: 2 });
+      doc.moveTo(LX, y).lineTo(RX, y).stroke();
+      doc.undash().restore();
+      y += 6;
+    };
+
+    // ── ENCABEZADO: empresa + teléfono ──────────────────────
+    center(cName.toUpperCase(), 11, BB, GREEN2, 1);
+    center(`Tel: ${cPhone}`, 8, RB, GRAY, 4);
+    sep(false);
+    center('COMPROBANTE DE PAGO', 9, BB, TEXT, 4);
+    sep();
+
+    // ── DATOS DEL CRÉDITO / CLIENTE ─────────────────────────
+    row('Folio:',   folio, 8, true);
+    row('Cliente:', cliente, 8);
+    row('Monto:',   cur(loan?.principalAmount), 8);
+    row('Cuota:',   cur(loan?.periodicPayment), 8);
+    row('Saldo:',   cur(saldo), 8);
+    sep();
+
+    // ── RESUMEN DE PAGO ─────────────────────────────────────
+    row('Pago realizado:', `${cuotasPagadasNum}/${totalCuotas}`, 8, true);
+    row('Pagos pendientes:', String(cuotasPendientes), 8);
+
+    // Lista de cuotas pagadas en esta transacción (con su día)
+    if (cuotasPagadas.length > 0) {
+      y += 2;
+      doc.font(RB).fontSize(7.5).fillColor(GRAY).text('Cuotas pagadas:', LX, y, { lineBreak: false });
+      y += 11;
+      cuotasPagadas
+        .sort((a, b) => a.periodo - b.periodo)
+        .forEach((c) => {
+          doc.font(RB).fontSize(7.5).fillColor(TEXT)
+             .text(`  #${c.periodo}`, LX, y, { lineBreak: false });
+          doc.font(RB).fontSize(7.5).fillColor(TEXT)
+             .text(fdate(c.fecha), LX, y, { width: CW, align: 'right', lineBreak: false });
+          y += 10;
+        });
+      y += 2;
+    }
+
+    // ── IMPORTE MORATORIO (con detalle de día si lo hay) ────
+    if (tieneMora) {
+      sep();
+      row('Importe moratorio:', cur(payment.lateInterestApplied), 8, true);
+      if (cuotasConMora.length > 0) {
+        y += 1;
+        doc.font(RB).fontSize(7).fillColor(GRAY).text('Mora de:', LX, y, { lineBreak: false });
+        y += 10;
+        cuotasConMora
+          .sort((a, b) => a.periodo - b.periodo)
+          .forEach((c) => {
+            doc.font(RB).fontSize(7).fillColor(TEXT)
+               .text(`  #${c.periodo}  ${fdate(c.fecha)}`, LX, y, { lineBreak: false });
+            doc.font(RB).fontSize(7).fillColor('#DC2626')
+               .text(cur(c.mora), LX, y, { width: CW, align: 'right', lineBreak: false });
+            y += 10;
+          });
+      }
+    }
+    sep();
+
+    // ── TOTAL RECIBIDO ──────────────────────────────────────
+    doc.rect(LX, y, CW, 26).fill(GREEN);
+    doc.font(RB).fontSize(8).fillColor(WHITE).text('TOTAL RECIBIDO', LX + 6, y + 5, { lineBreak: false });
+    doc.font(BB).fontSize(12).fillColor(WHITE)
+       .text(cur(payment.amountPaid), LX, y + 6, { width: CW - 6, align: 'right', lineBreak: false });
+    y += 32;
+
+    // ── FECHAS (hora de México) ─────────────────────────────
+    row('Fecha y hora:', fdatetimeMX(payment.paymentDate || new Date()), 7.5);
+    row('Fecha de aplicación:', fdateMX(payment.paymentDate || new Date()), 7.5);
+
+    sep(false);
+    center('¡Gracias por su pago!', 8, BB, GREEN2, 2);
+    center('Conserve este comprobante', 6.5, RB, GRAY, 2);
 
     doc.end();
   }

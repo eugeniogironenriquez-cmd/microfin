@@ -484,6 +484,36 @@ export class PaymentsService {
     const company = await this.companyService.get();
     return this.pdfService.generatePaymentReceipt({ payment, loan, company }, res);
   }
+
+  // ── TICKET TÉRMICO 80mm ──────────────────────────────────
+  // Genera el ticket de impresora térmica para un pago. Calcula las
+  // estadísticas del crédito (cuotas pagadas/pendientes, saldo) leyendo
+  // el calendario actual, y deja intacto el comprobante carta.
+  async generateThermalTicket(paymentId: string, res: Response): Promise<void> {
+    const payment = await this.paymentRepo.findOne({ where: { id: paymentId } });
+    if (!payment) throw new NotFoundException('Pago no encontrado');
+    const loan = await this.loanRepo.findOne({
+      where: { id: payment.loanId }, relations: ['customer', 'loanType'],
+    });
+    const company = await this.companyService.get();
+
+    // Calcular stats del crédito a partir del calendario actual
+    const schedules = await this.scheduleRepo.find({
+      where: { loanId: payment.loanId },
+    });
+    const totalCuotas      = schedules.length;
+    const cuotasPagadas    = schedules.filter((s) => s.status === ScheduleStatus.PAGADO).length;
+    const cuotasPendientes = schedules.filter((s) => s.status === ScheduleStatus.PENDIENTE).length;
+    // Saldo = suma de balanceDue de las cuotas no pagadas
+    const saldo = this.calculator.round(
+      schedules
+        .filter((s) => s.status !== ScheduleStatus.PAGADO)
+        .reduce((sum, s) => sum + Number(s.balanceDue || 0), 0),
+    );
+
+    const stats = { totalCuotas, cuotasPagadas, cuotasPendientes, saldo };
+    return this.pdfService.generateThermalReceipt({ payment, loan, company, stats }, res);
+  }
 }
 
 @ApiTags('payments')
@@ -541,6 +571,12 @@ export class PaymentsController {
   @Get(':id/receipt') @Auth()
   receipt(@Param('id') id: string, @Res() res: Response) {
     return this.paymentsService.generateReceipt(id, res);
+  }
+
+  // Ticket de impresora térmica 80mm
+  @Get(':id/ticket') @Auth()
+  ticket(@Param('id') id: string, @Res() res: Response) {
+    return this.paymentsService.generateThermalTicket(id, res);
   }
 }
 
