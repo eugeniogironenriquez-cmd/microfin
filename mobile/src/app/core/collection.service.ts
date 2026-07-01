@@ -116,6 +116,58 @@ export class CollectionService {
     };
   }
 
+    async downloadClientsGestor(): Promise<AssignedClient[]> {
+    const res = await firstValueFrom(
+      this.http.get<ApiEnvelope<any> | any>(`${this.base}/semaforo/gestor`),
+    );
+    const raw = this.unwrap(res);
+    // El semáforo puede devolver { data: [...] } o un array directo.
+    const lista: any[] = Array.isArray(raw) ? raw : (raw?.data || []);
+ 
+    const clients: AssignedClient[] = lista.map((r) => this.mapClientGestor(r));
+    this.clients.set(clients);
+    await this.storage.setClients(clients);
+    return clients;
+  }
+
+  private mapClientGestor(r: any): AssignedClient {
+    const addr = r.customerAddress;
+    const addressLine = addr
+      ? [addr.street, addr.colonia, addr.municipality].filter(Boolean).join(', ')
+      : (typeof r.customerAddress === 'string' ? r.customerAddress : undefined);
+ 
+    // Un crédito rojo siempre está atrasado/vencido; para el badge usamos
+    // 'vencido' si el status lo dice, si no 'atrasado'.
+    const status = (r.status || 'ATRASADO').toUpperCase();
+    const estado: 'corriente' | 'atrasado' | 'vencido' =
+      status === 'VENCIDO' ? 'vencido' : 'atrasado';
+ 
+    return {
+      loanId:          r.id || r.loanId,
+      customerId:      r.customerId,
+      customerName:    r.customerName || 'Cliente',
+      phone:           r.customerPhone || r.phone,
+      curp:            r.customerCurp || undefined,
+      address:         addr?.street || (typeof r.customerAddress === 'string' ? r.customerAddress : undefined),
+      addressFull:     addr ? {
+                         street:       addr.street,
+                         colonia:      addr.colonia,
+                         municipality: addr.municipality,
+                         state:        addr.state,
+                         zip:          addr.zip,
+                         references:   addr.references,
+                       } : undefined,
+      addressLine,
+      principalAmount: Number(r.principalAmount || 0),
+      periodicPayment: Number(r.periodicPayment || 0),
+      termWeeks:       Number(r.termWeeks || 0) || undefined,
+      cuotasVencidas:  Number(r.overdueCount ?? r.cuotasVencidas ?? 0),
+      nivel:           (r.level || r.nivel || 'ROJO'),
+      status,
+      estado,
+    };
+  }
+
   async downloadEmpresa(): Promise<Empresa | null> {
     const res = await firstValueFrom(
       this.http.get<ApiEnvelope<any> | any>(`${this.base}/company`),

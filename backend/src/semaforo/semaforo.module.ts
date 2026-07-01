@@ -95,19 +95,21 @@ export class SemaforoService implements OnModuleInit {
     for (const loan of loans) {
       const overdueCount = await this.countOverdue(loan.id);
       const level = this.levelFor(overdueCount, cfg);
-      rows.push({
-        id: loan.id,
-        customerId: loan.customerId,
-        customerName: loan.customer?.fullName || '',
-        customerPhone: loan.customer?.phone || '',
-        principalAmount: Number(loan.principalAmount),
-        periodicPayment: Number(loan.periodicPayment),
-        totalAmount: Number(loan.totalAmount),
-        status: loan.status,
-        disbursedAt: loan.disbursedAt,
-        overdueCount,
-        level,
-      });
+         rows.push({
+     id: loan.id,
+     customerId: loan.customerId,
+     customerName: loan.customer?.fullName || '',
+     customerPhone: loan.customer?.phone || '',
+     customerAddress: loan.customer?.address || null,   // ← NUEVO (objeto o string)
+     customerCurp: loan.customer?.curp || null,         // ← NUEVO
+     principalAmount: Number(loan.principalAmount),
+     periodicPayment: Number(loan.periodicPayment),
+     totalAmount: Number(loan.totalAmount),
+     status: loan.status,
+     disbursedAt: loan.disbursedAt,
+     overdueCount,
+     level,
+   });
 
       // Registrar historial si entró en amarillo o rojo
       await this.recordHistoryIfNeeded(loan.customerId, loan.id, level, overdueCount);

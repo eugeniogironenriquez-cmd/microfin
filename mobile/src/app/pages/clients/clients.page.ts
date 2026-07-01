@@ -39,6 +39,7 @@ import {
 import { AuthService } from "../../core/auth.service";
 import { CollectionService } from "../../core/collection.service";
 import { NetworkService } from "../../core/network.service";
+import { MobilePermissionsService } from "../../services/mobile-permissions.service";
 import { AssignedClient } from "../../core/models";
 
 @Component({
@@ -67,7 +68,7 @@ import { AssignedClient } from "../../core/models";
   template: `
     <ion-header>
       <ion-toolbar color="primary">
-        <ion-title>Mis clientes</ion-title>
+        <ion-title>{{ mp.esGestor() ? 'Cartera en rojo' : 'Mis clientes' }}</ion-title>
         <ion-buttons slot="end">
           <ion-button (click)="sync()" [disabled]="collection.syncing()">
             @if (collection.syncing()) {
@@ -112,10 +113,10 @@ import { AssignedClient } from "../../core/models";
       } @else if (filtered().length === 0) {
         <div class="empty">
           <ion-icon name="person-circle-outline"></ion-icon>
-          <p>No hay clientes asignados.</p>
+          <p>{{ mp.esGestor() ? 'No hay créditos en rojo.' : 'No hay clientes asignados.' }}</p>
           <ion-button fill="outline" (click)="download()">
             <ion-icon slot="start" name="refresh-outline"></ion-icon>
-            Descargar clientes
+            {{ mp.esGestor() ? 'Actualizar cartera' : 'Descargar clientes' }}
           </ion-button>
         </div>
       } @else {
@@ -212,6 +213,7 @@ import { AssignedClient } from "../../core/models";
 export class ClientsPage implements OnInit {
   readonly collection = inject(CollectionService);
   readonly network = inject(NetworkService);
+  readonly mp = inject(MobilePermissionsService);
   private auth = inject(AuthService);
   private router = inject(Router);
   private toast = inject(ToastController);
@@ -284,15 +286,18 @@ export class ClientsPage implements OnInit {
       return;
     }
     try {
-      await this.collection.downloadClients();
-      await this.collection.downloadEmpresa(); 
+      // El gestor ve los rojos de toda la cartera; el cobrador, sus asignados.
+      if (this.mp.esGestor()) {
+        await this.collection.downloadClientsGestor();
+      } else {
+        await this.collection.downloadClients();
+      }
+      await this.collection.downloadEmpresa();
       if (!silent) this.notify("Clientes actualizados");
     } catch {
       if (!silent) this.notify("No se pudo descargar");
     }
   }
-
-
 
   async doRefresh(ev: any) {
     await this.download();
