@@ -562,6 +562,9 @@ mat-toolbar.toolbar * { color: var(--white) !important; }
 .text-success { color: var(--success); }
 .font-mono { font-family: 'Courier New', monospace; font-size: 12px; }
 
+.wa-btn:not([disabled]) { color:#25D366; border-color:#25D366; }
+.wa-btn:not([disabled]) mat-icon { color:#25D366; }
+
 /* ── Responsive ────────────────────────────────────────────── */
 @media (max-width: 900px) {
   .layout, .lf-layout, .simulator-layout, .expense-layout, .cat-layout { grid-template-columns: 1fr; }
