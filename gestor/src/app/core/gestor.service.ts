@@ -10,6 +10,30 @@ import {
 export class GestorService {
   private api = inject(ApiService);
 
+  // ── DETALLE DEL CRÉDITO + AVAL ────────────────────────────
+  /** Crédito completo con su cliente (dirección, teléfono, CURP). */
+  getLoan(loanId: string): Observable<any> {
+    return this.api.get<any>(`/loans/${loanId}`);
+  }
+
+  /** Aval del crédito (o null si no tiene). */
+  getAval(loanId: string): Observable<any> {
+    return this.api.get<any>(`/loans/${loanId}/guarantor`);
+  }
+
+  // ── SEGUIMIENTO (visitas) ─────────────────────────────────
+  /** Historial de seguimientos/visitas de un crédito. */
+  getSeguimientos(loanId: string): Observable<any[]> {
+    return this.api.get<any[]>(`/visitas/prestamo/${loanId}`).pipe(
+      map((r) => (Array.isArray(r) ? r : [])),
+    );
+  }
+
+  /** Registra un seguimiento (llamada, mensaje, visita, otro). */
+  registrarSeguimiento(loanId: string, tipo: string, notas?: string): Observable<any> {
+    return this.api.post<any>('/visitas', { loanId, tipo, notas });
+  }
+
   // ── SEMÁFORO / MONITOR ────────────────────────────────────
   /** Monitor completo de cartera (los 3 niveles). Filtrable. */
   getMonitor(filtros?: { nivel?: NivelSemaforo; search?: string }): Observable<MonitorResponse> {

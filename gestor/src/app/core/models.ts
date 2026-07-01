@@ -80,13 +80,51 @@ export interface HistorialResponse {
   eventos: HistorialEvento[];
 }
 
+// Dirección del cliente (viene como objeto en el backend)
+export interface DireccionCliente {
+  street?: string;
+  colonia?: string;
+  municipality?: string;
+  state?: string;
+  zip?: string;
+  references?: string;
+}
+
+// Cliente completo (de GET /loans/:id → customer)
+export interface ClienteDetalle {
+  id: string;
+  fullName: string;
+  curp?: string;
+  rfc?: string;
+  phone?: string;
+  email?: string;
+  address?: DireccionCliente | string;
+  occupation?: string;
+}
+
+// Aval (de GET /loans/:id/guarantor)
+export interface Aval {
+  fullName: string;
+  curp?: string;
+  rfc?: string;
+  phone?: string;
+  email?: string;
+  address?: string;
+  relationship?: string;
+  occupation?: string;
+}
+
 // Simulación de reestructura (POST /loans/simulate)
 export interface SimulacionResponse {
   periodicPayment: number;
-  totalAmount: number;
+  totalPayment: number;
+  totalInterest: number;
+  minPayment: number;
+  percentage: number;
+  days: number;
   schedule?: Array<{
-    periodNumber: number;
+    period: number;
     dueDate: string;
-    totalDue: number;
+    payment: number;
   }>;
 }

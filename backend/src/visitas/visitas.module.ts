@@ -1,50 +1,83 @@
 import {
-  Module, Controller, Injectable, Get, Post,
-  Body, Param, Query, NotFoundException,
-} from '@nestjs/common';
-import { TypeOrmModule, InjectRepository } from '@nestjs/typeorm';
+  Module,
+  Controller,
+  Injectable,
+  Get,
+  Post,
+  Body,
+  Param,
+  Query,
+  NotFoundException,
+} from "@nestjs/common";
+import { TypeOrmModule, InjectRepository } from "@nestjs/typeorm";
 import {
-  Entity, PrimaryColumn, Column, CreateDateColumn, Repository,
-} from 'typeorm';
-import { ApiTags, ApiBearerAuth } from '@nestjs/swagger';
-import { Auth, CurrentUser } from '../common/guards/roles.guard';
+  Entity,
+  PrimaryColumn,
+  Column,
+  CreateDateColumn,
+  Repository,
+} from "typeorm";
+import { ApiTags, ApiBearerAuth } from "@nestjs/swagger";
+import { Auth, CurrentUser } from "../common/guards/roles.guard";
 
 // ── ENTIDAD ───────────────────────────────────────────────────
-export type TipoVisita = 'NO_LOCALIZADO' | 'PROMESA_PAGO';
+export type TipoVisita =
+  | "NO_LOCALIZADO"
+  | "PROMESA_PAGO"
+  | "LLAMADA"
+  | "MENSAJE"
+  | "VISITA"
+  | "OTRO";
 
-@Entity('visitas')
+@Entity("visitas")
 export class Visita {
-  @PrimaryColumn({ type: 'varchar', length: 36 })
+  @PrimaryColumn({ type: "varchar", length: 36 })
   id!: string;
 
-  @Column({ name: 'prestamo_id', type: 'varchar', length: 36 })
+  @Column({ name: "prestamo_id", type: "varchar", length: 36 })
   loanId!: string;
 
-  @Column({ type: 'enum', enum: ['NO_LOCALIZADO', 'PROMESA_PAGO'] })
+  @Column({
+    type: "enum",
+    enum: [
+      "NO_LOCALIZADO",
+      "PROMESA_PAGO",
+      "LLAMADA",
+      "MENSAJE",
+      "VISITA",
+      "OTRO",
+    ],
+  })
   tipo!: TipoVisita;
 
-  @Column({ type: 'text', nullable: true })
+  @Column({ type: "text", nullable: true })
   notas?: string | null;
 
-  @Column({ name: 'fecha_promesa', type: 'date', nullable: true })
+  @Column({ name: "fecha_promesa", type: "date", nullable: true })
   fechaPromesa?: string | null;
 
-  @Column({ name: 'monto_promesa', type: 'decimal', precision: 12, scale: 2, nullable: true })
+  @Column({
+    name: "monto_promesa",
+    type: "decimal",
+    precision: 12,
+    scale: 2,
+    nullable: true,
+  })
   montoPromesa?: number | null;
 
-  @Column({ type: 'decimal', precision: 10, scale: 7, nullable: true })
+  @Column({ type: "decimal", precision: 10, scale: 7, nullable: true })
   lat?: number | null;
 
-  @Column({ type: 'decimal', precision: 10, scale: 7, nullable: true })
+  @Column({ type: "decimal", precision: 10, scale: 7, nullable: true })
   lng?: number | null;
 
-  @Column({ name: 'id_local', type: 'varchar', length: 64, nullable: true })
+  @Column({ name: "id_local", type: "varchar", length: 64, nullable: true })
   localId?: string | null;
 
-  @Column({ name: 'registrado_por', type: 'varchar', length: 36 })
+  @Column({ name: "registrado_por", type: "varchar", length: 36 })
   registradoPor!: string;
 
-  @CreateDateColumn({ name: 'creado_en' })
+  @CreateDateColumn({ name: "creado_en" })
   creadoEn!: Date;
 }
 
@@ -53,7 +86,7 @@ interface RegistrarVisitaDto {
   loanId: string;
   tipo: TipoVisita;
   notas?: string;
-  fechaPromesa?: string;   // 'YYYY-MM-DD'
+  fechaPromesa?: string; // 'YYYY-MM-DD'
   montoPromesa?: number;
   lat?: number;
   lng?: number;
@@ -63,14 +96,14 @@ interface RegistrarVisitaDto {
 // ── SERVICE ───────────────────────────────────────────────────
 @Injectable()
 export class VisitasService {
-  constructor(
-    @InjectRepository(Visita) private repo: Repository<Visita>,
-  ) {}
+  constructor(@InjectRepository(Visita) private repo: Repository<Visita>) {}
 
   async registrar(dto: RegistrarVisitaDto, userId: string) {
     // Idempotencia: si ya existe una visita con este localId, devolverla
     if (dto.localId) {
-      const existing = await this.repo.findOne({ where: { localId: dto.localId } });
+      const existing = await this.repo.findOne({
+        where: { localId: dto.localId },
+      });
       if (existing) return { visita: existing, duplicate: true };
     }
 
@@ -80,8 +113,10 @@ export class VisitasService {
       tipo: dto.tipo,
       notas: dto.notas || null,
       // Los campos de promesa solo se guardan si el tipo es PROMESA_PAGO
-      fechaPromesa: dto.tipo === 'PROMESA_PAGO' ? (dto.fechaPromesa || null) : null,
-      montoPromesa: dto.tipo === 'PROMESA_PAGO' ? (dto.montoPromesa ?? null) : null,
+      fechaPromesa:
+        dto.tipo === "PROMESA_PAGO" ? dto.fechaPromesa || null : null,
+      montoPromesa:
+        dto.tipo === "PROMESA_PAGO" ? (dto.montoPromesa ?? null) : null,
       lat: dto.lat ?? null,
       lng: dto.lng ?? null,
       localId: dto.localId || null,
@@ -95,7 +130,7 @@ export class VisitasService {
   async porPrestamo(loanId: string) {
     return this.repo.find({
       where: { loanId },
-      order: { creadoEn: 'DESC' },
+      order: { creadoEn: "DESC" },
     });
   }
 
@@ -120,7 +155,7 @@ export class VisitasService {
        LEFT JOIN usuarios  u ON u.id = v.registrado_por
        WHERE v.creado_en >= ? AND v.creado_en < ? AND v.lat IS NOT NULL
        ORDER BY v.creado_en DESC`,
-      [day, next]
+      [day, next],
     );
 
     return rows.map((v: any) => ({
@@ -140,32 +175,38 @@ export class VisitasService {
   }
 
   private uuid(): string {
-    return require('crypto').randomUUID();
+    return require("crypto").randomUUID();
   }
 }
 
 // ── CONTROLLER ───────────────────────────────────────────────
-@ApiTags('visitas')
+@ApiTags("visitas")
 @ApiBearerAuth()
-@Controller('visitas')
+@Controller("visitas")
 export class VisitasController {
   constructor(private svc: VisitasService) {}
 
   // Registrar visita (cobrador/gestor)
-  @Post() @Auth()
-  registrar(@Body() dto: RegistrarVisitaDto, @CurrentUser('id') userId: string) {
+  @Post()
+  @Auth()
+  registrar(
+    @Body() dto: RegistrarVisitaDto,
+    @CurrentUser("id") userId: string,
+  ) {
     return this.svc.registrar(dto, userId);
   }
 
   // Historial de visitas de un crédito
-  @Get('prestamo/:loanId') @Auth()
-  porPrestamo(@Param('loanId') loanId: string) {
+  @Get("prestamo/:loanId")
+  @Auth()
+  porPrestamo(@Param("loanId") loanId: string) {
     return this.svc.porPrestamo(loanId);
   }
 
   // Geolocalización de visitas para el monitor web
-  @Get('geo') @Auth()
-  geo(@Query('date') date?: string) {
+  @Get("geo")
+  @Auth()
+  geo(@Query("date") date?: string) {
     return this.svc.geoDelDia(date);
   }
 }
