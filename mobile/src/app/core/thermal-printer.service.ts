@@ -1,7 +1,7 @@
 import { Injectable, signal, inject } from '@angular/core';
 import { Preferences } from '@capacitor/preferences';
 import { CapacitorThermalPrinter } from 'capacitor-thermal-printer';
-import { AssignedClient, LocalPayment, Empresa } from './models';
+import { AssignedClient, LocalPayment, Empresa, TicketSnapshot } from './models';
 import { CollectionService } from './collection.service';
 
 // Clave donde se recuerda la impresora elegida por el cobrador.
@@ -138,12 +138,15 @@ export class ThermalPrinterService {
     const money = (v: any) =>
       '$' + (Number(v) || 0).toLocaleString('es-MX', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
-    const fecha = this.formatFechaHora(payment.capturedAt || new Date().toISOString());
+    const fechaHora = this.formatFechaHora(payment.capturedAt || new Date().toISOString());
+    const fechaAplic = this.formatFecha(payment.capturedAt || new Date().toISOString());
     // Folio: receiptNumber o serverId si ya sincronizó; si no, el localId.
     const folio = (payment.receiptNumber || payment.serverId || payment.localId || '—')
-      .toString().substring(0, 12).toUpperCase();
+      .toString().substring(0, 16).toUpperCase();
     const cliente = client?.customerName || '—';
-    const periodos = payment.periodos || [];
+
+    // Snapshot con todos los datos del ticket (capturado al pagar, offline-safe).
+    const snap = payment.snapshot;
 
     // Datos de empresa desde cache (offline-safe), con fallback.
     const empresa = await this.getEmpresa();
@@ -160,28 +163,55 @@ export class ThermalPrinterService {
       p = p.align('center').bold().text('COMPROBANTE DE PAGO\n').clearFormatting();
       p = p.text('--------------------------------\n');
 
-      // ── Datos ──
+      // ── Datos del crédito / cliente ──
       p = p.align('left');
       p = p.text(`Folio: ${folio}\n`);
       p = p.text(`Cliente: ${cliente}\n`);
-      p = p.text(`Fecha: ${fecha}\n`);
-      if (payment.method) p = p.text(`Metodo: ${payment.method}\n`);
-      // Si aún no se sincroniza, dejarlo claro en el ticket.
-      if (!payment.synced) p = p.text('** Pendiente de sincronizar **\n');
+      if (snap) {
+        p = p.text(`Monto: ${money(snap.principalAmount)}\n`);
+        p = p.text(`Cuota: ${money(snap.periodicPayment)}\n`);
+        p = p.text(`Saldo: ${money(snap.saldoPendiente)}\n`);
+      }
       p = p.text('--------------------------------\n');
 
-      // ── Cuotas pagadas (por número; modo selectivo) ──
-      if (periodos.length > 0) {
-        const lista = periodos.map((n) => `#${n}`).join('  ');
+      // ── Progreso del pago ──
+      if (snap && snap.totalCuotas > 0) {
+        p = p.text(`Pago realizado: ${snap.cuotaActual}/${snap.totalCuotas}\n`);
+        p = p.text(`Pagos pendientes: ${snap.cuotasPendientes}\n`);
+      }
+
+      // ── Cuotas pagadas (con su fecha) ──
+      if (snap && snap.cuotasPagadas.length > 0) {
         p = p.text('Cuotas pagadas:\n');
-        p = p.text(`  ${lista}\n`);
-        p = p.text('--------------------------------\n');
+        for (const c of snap.cuotasPagadas.slice().sort((a, b) => a.periodo - b.periodo)) {
+          const f = c.fecha ? this.formatFecha(c.fecha) : '';
+          // "#28            30/06/2026"  (número a la izq, fecha a la der aprox.)
+          p = p.text(`  #${c.periodo}${' '.repeat(Math.max(1, 12 - String(c.periodo).length))}${f}\n`);
+        }
+      }
+      // Moratorio si aplica
+      if (snap && snap.mora > 0) {
+        p = p.text(`Moratorio: ${money(snap.mora)}\n`);
+      }
+      p = p.text('--------------------------------\n');
+
+      // Si aún no se sincroniza, dejarlo claro en el ticket.
+      if (!payment.synced) {
+        p = p.align('center').text('** Pendiente de sincronizar **\n');
+        p = p.align('left');
       }
 
       // ── Total ──
       p = p.align('center').bold().doubleWidth()
            .text(`TOTAL: ${money(payment.amountPaid)}\n`)
            .clearFormatting();
+      p = p.text('--------------------------------\n');
+
+      // ── Fechas ──
+      p = p.align('left');
+      p = p.text(`Fecha y hora: ${fechaHora}\n`);
+      p = p.text(`Fecha de aplicacion: ${fechaAplic}\n`);
+      if (payment.method) p = p.text(`Metodo: ${payment.method}\n`);
       p = p.text('--------------------------------\n');
 
       // ── Pie de avisos (pie_legal de la empresa, puede traer varias líneas) ──
@@ -244,6 +274,17 @@ export class ThermalPrinterService {
         day: '2-digit', month: '2-digit', year: 'numeric',
         hour: '2-digit', minute: '2-digit', hour12: false,
       }).format(dt).replace(',', '');
+    } catch { return String(d); }
+  }
+
+  // Solo fecha (para "Fecha de aplicación" y las cuotas). Se usa UTC en las
+  // fechas de vencimiento (columnas 'date') para no correr el día por zona.
+  private formatFecha(d: any): string {
+    try {
+      const dt = typeof d === 'string' ? new Date(d) : d;
+      const dd = String(dt.getUTCDate()).padStart(2, '0');
+      const mm = String(dt.getUTCMonth() + 1).padStart(2, '0');
+      return `${dd}/${mm}/${dt.getUTCFullYear()}`;
     } catch { return String(d); }
   }
 }

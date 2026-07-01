@@ -1,12 +1,26 @@
-import { Injectable, inject, signal } from '@angular/core';
-import { HttpClient } from '@angular/common/http';
-import { firstValueFrom } from 'rxjs';
-import { environment } from '../../environments/environment';
-import { StorageService } from './storage.service';
-import { NetworkService } from './network.service';
-import { AssignedClient, LocalPayment, PaymentInfo, CuotaPendiente, LocalVisit, TipoVisita, LocalGestorAccion, GestorAccionTipo, Empresa } from './models';
+import { Injectable, inject, signal } from "@angular/core";
+import { HttpClient } from "@angular/common/http";
+import { firstValueFrom } from "rxjs";
+import { environment } from "../../environments/environment";
+import { StorageService } from "./storage.service";
+import { NetworkService } from "./network.service";
+import {
+  AssignedClient,
+  LocalPayment,
+  PaymentInfo,
+  CuotaPendiente,
+  LocalVisit,
+  TipoVisita,
+  LocalGestorAccion,
+  GestorAccionTipo,
+  Empresa,
+} from "./models";
 
-interface ApiEnvelope<T> { success: boolean; data: T; timestamp: string; }
+interface ApiEnvelope<T> {
+  success: boolean;
+  data: T;
+  timestamp: string;
+}
 
 /**
  * Servicio central de cobranza:
@@ -14,7 +28,7 @@ interface ApiEnvelope<T> { success: boolean; data: T; timestamp: string; }
  *  - Obtiene info de pago (cuota, saldo, mora)
  *  - Encola pagos localmente y los sincroniza cuando hay red
  */
-@Injectable({ providedIn: 'root' })
+@Injectable({ providedIn: "root" })
 export class CollectionService {
   private http = inject(HttpClient);
   private storage = inject(StorageService);
@@ -36,10 +50,14 @@ export class CollectionService {
   /** Descarga del servidor y actualiza la cache. Requiere conexión. */
   async downloadClients(): Promise<AssignedClient[]> {
     const res = await firstValueFrom(
-      this.http.get<ApiEnvelope<any> | any>(`${this.base}/collection/my-clients`)
+      this.http.get<ApiEnvelope<any> | any>(
+        `${this.base}/collection/my-clients`,
+      ),
     );
     const raw = this.unwrap(res);
-    const list: AssignedClient[] = (Array.isArray(raw) ? raw : []).map((l: any) => this.mapClient(l));
+    const list: AssignedClient[] = (Array.isArray(raw) ? raw : []).map(
+      (l: any) => this.mapClient(l),
+    );
     this.clients.set(list);
     await this.storage.setClients(list);
     return list;
@@ -81,35 +99,36 @@ export class CollectionService {
       addressLine,
       principalAmount: Number(l.principalAmount || 0),
       periodicPayment: Number(l.periodicPayment || 0),
+      termWeeks:       Number(l.termWeeks || 0) || undefined,
       status,
       estado,
     };
   }
 
-    async downloadEmpresa(): Promise<Empresa | null> {
+  async downloadEmpresa(): Promise<Empresa | null> {
     const res = await firstValueFrom(
-      this.http.get<ApiEnvelope<any> | any>(`${this.base}/empresa`)
+      this.http.get<ApiEnvelope<any> | any>(`${this.base}/company`),
     );
     const raw = this.unwrap(res);
     if (!raw) return null;
- 
+
     const empresa: Empresa = {
-      nombre:        raw.nombre || 'Microcapital-Ixtepec',
-      rfc:           raw.rfc || undefined,
-      domicilio:     raw.domicilio || undefined,
-      telefono:      raw.telefono || undefined,
-      correo:        raw.correo || undefined,
-      sitioWeb:      raw.sitio_web || undefined,
+      nombre: raw.nombre || "Microcapital-Ixtepec",
+      rfc: raw.rfc || undefined,
+      domicilio: raw.domicilio || undefined,
+      telefono: raw.telefono || undefined,
+      correo: raw.correo || undefined,
+      sitioWeb: raw.sitio_web || undefined,
       regimenFiscal: raw.regimen_fiscal || undefined,
-      ciudad:        raw.ciudad || undefined,
-      estado:        raw.estado || undefined,
-      codigoPostal:  raw.codigo_postal || undefined,
-      pieLegal:      raw.pie_legal || undefined,
+      ciudad: raw.ciudad || undefined,
+      estado: raw.estado || undefined,
+      codigoPostal: raw.codigo_postal || undefined,
+      pieLegal: raw.pie_legal || undefined,
     };
     await this.storage.setEmpresa(empresa);
     return empresa;
   }
- 
+
   /** Lee la empresa de cache (uso offline). Null si nunca se descargó. */
   async getEmpresa(): Promise<Empresa | null> {
     return this.storage.getEmpresa();
@@ -118,7 +137,9 @@ export class CollectionService {
   // ── Info de pago ───────────────────────────────────────────
   async getPaymentInfo(loanId: string): Promise<PaymentInfo> {
     const res = await firstValueFrom(
-      this.http.get<ApiEnvelope<PaymentInfo> | PaymentInfo>(`${this.base}/payments/info/${loanId}`)
+      this.http.get<ApiEnvelope<PaymentInfo> | PaymentInfo>(
+        `${this.base}/payments/info/${loanId}`,
+      ),
     );
     return this.unwrap(res);
   }
@@ -126,7 +147,9 @@ export class CollectionService {
   /** Lista de cuotas pendientes (para el modo selectivo). Requiere conexión. */
   async getCuotasPendientes(loanId: string): Promise<CuotaPendiente[]> {
     const res = await firstValueFrom(
-      this.http.get<ApiEnvelope<CuotaPendiente[]> | CuotaPendiente[]>(`${this.base}/payments/cuotas/${loanId}`)
+      this.http.get<ApiEnvelope<CuotaPendiente[]> | CuotaPendiente[]>(
+        `${this.base}/payments/cuotas/${loanId}`,
+      ),
     );
     const data = this.unwrap(res);
     return Array.isArray(data) ? data : [];
@@ -137,7 +160,7 @@ export class CollectionService {
    * Guarda el pago en la cola local y trata de sincronizarlo.
    * Si no hay red, queda pendiente y se sincroniza después.
    */
-  async registerPayment(p: Omit<LocalPayment, 'localId' | 'capturedAt' | 'synced'>): Promise<LocalPayment> {
+ async registerPayment(p: Omit<LocalPayment, 'localId' | 'capturedAt' | 'synced'>): Promise<LocalPayment> {
     const payment: LocalPayment = {
       ...p,
       localId: this.uuid(),
@@ -146,10 +169,19 @@ export class CollectionService {
     };
     await this.storage.addPayment(payment);
     await this.refreshPendingCount();
-
+ 
     // Intentar sincronizar de inmediato si hay red
     if (await this.network.isOnline()) {
-      await this.syncOne(payment);
+      const ok = await this.syncOne(payment);
+      // Si el pago se sincronizó bien, refrescar la lista de clientes para
+      // que los saldos y estados reflejen el pago recién aplicado.
+      if (ok) {
+        try {
+          await this.downloadClients();
+        } catch {
+          /* si falla el refresco, no bloquea el pago: se verá al próximo refresh */
+        }
+      }
     }
     return payment;
   }
@@ -159,7 +191,8 @@ export class CollectionService {
   async syncPending(): Promise<{ ok: number; fail: number }> {
     if (!(await this.network.isOnline())) return { ok: 0, fail: 0 };
     this.syncing.set(true);
-    let ok = 0, fail = 0;
+    let ok = 0,
+      fail = 0;
     const pending = await this.storage.getPendingPayments();
     for (const p of pending) {
       const success = await this.syncOne(p);
@@ -192,16 +225,16 @@ export class CollectionService {
         this.http.post<ApiEnvelope<any> | any>(`${this.base}/payments`, {
           loanId: p.loanId,
           amountPaid: p.amountPaid,
-          paymentType: hasPeriodos ? 'TOTAL' : p.paymentType,
+          paymentType: hasPeriodos ? "TOTAL" : p.paymentType,
           periodos: hasPeriodos ? p.periodos : undefined,
           method: p.method,
           applyExcedenteToMora: p.applyExcedenteToMora,
           notes: p.notes,
-          localId: p.localId,        // idempotencia: el backend puede deduplicar
+          localId: p.localId, // idempotencia: el backend puede deduplicar
           lat: p.lat,
           lng: p.lng,
-          source: 'COBRADOR',
-        })
+          source: "COBRADOR",
+        }),
       );
       const data = this.unwrap(res);
       const serverId = data?.payment?.id;
@@ -216,7 +249,7 @@ export class CollectionService {
       return true;
     } catch (e: any) {
       await this.storage.updatePayment(p.localId, {
-        error: e?.error?.message || 'Error de sincronización',
+        error: e?.error?.message || "Error de sincronización",
       });
       return false;
     }
@@ -226,7 +259,9 @@ export class CollectionService {
     const pending = await this.storage.getPendingPayments();
     const pendingVisits = await this.storage.getPendingVisits();
     const pendingGestor = await this.storage.getPendingGestorAcciones();
-    this.pendingCount.set(pending.length + pendingVisits.length + pendingGestor.length);
+    this.pendingCount.set(
+      pending.length + pendingVisits.length + pendingGestor.length,
+    );
   }
 
   // ── Acciones de gestor: reestructura / convenio (offline diferido) ──
@@ -234,11 +269,17 @@ export class CollectionService {
    * Simula una reestructura (requiere conexión). Devuelve nueva cuota,
    * total y calendario, usando el mismo endpoint que la web (/loans/simulate).
    */
-  async simularReestructura(principalAmount: number, days: number, customPayment?: number): Promise<any> {
+  async simularReestructura(
+    principalAmount: number,
+    days: number,
+    customPayment?: number,
+  ): Promise<any> {
     return firstValueFrom(
       this.http.post<ApiEnvelope<any> | any>(`${this.base}/loans/simulate`, {
-        principalAmount, days, customPayment,
-      })
+        principalAmount,
+        days,
+        customPayment,
+      }),
     ).then((r) => this.unwrap(r));
   }
 
@@ -246,7 +287,11 @@ export class CollectionService {
    * Encola una acción de gestor (reestructura o convenio) y trata de aplicarla.
    * Offline diferido: si no hay red, queda pendiente y se aplica al sincronizar.
    */
-  async registrarGestorAccion(tipo: GestorAccionTipo, loanId: string, payload: Record<string, any>): Promise<LocalGestorAccion> {
+  async registrarGestorAccion(
+    tipo: GestorAccionTipo,
+    loanId: string,
+    payload: Record<string, any>,
+  ): Promise<LocalGestorAccion> {
     const accion: LocalGestorAccion = {
       localId: this.uuid(),
       loanId,
@@ -265,11 +310,12 @@ export class CollectionService {
 
   private async syncOneGestor(g: LocalGestorAccion): Promise<boolean> {
     try {
-      const endpoint = g.tipo === 'REESTRUCTURA'
-        ? `${this.base}/loans/${g.loanId}/restructure`
-        : `${this.base}/loans/${g.loanId}/convenio`;
+      const endpoint =
+        g.tipo === "REESTRUCTURA"
+          ? `${this.base}/loans/${g.loanId}/restructure`
+          : `${this.base}/loans/${g.loanId}/convenio`;
       const res = await firstValueFrom(
-        this.http.post<ApiEnvelope<any> | any>(endpoint, g.payload)
+        this.http.post<ApiEnvelope<any> | any>(endpoint, g.payload),
       );
       const data = this.unwrap(res);
       const serverId = data?.loan?.id;
@@ -282,14 +328,16 @@ export class CollectionService {
       return true;
     } catch (e: any) {
       await this.storage.updateGestorAccion(g.localId, {
-        error: e?.error?.message || 'Error de sincronización',
+        error: e?.error?.message || "Error de sincronización",
       });
       return false;
     }
   }
 
   // ── Visitas (offline-first) ────────────────────────────────
-  async registerVisit(v: Omit<LocalVisit, 'localId' | 'capturedAt' | 'synced'>): Promise<LocalVisit> {
+  async registerVisit(
+    v: Omit<LocalVisit, "localId" | "capturedAt" | "synced">,
+  ): Promise<LocalVisit> {
     const visit: LocalVisit = {
       ...v,
       localId: this.uuid(),
@@ -298,8 +346,21 @@ export class CollectionService {
     };
     await this.storage.addVisit(visit);
     await this.refreshPendingCount();
+
+    await this.refreshPendingCount();
+ 
+    // Intentar sincronizar de inmediato si hay red
     if (await this.network.isOnline()) {
-      await this.syncOneVisit(visit);
+      const ok = await this.syncOneVisit(visit);
+      // Si el pago se sincronizó bien, refrescar la lista de clientes para
+      // que los saldos y estados reflejen el pago recién aplicado.
+      if (ok) {
+        try {
+          await this.downloadClients();
+        } catch {
+          /* si falla el refresco, no bloquea el pago: se verá al próximo refresh */
+        }
+      }
     }
     return visit;
   }
@@ -316,7 +377,7 @@ export class CollectionService {
           lat: v.lat,
           lng: v.lng,
           localId: v.localId,
-        })
+        }),
       );
       const data = this.unwrap(res);
       const serverId = data?.visita?.id;
@@ -329,7 +390,7 @@ export class CollectionService {
       return true;
     } catch (e: any) {
       await this.storage.updateVisit(v.localId, {
-        error: e?.error?.message || 'Error de sincronización',
+        error: e?.error?.message || "Error de sincronización",
       });
       return false;
     }
@@ -337,14 +398,16 @@ export class CollectionService {
 
   // ── Utilidades ─────────────────────────────────────────────
   private unwrap<T>(res: ApiEnvelope<T> | T): T {
-    return res && (res as any).data !== undefined ? (res as ApiEnvelope<T>).data : (res as T);
+    return res && (res as any).data !== undefined
+      ? (res as ApiEnvelope<T>).data
+      : (res as T);
   }
 
   private uuid(): string {
     // RFC4122 v4 simplificado
-    return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (c) => {
+    return "xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx".replace(/[xy]/g, (c) => {
       const r = (Math.random() * 16) | 0;
-      const v = c === 'x' ? r : (r & 0x3) | 0x8;
+      const v = c === "x" ? r : (r & 0x3) | 0x8;
       return v.toString(16);
     });
   }

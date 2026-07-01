@@ -51,12 +51,12 @@ import { AssignedClient, PaymentInfo } from '../../core/models';
               </ion-badge>
             </ion-item>
 
-            @if (client()!.curp) {
+            <!--@if (client()!.curp) {
               <ion-item lines="none">
                 <ion-icon name="id-card-outline" slot="start" color="medium"></ion-icon>
                 <ion-label>CURP: {{ client()!.curp }}</ion-label>
               </ion-item>
-            }
+            }-->
 
             <!-- Domicilio del cliente -->
             @if (domicilio()) {

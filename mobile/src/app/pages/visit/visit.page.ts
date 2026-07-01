@@ -49,9 +49,9 @@ import { AssignedClient, TipoVisita } from '../../core/models';
               <ion-segment-button value="NO_LOCALIZADO">
                 <ion-label>No localizado</ion-label>
               </ion-segment-button>
-              <ion-segment-button value="PROMESA_PAGO">
+              <!--<ion-segment-button value="PROMESA_PAGO">
                 <ion-label>Promesa de pago</ion-label>
-              </ion-segment-button>
+              </ion-segment-button>-->
             </ion-segment>
 
             <!-- Campos de promesa de pago -->

@@ -1,0 +1,120 @@
+@use '@angular/material' as mat;
+
+@include mat.core();
+
+// ── Paleta azul Microcapital (#2595ca) ──
+$mc-blue: (
+  50:  #e6f3fa,
+  100: #c1e1f2,
+  200: #98cee9,
+  300: #6fbae0,
+  400: #50abda,
+  500: #2595ca,
+  600: #2083b2,
+  700: #1a6d94,
+  800: #155777,
+  900: #0d3a52,
+  contrast: (
+    50:  #000, 100: #000, 200: #000, 300: #000, 400: #fff,
+    500: #fff, 600: #fff, 700: #fff, 800: #fff, 900: #fff,
+  ),
+);
+
+$mc-primary: mat.define-palette($mc-blue, 500);
+$mc-accent:  mat.define-palette(mat.$blue-grey-palette, 700);
+$mc-warn:    mat.define-palette(mat.$red-palette, 600);
+
+$mc-theme: mat.define-light-theme((
+  color: (primary: $mc-primary, accent: $mc-accent, warn: $mc-warn),
+  typography: mat.define-typography-config(
+    $font-family: 'Inter, "Segoe UI", Roboto, system-ui, sans-serif',
+  ),
+  density: 0,
+));
+
+@include mat.all-component-themes($mc-theme);
+
+// ── Variables de tema ──
+:root {
+  --blue-900: #0d3a52;
+  --blue-800: #155777;
+  --blue-700: #1a6d94;
+  --blue-600: #2083b2;
+  --blue-500: #2595ca;
+  --blue-300: #6fbae0;
+  --blue-50:  #e6f3fa;
+
+  --verde:    #16a34a;
+  --amarillo: #d97706;
+  --rojo:     #dc2626;
+
+  --gray-50:  #f7fafc;
+  --gray-100: #edf2f7;
+  --gray-200: #e2e8f0;
+  --gray-400: #a0aec0;
+  --gray-600: #718096;
+  --gray-800: #2d3748;
+  --gray-900: #171923;
+
+  --shadow-sm: 0 1px 3px rgba(0,0,0,0.08);
+  --shadow-md: 0 4px 12px rgba(0,0,0,0.10);
+  --radius: 12px;
+}
+
+* { box-sizing: border-box; }
+
+html, body {
+  margin: 0;
+  padding: 0;
+  height: 100%;
+  font-family: 'Inter', 'Segoe UI', Roboto, system-ui, sans-serif;
+  background: var(--gray-50);
+  color: var(--gray-900);
+}
+
+// Utilidades comunes
+.page-container { padding: 24px; max-width: 1200px; margin: 0 auto; }
+
+.page-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin-bottom: 20px;
+}
+.page-header h1 {
+  font-size: 22px;
+  font-weight: 700;
+  margin: 0;
+  color: var(--blue-900);
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+// Puntos de semáforo
+.dot {
+  display: inline-block;
+  width: 12px; height: 12px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+.dot-verde    { background: var(--verde); }
+.dot-amarillo { background: var(--amarillo); }
+.dot-rojo     { background: var(--rojo); }
+
+// Chips de nivel
+.nivel-chip {
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 3px 10px; border-radius: 999px;
+  font-size: 12px; font-weight: 600;
+}
+.nivel-verde    { background: #dcfce7; color: #166534; }
+.nivel-amarillo { background: #fef3c7; color: #92400e; }
+.nivel-rojo     { background: #fee2e2; color: #991b1b; }
+
+// Scrollbar sutil
+::-webkit-scrollbar { width: 10px; height: 10px; }
+::-webkit-scrollbar-thumb { background: var(--gray-200); border-radius: 6px; }
+::-webkit-scrollbar-thumb:hover { background: var(--gray-400); }

@@ -50,6 +50,7 @@ export interface AssignedClient {
   addressLine?: string;             // domicilio en una sola línea, listo para mostrar
   principalAmount: number;
   periodicPayment: number;
+  termWeeks?: number;               // total de cuotas del plazo (para el ticket)
   status: string;            // ACTIVO | ATRASADO | VENCIDO | ...
   estado: 'corriente' | 'atrasado' | 'vencido';   // 3 estados (incluye atrasado)
   saldoPendiente?: number;
@@ -59,6 +60,21 @@ export interface AssignedClient {
 
 export type PaymentType = 'DIA' | 'TOTAL' | 'MORATORIO';
 export type PaymentMethod = 'EFECTIVO' | 'TRANSFERENCIA' | 'DEPOSITO';
+
+export interface TicketSnapshot {
+  // Datos del crédito al momento del pago
+  principalAmount: number;       // Monto del crédito
+  periodicPayment: number;       // Cuota
+  saldoPendiente: number;        // Saldo tras el pago (o el que se tenía)
+  // Progreso
+  totalCuotas: number;           // Total de cuotas del plazo
+  cuotaActual: number;           // Nº de la cuota pagada (para "28/30")
+  cuotasPendientes: number;      // Cuántas quedan
+  // Cuotas cubiertas en esta transacción, con su fecha de vencimiento
+  cuotasPagadas: Array<{ periodo: number; fecha?: string }>;
+  // Mora cobrada en esta transacción (0 si no aplica)
+  mora: number;
+}
 
 // Pago capturado en el móvil (puede estar pendiente de sincronizar)
 export interface LocalPayment {
@@ -80,6 +96,7 @@ export interface LocalPayment {
   serverId?: string;         // id del pago en el servidor tras sincronizar
   receiptNumber?: string;
   error?: string;
+  snapshot?: TicketSnapshot;   // ← AGREGAR
 }
 
 export interface PaymentInfo {

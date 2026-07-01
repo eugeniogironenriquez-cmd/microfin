@@ -83,7 +83,7 @@ export class SemaforoService implements OnModuleInit {
 
     const qb = this.loanRepo.createQueryBuilder('l')
       .leftJoinAndSelect('l.customer', 'c')
-      .where('l.status IN (:...st)', { st: [LoanStatus.ACTIVO, LoanStatus.VENCIDO] });
+      .where('l.status IN (:...st)', { st: [LoanStatus.ACTIVO, LoanStatus.VENCIDO, LoanStatus.ATRASADO] });
 
     if (filters.search) {
       qb.andWhere('(c.fullName LIKE :s OR c.phone LIKE :s)', { s: `%${filters.search}%` });

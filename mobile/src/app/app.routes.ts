@@ -53,4 +53,5 @@ export const routes: Routes = [
     loadComponent: () =>
       import("./pages/convenio/convenio.page").then((m) => m.ConvenioPage),
   },
+  { path: "**", redirectTo: "login" },
 ];

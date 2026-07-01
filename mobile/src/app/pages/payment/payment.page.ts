@@ -405,6 +405,7 @@ export class PaymentPage implements OnInit {
       documentTextOutline,
       cloudOfflineOutline,
       checkboxOutline,
+      printOutline,
     });
   }
 
@@ -482,28 +483,108 @@ export class PaymentPage implements OnInit {
       this.notify("Ingresa un monto válido");
       return;
     }
+ 
+    // ── Validación del pago "Día": solo si la próxima cuota vence HOY ──
+    // Replica la regla del backend para avisar en campo, antes de guardar.
+    // Solo se valida si hay info() cargado (hubo conexión al abrir). Sin
+    // info (offline), se permite con la advertencia de siempre.
+    if (this.paymentType === "DIA" && this.info()) {
+      const prox = this.info()!.proximaCuota;
+      if (!prox || !this.venceHoy(prox.vence)) {
+        this.notify(
+          'Este crédito no tiene cuota que venza hoy. Usa "Cuotas" para elegir cuáles pagar, o "Total".',
+          3800,
+        );
+        return;
+      }
+    }
+ 
     this.saving.set(true);
     try {
+      const periodosPagados = isSelectivo
+        ? Array.from(this.seleccionadas()).sort((a, b) => a - b)
+        : undefined;
+ 
+      // ── Snapshot del ticket (para impresión completa, online u offline) ──
+      const snapshot = this.buildSnapshot(periodosPagados);
+ 
       const payment = await this.collection.registerPayment({
         loanId: this.client()!.loanId,
         amountPaid: Number(this.amount),
         paymentType: isSelectivo ? "TOTAL" : (this.paymentType as PaymentType),
-        periodos: isSelectivo
-          ? Array.from(this.seleccionadas()).sort((a, b) => a - b)
-          : undefined,
+        periodos: periodosPagados,
         applyExcedenteToMora: isSelectivo ? this.cobrarMora : undefined,
         method: this.method,
         lat: this.geo()?.lat,
         lng: this.geo()?.lng,
+        snapshot,
       });
       this.saved.set(payment);
-      this.ticketText.set(this.ticketSvc.build(payment, this.client()));
+      // Empresa cacheada para que el preview muestre nombre y pie legal reales.
+      const empresa = await this.collection.getEmpresa();
+      this.ticketText.set(this.ticketSvc.build(payment, this.client(), empresa));
       this.done.set(true);
     } catch (e: any) {
       this.notify(e?.error?.message || "Error al registrar el pago");
     } finally {
       this.saving.set(false);
     }
+  }
+
+    private venceHoy(vence: string): boolean {
+    if (!vence) return false;
+    try {
+      // Día de vencimiento: los primeros 10 chars "YYYY-MM-DD" (evita corrimientos).
+      const venceStr = vence.substring(0, 10);
+      // Hoy en zona de México, en formato YYYY-MM-DD.
+      const hoyStr = new Intl.DateTimeFormat('en-CA', {
+        timeZone: 'America/Mexico_City',
+        year: 'numeric', month: '2-digit', day: '2-digit',
+      }).format(new Date()); // en-CA da "YYYY-MM-DD"
+      return venceStr === hoyStr;
+    } catch {
+      return false;
+    }
+  }
+
+private buildSnapshot(periodosPagados?: number[]): any {
+    const c = this.client();
+    const inf = this.info();
+    const monto = Number(c?.principalAmount || 0);
+    const cuota = Number(c?.periodicPayment || 0);
+    const saldo = Number(inf?.saldoPendiente || 0);
+    const totalCuotas = Number(c?.termWeeks || 0);
+ 
+    // Cuotas pagadas en esta transacción, con su fecha de vencimiento.
+    let cuotasPagadas: Array<{ periodo: number; fecha?: string }> = [];
+    if (periodosPagados && periodosPagados.length > 0) {
+      // Modo selectivo: buscamos la fecha de cada periodo en cuotas().
+      cuotasPagadas = periodosPagados.map((p) => {
+        const cu = this.cuotas().find((x) => x.periodo === p);
+        return { periodo: p, fecha: cu?.vence };
+      });
+    } else if (inf?.proximaCuota) {
+      // Modo Día/Total/Mora: usamos la próxima cuota como la cubierta.
+      cuotasPagadas = [{
+        periodo: inf.proximaCuota.periodo,
+        fecha: inf.proximaCuota.vence,
+      }];
+    }
+ 
+    const cuotaActual = cuotasPagadas.length > 0
+      ? Math.max(...cuotasPagadas.map((x) => x.periodo))
+      : 0;
+ 
+    return {
+      principalAmount: monto,
+      periodicPayment: cuota,
+      saldoPendiente: saldo,
+      totalCuotas,
+      cuotaActual,
+      cuotasPendientes: totalCuotas > 0 ? Math.max(0, totalCuotas - cuotaActual) : 0,
+      cuotasPagadas,
+      mora: this.cobrarMora ? this.moraPendiente() : 0,
+    };
   }
 
   async share() {
@@ -545,10 +626,10 @@ export class PaymentPage implements OnInit {
     this.router.navigate(["/clients"], { replaceUrl: true });
   }
 
-  private async notify(message: string) {
+  private async notify(message: string, duration = 2200) {
     const t = await this.toast.create({
       message,
-      duration: 2200,
+      duration,
       position: "bottom",
     });
     await t.present();
