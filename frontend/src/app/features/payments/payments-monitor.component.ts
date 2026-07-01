@@ -1,34 +1,49 @@
-import { Component, OnInit, OnDestroy, inject, signal } from '@angular/core';
-import { CommonModule, CurrencyPipe, DatePipe } from '@angular/common';
-import { MatCardModule } from '@angular/material/card';
-import { MatButtonModule } from '@angular/material/button';
-import { MatIconModule } from '@angular/material/icon';
-import { MatProgressSpinnerModule } from '@angular/material/progress-spinner';
-import { MatTableModule } from '@angular/material/table';
-import { MatTooltipModule } from '@angular/material/tooltip';
-import { MatSnackBar, MatSnackBarModule } from '@angular/material/snack-bar';
-import { interval, Subscription } from 'rxjs';
-import { ApiService } from '../../core/index';
-import { PdfDownloadService } from '../../core/pdf-download.service';
-import * as XLSX from 'xlsx';
+import { Component, OnInit, OnDestroy, inject, signal } from "@angular/core";
+import { CommonModule, CurrencyPipe, DatePipe } from "@angular/common";
+import { MatCardModule } from "@angular/material/card";
+import { MatButtonModule } from "@angular/material/button";
+import { MatIconModule } from "@angular/material/icon";
+import { MatProgressSpinnerModule } from "@angular/material/progress-spinner";
+import { MatTableModule } from "@angular/material/table";
+import { MatTooltipModule } from "@angular/material/tooltip";
+import { MatSnackBar, MatSnackBarModule } from "@angular/material/snack-bar";
+import { interval, Subscription } from "rxjs";
+import { ApiService } from "../../core/index";
+import { PdfDownloadService } from "../../core/pdf-download.service";
+import * as XLSX from "xlsx";
 
 @Component({
-  selector: 'app-payments-monitor',
+  selector: "app-payments-monitor",
   standalone: true,
   imports: [
-    CommonModule, CurrencyPipe, DatePipe,
-    MatCardModule, MatButtonModule, MatIconModule,
-    MatProgressSpinnerModule, MatTableModule, MatTooltipModule, MatSnackBarModule,
+    CommonModule,
+    CurrencyPipe,
+    DatePipe,
+    MatCardModule,
+    MatButtonModule,
+    MatIconModule,
+    MatProgressSpinnerModule,
+    MatTableModule,
+    MatTooltipModule,
+    MatSnackBarModule,
   ],
   template: `
     <div class="page-header">
       <h1><mat-icon>monitor</mat-icon> Monitor de pagos del día</h1>
       <div class="header-actions">
-        <button mat-stroked-button (click)="loadPayments()" [disabled]="loading()">
+        <button
+          mat-stroked-button
+          (click)="loadPayments()"
+          [disabled]="loading()"
+        >
           <mat-icon>refresh</mat-icon> Actualizar
         </button>
-        <button mat-raised-button color="primary" (click)="exportExcel()"
-                [disabled]="payments().length === 0">
+        <button
+          mat-raised-button
+          color="primary"
+          (click)="exportExcel()"
+          [disabled]="payments().length === 0"
+        >
           <mat-icon>table_chart</mat-icon> Exportar Excel
         </button>
       </div>
@@ -47,7 +62,9 @@ import * as XLSX from 'xlsx';
       <div class="kpi kpi-blue">
         <div class="kpi-left">
           <div class="kpi-label">Total cobrado</div>
-          <div class="kpi-value">{{ totalCollected() | currency:'MXN':'symbol':'1.0-0' }}</div>
+          <div class="kpi-value">
+            {{ totalCollected() | currency: "MXN" : "symbol" : "1.0-0" }}
+          </div>
           <div class="kpi-sub">Capital + interés</div>
         </div>
         <div class="kpi-icon"><mat-icon>account_balance_wallet</mat-icon></div>
@@ -55,7 +72,9 @@ import * as XLSX from 'xlsx';
       <div class="kpi kpi-amber">
         <div class="kpi-left">
           <div class="kpi-label">Moratorios</div>
-          <div class="kpi-value">{{ totalLate() | currency:'MXN':'symbol':'1.0-0' }}</div>
+          <div class="kpi-value">
+            {{ totalLate() | currency: "MXN" : "symbol" : "1.0-0" }}
+          </div>
           <div class="kpi-sub">Por atraso</div>
         </div>
         <div class="kpi-icon"><mat-icon>warning</mat-icon></div>
@@ -73,12 +92,17 @@ import * as XLSX from 'xlsx';
     <!-- Refresh info -->
     <div class="refresh-bar">
       <mat-icon>autorenew</mat-icon>
-      <span>Actualiza cada 30 s · Última actualización: {{ lastRefresh() | date:'HH:mm:ss' }}</span>
+      <span
+        >Actualiza cada 30 s · Última actualización:
+        {{ lastRefresh() | date: "HH:mm:ss" }}</span
+      >
     </div>
 
     <!-- Tabla -->
     @if (loading()) {
-      <div class="loading-overlay"><mat-spinner diameter="48"></mat-spinner></div>
+      <div class="loading-overlay">
+        <mat-spinner diameter="48"></mat-spinner>
+      </div>
     } @else if (payments().length === 0) {
       <div class="empty-state">
         <mat-icon>payments</mat-icon>
@@ -88,18 +112,21 @@ import * as XLSX from 'xlsx';
       <mat-card>
         <mat-card-content>
           <table mat-table [dataSource]="payments()">
-
             <ng-container matColumnDef="hora">
               <th mat-header-cell *matHeaderCellDef>Hora</th>
               <td mat-cell *matCellDef="let r">
-                <strong>{{ r.createdAt | date:'HH:mm':'America/Mexico_City' }}</strong>
+                <strong>{{
+                  r.createdAt | date: "HH:mm" : "America/Mexico_City"
+                }}</strong>
               </td>
             </ng-container>
 
             <ng-container matColumnDef="cliente">
               <th mat-header-cell *matHeaderCellDef>Cliente</th>
               <td mat-cell *matCellDef="let r">
-                <div class="client-name">{{ r.loan?.customer?.fullName || '—' }}</div>
+                <div class="client-name">
+                  {{ r.loan?.customer?.fullName || "—" }}
+                </div>
                 <div class="client-sub">{{ r.loan?.customer?.phone }}</div>
               </td>
             </ng-container>
@@ -107,18 +134,24 @@ import * as XLSX from 'xlsx';
             <ng-container matColumnDef="monto">
               <th mat-header-cell *matHeaderCellDef>Monto</th>
               <td mat-cell *matCellDef="let r">
-                <strong style="color:#1C4532">{{ r.amountPaid | currency:'MXN' }}</strong>
+                <strong style="color:#1C4532">{{
+                  r.amountPaid | currency: "MXN"
+                }}</strong>
               </td>
             </ng-container>
 
             <ng-container matColumnDef="capital">
               <th mat-header-cell *matHeaderCellDef>Capital</th>
-              <td mat-cell *matCellDef="let r">{{ r.capitalApplied | currency:'MXN' }}</td>
+              <td mat-cell *matCellDef="let r">
+                {{ r.capitalApplied | currency: "MXN" }}
+              </td>
             </ng-container>
 
             <ng-container matColumnDef="interes">
               <th mat-header-cell *matHeaderCellDef>Interés</th>
-              <td mat-cell *matCellDef="let r">{{ r.interestApplied | currency:'MXN' }}</td>
+              <td mat-cell *matCellDef="let r">
+                {{ r.interestApplied | currency: "MXN" }}
+              </td>
             </ng-container>
 
             <ng-container matColumnDef="moratorio">
@@ -126,9 +159,11 @@ import * as XLSX from 'xlsx';
               <td mat-cell *matCellDef="let r">
                 @if (r.lateInterestApplied > 0) {
                   <span style="color:#DC2626;font-weight:600">
-                    {{ r.lateInterestApplied | currency:'MXN' }}
+                    {{ r.lateInterestApplied | currency: "MXN" }}
                   </span>
-                } @else { — }
+                } @else {
+                  —
+                }
               </td>
             </ng-container>
 
@@ -139,33 +174,61 @@ import * as XLSX from 'xlsx';
 
             <ng-container matColumnDef="folio">
               <th mat-header-cell *matHeaderCellDef>Folio</th>
-              <td mat-cell *matCellDef="let r" style="font-size:11px;color:#718096">
-                {{ r.receiptNumber || r.id?.substring(0,8).toUpperCase() }}
+              <td
+                mat-cell
+                *matCellDef="let r"
+                style="font-size:11px;color:#718096"
+              >
+                {{ r.receiptNumber || r.id?.substring(0, 8).toUpperCase() }}
               </td>
             </ng-container>
 
             <ng-container matColumnDef="ticket">
               <th mat-header-cell *matHeaderCellDef></th>
               <td mat-cell *matCellDef="let r">
-                <button mat-icon-button color="primary" (click)="printTicket(r.id)"
-                        matTooltip="Imprimir ticket (80mm)">
+                <button
+                  mat-icon-button
+                  color="primary"
+                  (click)="printTicket(r.id)"
+                  matTooltip="Imprimir ticket (80mm)"
+                >
                   <mat-icon>receipt_long</mat-icon>
                 </button>
-                <button mat-icon-button (click)="downloadReceipt(r.id)"
-                        matTooltip="Comprobante (carta)">
+                <button
+                  mat-icon-button
+                  (click)="downloadReceipt(r.id)"
+                  matTooltip="Comprobante (carta)"
+                >
                   <mat-icon>description</mat-icon>
+                </button>
+                <button
+                  mat-icon-button
+                  class="wa-icon-btn"
+                  (click)="compartirWhatsApp(r)"
+                  [disabled]="!telefonoDe(r)"
+                  [matTooltip]="
+                    telefonoDe(r)
+                      ? 'Enviar comprobante por WhatsApp'
+                      : 'Sin teléfono registrado'
+                  "
+                >
+                  <mat-icon>share</mat-icon>
                 </button>
               </td>
             </ng-container>
 
             <tr mat-header-row *matHeaderRowDef="cols; sticky: true"></tr>
-            <tr mat-row *matRowDef="let row; columns: cols;"></tr>
+            <tr mat-row *matRowDef="let row; columns: cols"></tr>
 
             <!-- Fila de totales (7 columnas: hora,cliente,monto,moratorio,forma,folio,ticket) -->
             <tr class="totals-row">
               <td colspan="2"><strong>TOTALES</strong></td>
-              <td><strong>{{ totalCollected() | currency:'MXN' }}</strong></td>
-              <td style="color:#DC2626;font-weight:600">{{ totalLate() | currency:'MXN' }}</td>
+              <td>
+                <strong>{{ totalCollected() | currency: "MXN" }}</strong>
+              </td>
+              <td style="color:#DC2626;font-weight:600">
+                {{ totalLate() | currency: "MXN" }}
+              </td>
               <td colspan="3"></td>
             </tr>
           </table>
@@ -173,81 +236,151 @@ import * as XLSX from 'xlsx';
       </mat-card>
     }
   `,
-  styles: [`
-    .header-actions { display:flex; gap:10px; }
+  styles: [
+    `
+      .header-actions {
+        display: flex;
+        gap: 10px;
+      }
 
-    .kpi-row {
-      display:grid; grid-template-columns:repeat(4,1fr); gap:16px; margin-bottom:16px;
-    }
-    @media(max-width:900px){ .kpi-row { grid-template-columns:1fr 1fr; } }
-    .kpi {
-      border-radius:16px; padding:20px; display:flex;
-      align-items:center; justify-content:space-between;
-      box-shadow:0 6px 20px rgba(0,0,0,.12);
-    }
-    .kpi-green  { background:linear-gradient(135deg,#1C4532,#276749); }
-    .kpi-blue   { background:linear-gradient(135deg,#4F7AF8,#6B5CE7); }
-    .kpi-amber  { background:linear-gradient(135deg,#F59E0B,#D97706); }
-    .kpi-purple { background:linear-gradient(135deg,#9B59B6,#6B5CE7); }
-    .kpi-left { flex:1; }
-    .kpi-label { font-size:12px; color:rgba(255,255,255,.75); margin-bottom:4px; }
-    .kpi-value { font-size:28px; font-weight:700; color:#fff; line-height:1; margin-bottom:6px; }
-    .kpi-sub   { font-size:11px; color:rgba(255,255,255,.6); }
-    .kpi-icon  {
-      width:44px; height:44px; border-radius:12px;
-      background:rgba(255,255,255,.15); display:flex;
-      align-items:center; justify-content:center;
-    }
-    .kpi-icon mat-icon { color:#fff !important; font-size:22px; width:22px; height:22px; }
+      .kpi-row {
+        display: grid;
+        grid-template-columns: repeat(4, 1fr);
+        gap: 16px;
+        margin-bottom: 16px;
+      }
+      @media (max-width: 900px) {
+        .kpi-row {
+          grid-template-columns: 1fr 1fr;
+        }
+      }
+      .kpi {
+        border-radius: 16px;
+        padding: 20px;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        box-shadow: 0 6px 20px rgba(0, 0, 0, 0.12);
+      }
+      .kpi-green {
+        background: linear-gradient(135deg, #1c4532, #276749);
+      }
+      .kpi-blue {
+        background: linear-gradient(135deg, #4f7af8, #6b5ce7);
+      }
+      .kpi-amber {
+        background: linear-gradient(135deg, #f59e0b, #d97706);
+      }
+      .kpi-purple {
+        background: linear-gradient(135deg, #9b59b6, #6b5ce7);
+      }
+      .kpi-left {
+        flex: 1;
+      }
+      .kpi-label {
+        font-size: 12px;
+        color: rgba(255, 255, 255, 0.75);
+        margin-bottom: 4px;
+      }
+      .kpi-value {
+        font-size: 28px;
+        font-weight: 700;
+        color: #fff;
+        line-height: 1;
+        margin-bottom: 6px;
+      }
+      .kpi-sub {
+        font-size: 11px;
+        color: rgba(255, 255, 255, 0.6);
+      }
+      .kpi-icon {
+        width: 44px;
+        height: 44px;
+        border-radius: 12px;
+        background: rgba(255, 255, 255, 0.15);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+      }
+      .kpi-icon mat-icon {
+        color: #fff !important;
+        font-size: 22px;
+        width: 22px;
+        height: 22px;
+      }
 
-    .refresh-bar {
-      display:flex; align-items:center; gap:6px; font-size:12px;
-      color:#718096; margin-bottom:12px;
-    }
-    .refresh-bar mat-icon { font-size:16px; width:16px; height:16px; }
+      .refresh-bar {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        font-size: 12px;
+        color: #718096;
+        margin-bottom: 12px;
+      }
+      .refresh-bar mat-icon {
+        font-size: 16px;
+        width: 16px;
+        height: 16px;
+      }
 
-    .client-name { font-weight:600; font-size:13px; }
-    .client-sub  { font-size:11px; color:#718096; }
+      .client-name {
+        font-weight: 600;
+        font-size: 13px;
+      }
+      .client-sub {
+        font-size: 11px;
+        color: #718096;
+      }
 
-    .totals-row td {
-      padding: 10px 16px; font-size:13px;
-      border-top: 2px solid #1C4532;
-      background: #F0FFF4;
-    }
-  `],
+      .totals-row td {
+        padding: 10px 16px;
+        font-size: 13px;
+        border-top: 2px solid #1c4532;
+        background: #f0fff4;
+      }
+    `,
+  ],
 })
 export class PaymentsMonitorComponent implements OnInit, OnDestroy {
-  private api     = inject(ApiService);
-  private pdfSvc  = inject(PdfDownloadService);
+  private api = inject(ApiService);
+  private pdfSvc = inject(PdfDownloadService);
   private snackbar = inject(MatSnackBar);
 
-  payments    = signal<any[]>([]);
-  loading     = signal(true);
+  payments = signal<any[]>([]);
+  loading = signal(true);
   lastRefresh = signal<Date>(new Date());
 
-  cols = ['hora','cliente','monto','moratorio','forma','folio','ticket'];
+  cols = ["hora", "cliente", "monto", "moratorio", "forma", "folio", "ticket"];
 
   private sub?: Subscription;
 
-  today = () => new Date().toLocaleDateString('es-MX', { day:'2-digit', month:'long' });
-  totalCollected  = () => this.payments().reduce((s,p) => s + Number(p.amountPaid), 0);
-  totalCapital    = () => this.payments().reduce((s,p) => s + Number(p.capitalApplied || 0), 0);
-  totalInterest   = () => this.payments().reduce((s,p) => s + Number(p.interestApplied || 0), 0);
-  totalLate       = () => this.payments().reduce((s,p) => s + Number(p.lateInterestApplied || 0), 0);
-  uniqueCustomers = () => new Set(this.payments().map(p => p.loan?.customerId)).size;
+  today = () =>
+    new Date().toLocaleDateString("es-MX", { day: "2-digit", month: "long" });
+  totalCollected = () =>
+    this.payments().reduce((s, p) => s + Number(p.amountPaid), 0);
+  totalCapital = () =>
+    this.payments().reduce((s, p) => s + Number(p.capitalApplied || 0), 0);
+  totalInterest = () =>
+    this.payments().reduce((s, p) => s + Number(p.interestApplied || 0), 0);
+  totalLate = () =>
+    this.payments().reduce((s, p) => s + Number(p.lateInterestApplied || 0), 0);
+  uniqueCustomers = () =>
+    new Set(this.payments().map((p) => p.loan?.customerId)).size;
 
   ngOnInit() {
     this.loadPayments();
     this.sub = interval(30000).subscribe(() => this.loadPayments());
   }
 
-  ngOnDestroy() { this.sub?.unsubscribe(); }
+  ngOnDestroy() {
+    this.sub?.unsubscribe();
+  }
 
   loadPayments() {
     this.loading.set(true);
-    this.api.get<any>('/payments/today').subscribe({
+    this.api.get<any>("/payments/today").subscribe({
       next: (r) => {
-        this.payments.set(Array.isArray(r) ? r : r?.data ?? []);
+        this.payments.set(Array.isArray(r) ? r : (r?.data ?? []));
         this.lastRefresh.set(new Date());
         this.loading.set(false);
       },
@@ -262,13 +395,101 @@ export class PaymentsMonitorComponent implements OnInit, OnDestroy {
 
   // Descargar comprobante carta
   downloadReceipt(id: string) {
-    this.pdfSvc.download(`/payments/${id}/receipt`, `comprobante-${id.substring(0,8)}.pdf`);
+    this.pdfSvc.download(
+      `/payments/${id}/receipt`,
+      `comprobante-${id.substring(0, 8)}.pdf`,
+    );
+  }
+
+   telefonoDe(p: any): string | null {
+    const raw = p?.loan?.customer?.phone;
+    if (!raw) return null;
+    const soloDigitos = String(raw).replace(/\D/g, '');
+    return soloDigitos.length >= 10 ? soloDigitos : null;
+  }
+ 
+  /** Número en formato wa.me (México = 52). */
+  private waNumero(p: any): string | null {
+    const tel = this.telefonoDe(p);
+    if (!tel) return null;
+    if (tel.length === 12 && tel.startsWith('52')) return tel;
+    if (tel.length === 10) return '52' + tel;
+    return tel;
+  }
+ 
+  /** Arma el texto del comprobante para un pago del monitor. */
+  private construirTextoTicket(p: any): string {
+    const money = (v: any) =>
+      '$' + (Number(v) || 0).toLocaleString('es-MX', {
+        minimumFractionDigits: 2, maximumFractionDigits: 2,
+      });
+ 
+    const empresa = 'MICROCAPITAL - IXTEPEC';
+    const cliente = p?.loan?.customer?.fullName || 'Cliente';
+    const folio = p?.receiptNumber || (p?.id ? p.id.substring(0, 8).toUpperCase() : '—');
+ 
+    // Fecha y hora del pago (createdAt), en zona de México.
+    const fechaBase = p?.createdAt || p?.paymentDate || new Date().toISOString();
+    const fechaHora = new Intl.DateTimeFormat('es-MX', {
+      timeZone: 'America/Mexico_City',
+      day: '2-digit', month: '2-digit', year: 'numeric',
+      hour: '2-digit', minute: '2-digit', hour12: false,
+    }).format(new Date(fechaBase)).replace(',', '');
+ 
+    const L: string[] = [];
+    L.push(`*${empresa}*`);
+    L.push('COMPROBANTE DE PAGO');
+    L.push('--------------------------------');
+    L.push(`Folio: ${folio}`);
+    L.push(`Cliente: ${cliente}`);
+    if (p?.loan) {
+      if (p.loan.principalAmount != null) L.push(`Monto del crédito: ${money(p.loan.principalAmount)}`);
+      if (p.loan.periodicPayment != null) L.push(`Cuota: ${money(p.loan.periodicPayment)}`);
+    }
+    L.push('--------------------------------');
+    // Detalle aplicado (en el monitor viene directo en el pago)
+    if (p?.capitalApplied != null)  L.push(`Capital: ${money(p.capitalApplied)}`);
+    if (p?.interestApplied != null) L.push(`Interés: ${money(p.interestApplied)}`);
+    if (Number(p?.lateInterestApplied || 0) > 0) {
+      L.push(`Moratorio: ${money(p.lateInterestApplied)}`);
+    }
+    L.push('--------------------------------');
+    L.push(`*TOTAL RECIBIDO: ${money(p?.amountPaid)}*`);
+    if (p?.method) L.push(`Forma de pago: ${p.method}`);
+    L.push(`Fecha y hora: ${fechaHora}`);
+    L.push('--------------------------------');
+    L.push('Gracias por su pago.');
+    L.push('Conserve este comprobante.');
+ 
+    return L.join('\n');
+  }
+ 
+  /** Abre WhatsApp con el comprobante prellenado al número del cliente. */
+  compartirWhatsApp(p: any) {
+    const numero = this.waNumero(p);
+    if (!numero) {
+      this.snackbar.open('El cliente no tiene un teléfono válido registrado', 'Cerrar', { duration: 4000 });
+      return;
+    }
+    const texto = this.construirTextoTicket(p);
+    const url = `https://wa.me/${numero}?text=${encodeURIComponent(texto)}`;
+    window.open(url, '_blank');
   }
 
   exportExcel() {
-    const fecha    = new Date().toISOString().split('T')[0];
-    const fechaLeg = new Date().toLocaleDateString('es-MX', { weekday:'long', year:'numeric', month:'long', day:'numeric' });
-    const cur      = (v: number) => '$' + v.toLocaleString('es-MX', { minimumFractionDigits:2, maximumFractionDigits:2 });
+    const fecha = new Date().toISOString().split("T")[0];
+    const fechaLeg = new Date().toLocaleDateString("es-MX", {
+      weekday: "long",
+      year: "numeric",
+      month: "long",
+      day: "numeric",
+    });
+    const cur = (v: number) =>
+      "$" +
+      v.toLocaleString("es-MX", {
+        minimumFractionDigits: 2,
+        maximumFractionDigits: 2,
+      });
 
     const html = `
       <html xmlns:o="urn:schemas-microsoft-com:office:office"
@@ -339,20 +560,24 @@ export class PaymentsMonitorComponent implements OnInit, OnDestroy {
           <th>Monto recibido</th><th>Capital</th><th>Interés</th>
           <th>Moratorio</th><th>Forma de pago</th><th>Folio</th>
         </tr>
-        ${this.payments().map((p, i) => `
-        <tr class="${i % 2 === 0 ? 'row-even' : 'row-odd'}">
-          <td class="col-hora">${new Date(p.paymentDate).toLocaleTimeString('es-MX',{hour:'2-digit',minute:'2-digit'})}</td>
-          <td><b>${p.loan?.customer?.fullName || '—'}</b></td>
-          <td>${p.loan?.customer?.phone || '—'}</td>
+        ${this.payments()
+          .map(
+            (p, i) => `
+        <tr class="${i % 2 === 0 ? "row-even" : "row-odd"}">
+          <td class="col-hora">${new Date(p.paymentDate).toLocaleTimeString("es-MX", { hour: "2-digit", minute: "2-digit" })}</td>
+          <td><b>${p.loan?.customer?.fullName || "—"}</b></td>
+          <td>${p.loan?.customer?.phone || "—"}</td>
           <td class="col-num">${cur(Number(p.amountPaid))}</td>
-          <td class="col-num">${cur(Number(p.capitalApplied||0))}</td>
-          <td class="col-num">${cur(Number(p.interestApplied||0))}</td>
-          <td class="${Number(p.lateInterestApplied||0) > 0 ? 'col-mora' : 'col-num'}">
-            ${Number(p.lateInterestApplied||0) > 0 ? cur(Number(p.lateInterestApplied)) : '—'}
+          <td class="col-num">${cur(Number(p.capitalApplied || 0))}</td>
+          <td class="col-num">${cur(Number(p.interestApplied || 0))}</td>
+          <td class="${Number(p.lateInterestApplied || 0) > 0 ? "col-mora" : "col-num"}">
+            ${Number(p.lateInterestApplied || 0) > 0 ? cur(Number(p.lateInterestApplied)) : "—"}
           </td>
-          <td style="text-align:center">${p.method || 'EFECTIVO'}</td>
-          <td class="col-folio">${p.receiptNumber || p.id?.substring(0,8).toUpperCase()}</td>
-        </tr>`).join('')}
+          <td style="text-align:center">${p.method || "EFECTIVO"}</td>
+          <td class="col-folio">${p.receiptNumber || p.id?.substring(0, 8).toUpperCase()}</td>
+        </tr>`,
+          )
+          .join("")}
         <tr class="totals">
           <td class="col-label" colspan="3">TOTALES</td>
           <td class="col-num">${cur(this.totalCollected())}</td>
@@ -364,13 +589,17 @@ export class PaymentsMonitorComponent implements OnInit, OnDestroy {
       </table>
       </body></html>`;
 
-    const blob = new Blob([html], { type: 'application/vnd.ms-excel;charset=utf-8;' });
-    const url  = URL.createObjectURL(blob);
-    const a    = document.createElement('a');
-    a.href     = url;
+    const blob = new Blob([html], {
+      type: "application/vnd.ms-excel;charset=utf-8;",
+    });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
     a.download = `reporte-pagos-${fecha}.xls`;
     a.click();
     URL.revokeObjectURL(url);
-    this.snackbar.open('Reporte exportado correctamente', 'OK', { duration: 2000 });
+    this.snackbar.open("Reporte exportado correctamente", "OK", {
+      duration: 2000,
+    });
   }
 }

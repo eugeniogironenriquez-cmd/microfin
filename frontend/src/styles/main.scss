@@ -564,6 +564,7 @@ mat-toolbar.toolbar * { color: var(--white) !important; }
 
 .wa-btn:not([disabled]) { color:#25D366; border-color:#25D366; }
 .wa-btn:not([disabled]) mat-icon { color:#25D366; }
+.wa-icon-btn:not([disabled]) mat-icon { color:#25D366; }
 
 /* ── Responsive ────────────────────────────────────────────── */
 @media (max-width: 900px) {

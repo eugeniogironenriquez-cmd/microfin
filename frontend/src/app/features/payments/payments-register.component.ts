@@ -968,53 +968,61 @@ export class PaymentsRegisterComponent implements OnInit {
     });
   }
 
-    telefonoCliente(): string | null {
+  telefonoCliente(): string | null {
     const raw = this.selectedLoan()?.customer?.phone;
     if (!raw) return null;
     // Limpiar: solo dígitos. Si queda vacío o claramente inválido, null.
-    const soloDigitos = String(raw).replace(/\D/g, '');
+    const soloDigitos = String(raw).replace(/\D/g, "");
     return soloDigitos.length >= 10 ? soloDigitos : null;
   }
 
-    private waNumero(): string | null {
+  private waNumero(): string | null {
     const tel = this.telefonoCliente();
     if (!tel) return null;
-    if (tel.length === 12 && tel.startsWith('52')) return tel;
-    if (tel.length === 10) return '52' + tel;
+    if (tel.length === 12 && tel.startsWith("52")) return tel;
+    if (tel.length === 10) return "52" + tel;
     // Otros largos: devolver tal cual (por si ya viene con lada internacional)
     return tel;
   }
 
-   /** Arma el texto del comprobante (mismo contenido que el ticket). */
+  /** Arma el texto del comprobante (mismo contenido que el ticket). */
   private construirTextoTicket(): string {
     const loan = this.selectedLoan();
     const res = this.paymentResult();
     const i = this.info();
     const fv = this.paymentForm.value;
- 
+
     const money = (v: any) =>
-      '$' + (Number(v) || 0).toLocaleString('es-MX', {
-        minimumFractionDigits: 2, maximumFractionDigits: 2,
+      "$" +
+      (Number(v) || 0).toLocaleString("es-MX", {
+        minimumFractionDigits: 2,
+        maximumFractionDigits: 2,
       });
- 
-    const empresa = 'MICROCAPITAL - IXTEPEC';
-    const cliente = loan?.customer?.fullName || 'Cliente';
+
+    const empresa = "MICROCAPITAL - IXTEPEC";
+    const cliente = loan?.customer?.fullName || "Cliente";
     const folio = this.lastPaymentId()
       ? this.lastPaymentId()!.substring(0, 8).toUpperCase()
-      : '—';
- 
+      : "—";
+
     // Fecha y hora actual en zona de México
     const ahora = new Date();
-    const fechaHora = new Intl.DateTimeFormat('es-MX', {
-      timeZone: 'America/Mexico_City',
-      day: '2-digit', month: '2-digit', year: 'numeric',
-      hour: '2-digit', minute: '2-digit', hour12: false,
-    }).format(ahora).replace(',', '');
- 
+    const fechaHora = new Intl.DateTimeFormat("es-MX", {
+      timeZone: "America/Mexico_City",
+      day: "2-digit",
+      month: "2-digit",
+      year: "numeric",
+      hour: "2-digit",
+      minute: "2-digit",
+      hour12: false,
+    })
+      .format(ahora)
+      .replace(",", "");
+
     const L: string[] = [];
     L.push(`*${empresa}*`);
-    L.push('COMPROBANTE DE PAGO');
-    L.push('--------------------------------');
+    L.push("COMPROBANTE DE PAGO");
+    L.push("--------------------------------");
     L.push(`Folio: ${folio}`);
     L.push(`Cliente: ${cliente}`);
     if (loan) {
@@ -1024,7 +1032,7 @@ export class PaymentsRegisterComponent implements OnInit {
     if (i) {
       L.push(`Saldo pendiente: ${money(i.saldoPendiente)}`);
     }
-    L.push('--------------------------------');
+    L.push("--------------------------------");
     // Detalle de lo aplicado (si el backend lo devolvió)
     if (res?.applied) {
       L.push(`Capital: ${money(res.applied.capitalApplied)}`);
@@ -1032,32 +1040,36 @@ export class PaymentsRegisterComponent implements OnInit {
       if (Number(res.applied.lateInterestApplied) > 0) {
         L.push(`Moratorio: ${money(res.applied.lateInterestApplied)}`);
       }
-      L.push('--------------------------------');
+      L.push("--------------------------------");
     }
     L.push(`*TOTAL RECIBIDO: ${money(fv.amountPaid)}*`);
     L.push(`Forma de pago: ${fv.method}`);
     L.push(`Fecha y hora: ${fechaHora}`);
     if (res?.liquidado) {
-      L.push('');
-      L.push('*¡CRÉDITO LIQUIDADO POR COMPLETO!*');
+      L.push("");
+      L.push("*¡CRÉDITO LIQUIDADO POR COMPLETO!*");
     }
-    L.push('--------------------------------');
-    L.push('Gracias por su pago.');
-    L.push('Conserve este comprobante.');
- 
-    return L.join('\n');
+    L.push("--------------------------------");
+    L.push("Gracias por su pago.");
+    L.push("Conserve este comprobante.");
+
+    return L.join("\n");
   }
- 
+
   /** Abre WhatsApp con el comprobante prellenado al número del cliente. */
   compartirWhatsApp() {
     const numero = this.waNumero();
     if (!numero) {
-      this.snackbar.open('El cliente no tiene un teléfono válido registrado', 'Cerrar', { duration: 4000 });
+      this.snackbar.open(
+        "El cliente no tiene un teléfono válido registrado",
+        "Cerrar",
+        { duration: 4000 },
+      );
       return;
     }
     const texto = this.construirTextoTicket();
     const url = `https://wa.me/${numero}?text=${encodeURIComponent(texto)}`;
-    window.open(url, '_blank');
+    window.open(url, "_blank");
   }
 
   onTypeChange(type: string) {
