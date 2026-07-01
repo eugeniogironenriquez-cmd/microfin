@@ -63,43 +63,52 @@ export class CollectionService {
     return list;
   }
 
-    private mapClient(l: any): AssignedClient {
-    const status = (l.status || l.estatus || 'ACTIVO').toUpperCase();
+  private mapClient(l: any): AssignedClient {
+    const status = (l.status || l.estatus || "ACTIVO").toUpperCase();
     const addr = l.customer?.address;
- 
+
     // Domicilio en una sola línea: "calle, colonia, municipio".
     // Filtra vacíos para no dejar comas sueltas.
     const addressLine = addr
-      ? [addr.street, addr.colonia, addr.municipality].filter(Boolean).join(', ')
-      : (typeof l.address === 'string' ? l.address : undefined);
- 
+      ? [addr.street, addr.colonia, addr.municipality]
+          .filter(Boolean)
+          .join(", ")
+      : typeof l.address === "string"
+        ? l.address
+        : undefined;
+
     // Tres estados visuales (igual que el web): VENCIDO (rojo),
     // ATRASADO (ámbar: debe cuotas pero el plazo sigue vigente),
     // corriente (verde, ACTIVO/LIQUIDADO/etc.).
-    const estado: 'corriente' | 'atrasado' | 'vencido' =
-      status === 'VENCIDO' ? 'vencido'
-      : status === 'ATRASADO' ? 'atrasado'
-      : 'corriente';
- 
+    const estado: "corriente" | "atrasado" | "vencido" =
+      status === "VENCIDO"
+        ? "vencido"
+        : status === "ATRASADO"
+          ? "atrasado"
+          : "corriente";
+
     return {
-      loanId:          l.id || l.loanId,
-      customerId:      l.customerId || l.customer?.id,
-      customerName:    l.customer?.fullName || l.customerName || 'Cliente',
-      phone:           l.customer?.phone || l.phone,
-      curp:            l.customer?.curp,
-      address:         addr?.street || (typeof l.address === 'string' ? l.address : undefined),
-      addressFull:     addr ? {
-                         street:       addr.street,
-                         colonia:      addr.colonia,
-                         municipality: addr.municipality,
-                         state:        addr.state,
-                         zip:          addr.zip,
-                         references:   addr.references,
-                       } : undefined,
+      loanId: l.id || l.loanId,
+      customerId: l.customerId || l.customer?.id,
+      customerName: l.customer?.fullName || l.customerName || "Cliente",
+      phone: l.customer?.phone || l.phone,
+      curp: l.customer?.curp,
+      address:
+        addr?.street || (typeof l.address === "string" ? l.address : undefined),
+      addressFull: addr
+        ? {
+            street: addr.street,
+            colonia: addr.colonia,
+            municipality: addr.municipality,
+            state: addr.state,
+            zip: addr.zip,
+            references: addr.references,
+          }
+        : undefined,
       addressLine,
       principalAmount: Number(l.principalAmount || 0),
       periodicPayment: Number(l.periodicPayment || 0),
-      termWeeks:       Number(l.termWeeks || 0) || undefined,
+      termWeeks: Number(l.termWeeks || 0) || undefined,
       status,
       estado,
     };
@@ -160,7 +169,9 @@ export class CollectionService {
    * Guarda el pago en la cola local y trata de sincronizarlo.
    * Si no hay red, queda pendiente y se sincroniza después.
    */
- async registerPayment(p: Omit<LocalPayment, 'localId' | 'capturedAt' | 'synced'>): Promise<LocalPayment> {
+  async registerPayment(
+    p: Omit<LocalPayment, "localId" | "capturedAt" | "synced">,
+  ): Promise<LocalPayment> {
     const payment: LocalPayment = {
       ...p,
       localId: this.uuid(),
@@ -169,7 +180,7 @@ export class CollectionService {
     };
     await this.storage.addPayment(payment);
     await this.refreshPendingCount();
- 
+
     // Intentar sincronizar de inmediato si hay red
     if (await this.network.isOnline()) {
       const ok = await this.syncOne(payment);
@@ -187,32 +198,63 @@ export class CollectionService {
   }
 
   // ── Sincronización ─────────────────────────────────────────
-  /** Sincroniza todos los pagos pendientes. */
+/** Sincroniza todos los pendientes (pagos, visitas, acciones de gestor). */
   async syncPending(): Promise<{ ok: number; fail: number }> {
+    // Evitar reentradas: si ya se está sincronizando, no arrancar otra.
+    if (this.syncing()) return { ok: 0, fail: 0 };
     if (!(await this.network.isOnline())) return { ok: 0, fail: 0 };
+ 
     this.syncing.set(true);
-    let ok = 0,
-      fail = 0;
-    const pending = await this.storage.getPendingPayments();
-    for (const p of pending) {
-      const success = await this.syncOne(p);
-      success ? ok++ : fail++;
+    let ok = 0, fail = 0;
+    try {
+      const pending = await this.storage.getPendingPayments();
+      for (const p of pending) {
+        (await this.syncOne(p)) ? ok++ : fail++;
+      }
+      const pendingVisits = await this.storage.getPendingVisits();
+      for (const v of pendingVisits) {
+        (await this.syncOneVisit(v)) ? ok++ : fail++;
+      }
+      const pendingGestor = await this.storage.getPendingGestorAcciones();
+      for (const g of pendingGestor) {
+        (await this.syncOneGestor(g)) ? ok++ : fail++;
+      }
+    } finally {
+      this.syncing.set(false);
+      await this.refreshPendingCount();
     }
-    // Sincronizar también visitas pendientes
-    const pendingVisits = await this.storage.getPendingVisits();
-    for (const v of pendingVisits) {
-      const success = await this.syncOneVisit(v);
-      success ? ok++ : fail++;
-    }
-    // Sincronizar acciones de gestor pendientes (reestructura/convenio)
-    const pendingGestor = await this.storage.getPendingGestorAcciones();
-    for (const g of pendingGestor) {
-      const success = await this.syncOneGestor(g);
-      success ? ok++ : fail++;
-    }
-    this.syncing.set(false);
-    await this.refreshPendingCount();
     return { ok, fail };
+  }
+
+    /** Aval del crédito (solo lectura, requiere conexión). */
+  async getAval(loanId: string): Promise<any | null> {
+    try {
+      const res = await firstValueFrom(
+        this.http.get<ApiEnvelope<any> | any>(`${this.base}/loans/${loanId}/guarantor`),
+      );
+      return this.unwrap(res) || null;
+    } catch {
+      return null;
+    }
+  }
+
+    /** Historial de seguimientos/visitas del servidor (requiere conexión). */
+  async getSeguimientosServidor(loanId: string): Promise<any[]> {
+    try {
+      const res = await firstValueFrom(
+        this.http.get<ApiEnvelope<any> | any>(`${this.base}/visitas/prestamo/${loanId}`),
+      );
+      const data = this.unwrap(res);
+      return Array.isArray(data) ? data : [];
+    } catch {
+      return [];
+    }
+  }
+
+    /** Seguimientos locales pendientes (aún no sincronizados) de un crédito. */
+  async getSeguimientosLocales(loanId: string): Promise<LocalVisit[]> {
+    const visits = await this.storage.getVisits();
+    return visits.filter((v) => v.loanId === loanId && !v.synced);
   }
 
   /** Envía un pago al backend. Marca synced=true si tiene éxito. */
@@ -348,7 +390,7 @@ export class CollectionService {
     await this.refreshPendingCount();
 
     await this.refreshPendingCount();
- 
+
     // Intentar sincronizar de inmediato si hay red
     if (await this.network.isOnline()) {
       const ok = await this.syncOneVisit(visit);
@@ -409,6 +451,18 @@ export class CollectionService {
       const r = (Math.random() * 16) | 0;
       const v = c === "x" ? r : (r & 0x3) | 0x8;
       return v.toString(16);
+    });
+  }
+
+  constructor() {
+    // Al recuperar conexión, sincronizar automáticamente los pendientes.
+    this.network.registerReconnectHandler(() => {
+      this.syncPending().then((r) => {
+        // Si algo se sincronizó, refrescar la lista de clientes.
+        if (r.ok > 0) {
+          this.downloadClients().catch(() => {});
+        }
+      });
     });
   }
 }
