@@ -111,7 +111,7 @@ export class PdfGeneratorService {
     doc.end();
   }
 
- // ── COMPROBANTE (hoja CARTA completa, una sola columna a todo el ancho) ──
+  // ── COMPROBANTE (hoja CARTA completa, una sola columna a todo el ancho) ──
   async generatePaymentReceipt(data: any, res: Response): Promise<void> {
     const { payment, loan, company } = data;
 
@@ -231,6 +231,10 @@ export class PdfGeneratorService {
   // ════════════════════════════════════════════════════════════
   // ── TICKET TÉRMICO 80mm ─────────────────────────────────────
   // Ancho 226pt ≈ 80mm. Alto dinámico según contenido.
+  // IMPORTANTE: las impresoras térmicas son MONOCROMÁTICAS. No imprimen
+  // colores ni rellenos sólidos (un bloque verde sale como mancha negra que
+  // puede tapar el texto, o no salir bien). Por eso TODO el ticket se dibuja
+  // en negro sobre blanco, y el TOTAL usa un recuadro de BORDE (sin relleno).
   // Datos esperados en `data`:
   //   payment: { id, receiptNumber?, amountPaid, lateInterestApplied,
   //              method, paymentDate, cuotasPagadas (JSON [{periodo,fecha,mora?}]) }
@@ -310,7 +314,8 @@ export class PdfGeneratorService {
     };
 
     // ── ENCABEZADO: empresa + teléfono ──────────────────────
-    center(cName.toUpperCase(), 11, BB, GREEN2, 1);
+    // Todo en negro (TEXT): la térmica no imprime el verde de pantalla.
+    center(cName.toUpperCase(), 11, BB, TEXT, 1);
     center(`Tel: ${cPhone}`, 8, RB, GRAY, 4);
     sep(false);
     center('COMPROBANTE DE PAGO', 9, BB, TEXT, 4);
@@ -358,7 +363,8 @@ export class PdfGeneratorService {
           .forEach((c) => {
             doc.font(RB).fontSize(7).fillColor(TEXT)
                .text(`  #${c.periodo}  ${fdate(c.fecha)}`, LX, y, { lineBreak: false });
-            doc.font(RB).fontSize(7).fillColor('#DC2626')
+            // Sin rojo: en térmica todo es negro. Negro normal para la mora.
+            doc.font(RB).fontSize(7).fillColor(TEXT)
                .text(cur(c.mora), LX, y, { width: CW, align: 'right', lineBreak: false });
             y += 10;
           });
@@ -367,13 +373,15 @@ export class PdfGeneratorService {
     sep();
 
     // ── TOTAL RECIBIDO ──────────────────────────────────────
-    doc.rect(LX, y, CW, 26).fill(GREEN);
-    doc.font(RB).fontSize(8).fillColor(WHITE).text('TOTAL RECIBIDO', LX + 6, y + 5, { lineBreak: false });
-    doc.font(BB).fontSize(12).fillColor(WHITE)
-       .text(cur(payment.amountPaid), LX, y + 6, { width: CW - 6, align: 'right', lineBreak: false });
-    y += 32;
+    // Sin relleno verde: las impresoras térmicas son monocromáticas y un bloque
+    // sólido sale como mancha negra que puede tapar el texto. Usamos un recuadro
+    // de borde negro con texto negro, legible en cualquier impresora térmica.
+    doc.rect(LX, y, CW, 28).lineWidth(1).stroke(TEXT);
+    doc.font(BB).fontSize(8).fillColor(TEXT).text('TOTAL RECIBIDO', LX + 6, y + 6, { lineBreak: false });
+    doc.font(BB).fontSize(13).fillColor(TEXT)
+       .text(cur(payment.amountPaid), LX - 6, y + 5, { width: CW, align: 'right', lineBreak: false });
+    y += 34;
 
-    // ── FECHAS (hora de México) ─────────────────────────────
     // ── FECHAS ──────────────────────────────────────────────
     // "Fecha y hora": hora REAL del pago. Se toma de createdAt (creado_en),
     //   que es un timestamp UTC completo; Intl lo convierte a hora de México.
@@ -383,7 +391,8 @@ export class PdfGeneratorService {
     row('Fecha de aplicación:', fdateOnly(payment.paymentDate || payment.createdAt || new Date()), 7.5);
 
     sep(false);
-    center('¡Gracias por su pago!', 8, BB, GREEN2, 2);
+    // Negro en lugar del verde de pantalla.
+    center('¡Gracias por su pago!', 8, BB, TEXT, 2);
     center('Conserve este comprobante', 6.5, RB, GRAY, 2);
 
     doc.end();

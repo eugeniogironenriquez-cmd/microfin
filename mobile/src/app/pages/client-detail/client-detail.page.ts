@@ -7,11 +7,16 @@ import {
   IonSpinner, IonItem, IonLabel, IonBadge,
 } from '@ionic/angular/standalone';
 import { addIcons } from 'ionicons';
-import { cashOutline, walletOutline, alertCircleOutline, callOutline, walkOutline, refreshOutline, documentTextOutline } from 'ionicons/icons';
+import {
+  cashOutline, walletOutline, alertCircleOutline, callOutline, walkOutline,
+  refreshOutline, documentTextOutline, calendarNumberOutline, locationOutline,
+  navigateOutline, idCardOutline,
+} from 'ionicons/icons';
 
 import { CollectionService } from '../../core/collection.service';
 import { NetworkService } from '../../core/network.service';
 import { AuthService } from '../../core/auth.service';
+import { MobilePermissionsService } from '../../services/mobile-permissions.service';
 import { AssignedClient, PaymentInfo } from '../../core/models';
 
 @Component({
@@ -41,10 +46,33 @@ import { AssignedClient, PaymentInfo } from '../../core/models';
             <ion-item lines="none">
               <ion-icon name="call-outline" slot="start" color="medium"></ion-icon>
               <ion-label>{{ client()!.phone || 'Sin teléfono' }}</ion-label>
-              <ion-badge slot="end" [class]="client()!.estado === 'vencido' ? 'estado-vencido' : 'estado-corriente'">
-                {{ client()!.estado === 'vencido' ? 'Vencido' : 'Al corriente' }}
+              <ion-badge slot="end" [class]="estadoBadge(client()!.estado)">
+                {{ estadoLabel(client()!.estado) }}
               </ion-badge>
             </ion-item>
+
+            @if (client()!.curp) {
+              <ion-item lines="none">
+                <ion-icon name="id-card-outline" slot="start" color="medium"></ion-icon>
+                <ion-label>CURP: {{ client()!.curp }}</ion-label>
+              </ion-item>
+            }
+
+            <!-- Domicilio del cliente -->
+            @if (domicilio()) {
+              <ion-item lines="none" class="domicilio">
+                <ion-icon name="location-outline" slot="start" color="medium"></ion-icon>
+                <ion-label class="ion-text-wrap">
+                  <p class="dom-line">{{ domicilio() }}</p>
+                  @if (client()!.addressFull?.references) {
+                    <p class="dom-ref">Ref: {{ client()!.addressFull!.references }}</p>
+                  }
+                </ion-label>
+                <ion-button slot="end" fill="clear" size="small" (click)="abrirMapa()">
+                  <ion-icon slot="icon-only" name="navigate-outline"></ion-icon>
+                </ion-button>
+              </ion-item>
+            }
           </ion-card-content>
         </ion-card>
 
@@ -84,24 +112,37 @@ import { AssignedClient, PaymentInfo } from '../../core/models';
           <p class="offline-note">Sin conexión: no se pudo cargar el saldo actual. Puedes registrar el pago igual; se sincronizará después.</p>
         }
 
-        <ion-button expand="block" color="primary" (click)="goPay()">
-          <ion-icon slot="start" name="cash-outline"></ion-icon>
-          Registrar pago
-        </ion-button>
-        <ion-button expand="block" fill="outline" color="secondary" (click)="goVisit()">
-          <ion-icon slot="start" name="walk-outline"></ion-icon>
-          Registrar visita
-        </ion-button>
-
-        <!-- Acciones de gestor: solo si tiene el permiso -->
-        @if (auth.can('prestamos.reestructurar')) {
-          <ion-button expand="block" fill="outline" (click)="goRestructure()">
-            <ion-icon slot="start" name="refresh-outline"></ion-icon>
-            Reestructurar
+        <!-- Acciones básicas (cobrador y gestor) -->
+        @if (mp.puedeRegistrarPago()) {
+          <ion-button expand="block" color="primary" (click)="goPay()">
+            <ion-icon slot="start" name="cash-outline"></ion-icon>
+            Registrar pago
           </ion-button>
+        }
+        @if (mp.puedeRegistrarVisita()) {
+          <ion-button expand="block" fill="outline" color="secondary" (click)="goVisit()">
+            <ion-icon slot="start" name="walk-outline"></ion-icon>
+            Registrar visita
+          </ion-button>
+        }
+
+        <!-- Acciones de gestor: cada una con su propio permiso -->
+        @if (mp.puedePromesaPago()) {
+          <ion-button expand="block" fill="outline" (click)="goPromesa()">
+            <ion-icon slot="start" name="calendar-number-outline"></ion-icon>
+            Promesa de pago
+          </ion-button>
+        }
+        @if (mp.puedeConvenio()) {
           <ion-button expand="block" fill="outline" color="warning" (click)="goConvenio()">
             <ion-icon slot="start" name="document-text-outline"></ion-icon>
             Convenio de pago
+          </ion-button>
+        }
+        @if (mp.puedeReestructura()) {
+          <ion-button expand="block" fill="outline" (click)="goRestructure()">
+            <ion-icon slot="start" name="refresh-outline"></ion-icon>
+            Reestructurar
           </ion-button>
         }
       } @else {
@@ -120,12 +161,17 @@ import { AssignedClient, PaymentInfo } from '../../core/models';
       background:#FDE8E8; color:#9B1C1C; padding:10px; border-radius:8px; font-size:14px;
     }
     .offline-note { color:#92400E; font-size:14px; padding:8px; }
+    .domicilio .dom-line { font-size:14px; color:#2D3748; margin:0; }
+    .domicilio .dom-ref { font-size:12px; color:#718096; margin:2px 0 0; }
+    /* Estado ATRASADO: ámbar */
+    .estado-atrasado { --background:#FEF3C7; --color:#92400E; background:#FEF3C7; color:#92400E; }
   `],
 })
 export class ClientDetailPage implements OnInit {
   readonly collection = inject(CollectionService);
   readonly network = inject(NetworkService);
   readonly auth = inject(AuthService);
+  readonly mp = inject(MobilePermissionsService);
   private route = inject(ActivatedRoute);
   private router = inject(Router);
 
@@ -134,7 +180,36 @@ export class ClientDetailPage implements OnInit {
   loadingInfo = signal(true);
 
   constructor() {
-    addIcons({ cashOutline, walletOutline, alertCircleOutline, callOutline, walkOutline, refreshOutline, documentTextOutline });
+    addIcons({
+      cashOutline, walletOutline, alertCircleOutline, callOutline, walkOutline,
+      refreshOutline, documentTextOutline, calendarNumberOutline, locationOutline,
+      navigateOutline, idCardOutline,
+    });
+  }
+
+  // Domicilio en una línea: usa addressLine si existe, o lo arma de addressFull.
+  domicilio(): string | null {
+    const c = this.client();
+    if (!c) return null;
+    if (c.addressLine) return c.addressLine;
+    const a = c.addressFull;
+    if (a) {
+      const line = [a.street, a.colonia, a.municipality].filter(Boolean).join(', ');
+      return line || null;
+    }
+    return c.address || null;
+  }
+
+  // ── Helpers de estado (3 estados) ──
+  estadoBadge(estado: string): string {
+    if (estado === 'vencido') return 'estado-vencido';
+    if (estado === 'atrasado') return 'estado-atrasado';
+    return 'estado-corriente';
+  }
+  estadoLabel(estado: string): string {
+    if (estado === 'vencido') return 'Vencido';
+    if (estado === 'atrasado') return 'Atrasado';
+    return 'Al corriente';
   }
 
   async ngOnInit() {
@@ -151,6 +226,14 @@ export class ClientDetailPage implements OnInit {
     this.loadingInfo.set(false);
   }
 
+  // Abre el domicilio en la app de mapas del teléfono.
+  abrirMapa() {
+    const dom = this.domicilio();
+    if (!dom) return;
+    const query = encodeURIComponent(dom);
+    window.open(`https://www.google.com/maps/search/?api=1&query=${query}`, '_system');
+  }
+
   goPay() {
     this.router.navigate(['/payment', this.client()!.loanId]);
   }
@@ -159,11 +242,15 @@ export class ClientDetailPage implements OnInit {
     this.router.navigate(['/visit', this.client()!.loanId]);
   }
 
-  goRestructure() {
-    this.router.navigate(['/restructure', this.client()!.loanId]);
+  goPromesa() {
+    this.router.navigate(['/promesa', this.client()!.loanId]);
   }
 
   goConvenio() {
     this.router.navigate(['/convenio', this.client()!.loanId]);
+  }
+
+  goRestructure() {
+    this.router.navigate(['/restructure', this.client()!.loanId]);
   }
 }

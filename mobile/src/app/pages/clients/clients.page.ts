@@ -1,31 +1,68 @@
-import { Component, OnInit, inject, signal, computed } from '@angular/core';
-import { CommonModule } from '@angular/common';
-import { Router } from '@angular/router';
+import { Component, OnInit, inject, signal, computed } from "@angular/core";
+import { CommonModule } from "@angular/common";
+import { Router } from "@angular/router";
 import {
-  IonHeader, IonToolbar, IonTitle, IonContent, IonList, IonItem,
-  IonLabel, IonBadge, IonIcon, IonButton, IonButtons, IonSearchbar,
-  IonRefresher, IonRefresherContent, IonSpinner, IonNote, IonChip,
+  IonHeader,
+  IonToolbar,
+  IonTitle,
+  IonContent,
+  IonList,
+  IonItem,
+  IonLabel,
+  IonBadge,
+  IonIcon,
+  IonButton,
+  IonButtons,
+  IonSearchbar,
+  IonRefresher,
+  IonRefresherContent,
+  IonSpinner,
+  IonNote,
+  IonChip,
   ToastController,
-} from '@ionic/angular/standalone';
-import { addIcons } from 'ionicons';
+} from "@ionic/angular/standalone";
+import { addIcons } from "ionicons";
 import {
-  logOutOutline, cloudUploadOutline, syncOutline, personCircleOutline,
-  checkmarkCircle, alertCircle, chevronForward, refreshOutline,
-} from 'ionicons/icons';
+  logOutOutline,
+  cloudUploadOutline,
+  syncOutline,
+  personCircleOutline,
+  checkmarkCircle,
+  alertCircle,
+  warningOutline,
+  chevronForward,
+  refreshOutline,
+  settingsOutline,
+  locationOutline,
+} from "ionicons/icons";
 
-import { AuthService } from '../../core/auth.service';
-import { CollectionService } from '../../core/collection.service';
-import { NetworkService } from '../../core/network.service';
-import { AssignedClient } from '../../core/models';
+import { AuthService } from "../../core/auth.service";
+import { CollectionService } from "../../core/collection.service";
+import { NetworkService } from "../../core/network.service";
+import { AssignedClient } from "../../core/models";
 
 @Component({
-  selector: 'app-clients',
+  selector: "app-clients",
   standalone: true,
   imports: [
     CommonModule,
-    IonHeader, IonToolbar, IonTitle, IonContent, IonList, IonItem,
-    IonLabel, IonBadge, IonIcon, IonButton, IonButtons, IonSearchbar,
-    IonRefresher, IonRefresherContent, IonSpinner, IonNote, IonChip,
+    IonHeader,
+    IonToolbar,
+    IonTitle,
+    IonContent,
+    IonList,
+    IonItem,
+    IonLabel,
+    IonBadge,
+    IonIcon,
+    IonButton,
+    IonButtons,
+    IonSearchbar,
+    IonRefresher,
+    IonRefresherContent,
+    IonSpinner,
+    IonNote,
+    IonChip,
   ],
   template: `
     <ion-header>
@@ -33,10 +70,14 @@ import { AssignedClient } from '../../core/models';
         <ion-title>Mis clientes</ion-title>
         <ion-buttons slot="end">
           <ion-button (click)="sync()" [disabled]="collection.syncing()">
-            @if (collection.syncing()) { <ion-spinner name="crescent"></ion-spinner> }
-            @else {
+            @if (collection.syncing()) {
+              <ion-spinner name="crescent"></ion-spinner>
+            } @else {
               <ion-icon slot="icon-only" name="sync-outline"></ion-icon>
             }
+          </ion-button>
+          <ion-button (click)="irAjustes()">
+            <ion-icon slot="icon-only" name="settings-outline"></ion-icon>
           </ion-button>
           <ion-button (click)="logout()">
             <ion-icon slot="icon-only" name="log-out-outline"></ion-icon>
@@ -54,12 +95,17 @@ import { AssignedClient } from '../../core/models';
       @if (collection.pendingCount() > 0) {
         <ion-chip color="warning" class="sync-chip" (click)="sync()">
           <ion-icon name="cloud-upload-outline"></ion-icon>
-          <ion-label>{{ collection.pendingCount() }} pago(s) por sincronizar</ion-label>
+          <ion-label
+            >{{ collection.pendingCount() }} pago(s) por sincronizar</ion-label
+          >
         </ion-chip>
       }
 
-      <ion-searchbar placeholder="Buscar cliente..." [debounce]="200"
-                     (ionInput)="onSearch($event)"></ion-searchbar>
+      <ion-searchbar
+        placeholder="Buscar cliente..."
+        [debounce]="200"
+        (ionInput)="onSearch($event)"
+      ></ion-searchbar>
 
       @if (loading()) {
         <div class="center"><ion-spinner name="crescent"></ion-spinner></div>
@@ -77,17 +123,34 @@ import { AssignedClient } from '../../core/models';
           @for (c of filtered(); track c.loanId) {
             <ion-item button (click)="open(c)">
               <ion-icon
-                [name]="c.estado === 'vencido' ? 'alert-circle' : 'checkmark-circle'"
-                [color]="c.estado === 'vencido' ? 'danger' : 'success'"
-                slot="start"></ion-icon>
+                [name]="estadoIcon(c.estado)"
+                [color]="estadoColor(c.estado)"
+                slot="start"
+              ></ion-icon>
               <ion-label>
                 <h2>{{ c.customerName }}</h2>
-                <p>Cuota: {{ c.periodicPayment | currency:'MXN':'symbol':'1.0-0' }} · {{ c.phone || 's/tel' }}</p>
+                @if (c.addressLine) {
+                  <p class="domicilio">
+                    <ion-icon name="location-outline"></ion-icon>
+                    {{ c.addressLine }}
+                  </p>
+                }
+                <p>
+                  Cuota:
+                  {{
+                    c.periodicPayment | currency: "MXN" : "symbol" : "1.0-0"
+                  }}
+                  · {{ c.phone || "s/tel" }}
+                </p>
               </ion-label>
-              <ion-badge slot="end" [class]="c.estado === 'vencido' ? 'estado-vencido' : 'estado-corriente'">
-                {{ c.estado === 'vencido' ? 'Vencido' : 'Al corriente' }}
+              <ion-badge slot="end" [class]="estadoBadge(c.estado)">
+                {{ estadoLabel(c.estado) }}
               </ion-badge>
-              <ion-icon name="chevron-forward" slot="end" color="medium"></ion-icon>
+              <ion-icon
+                name="chevron-forward"
+                slot="end"
+                color="medium"
+              ></ion-icon>
             </ion-item>
           }
         </ion-list>
@@ -97,14 +160,54 @@ import { AssignedClient } from '../../core/models';
       }
     </ion-content>
   `,
-  styles: [`
-    .center { display:flex; justify-content:center; padding:40px; }
-    .empty { text-align:center; padding:48px 24px; color:#718096; }
-    .empty ion-icon { font-size:64px; color:#CBD5E0; }
-    .empty p { margin:12px 0 20px; }
-    .sync-chip { margin:10px 12px 0; }
-    .foot-note { display:block; text-align:center; padding:16px; font-size:12px; }
-  `],
+  styles: [
+    `
+      .center {
+        display: flex;
+        justify-content: center;
+        padding: 40px;
+      }
+      .empty {
+        text-align: center;
+        padding: 48px 24px;
+        color: #718096;
+      }
+      .empty ion-icon {
+        font-size: 64px;
+        color: #cbd5e0;
+      }
+      .empty p {
+        margin: 12px 0 20px;
+      }
+      .sync-chip {
+        margin: 10px 12px 0;
+      }
+      .domicilio {
+        display: flex;
+        align-items: center;
+        gap: 4px;
+        color: #718096;
+        font-size: 13px;
+      }
+      .domicilio ion-icon {
+        font-size: 14px;
+        flex-shrink: 0;
+      }
+      .foot-note {
+        display: block;
+        text-align: center;
+        padding: 16px;
+        font-size: 12px;
+      }
+      /* Estado ATRASADO: ámbar, distinto del rojo de VENCIDO */
+      .estado-atrasado {
+        --background: #fef3c7;
+        --color: #92400e;
+        background: #fef3c7;
+        color: #92400e;
+      }
+    `,
+  ],
 })
 export class ClientsPage implements OnInit {
   readonly collection = inject(CollectionService);
@@ -114,23 +217,56 @@ export class ClientsPage implements OnInit {
   private toast = inject(ToastController);
 
   loading = signal(true);
-  search = signal('');
+  search = signal("");
 
   filtered = computed(() => {
     const term = this.search().toLowerCase().trim();
     const list = this.collection.clients();
     if (!term) return list;
-    return list.filter(c =>
-      c.customerName.toLowerCase().includes(term) ||
-      (c.phone || '').includes(term)
+    return list.filter(
+      (c) =>
+        c.customerName.toLowerCase().includes(term) ||
+        (c.phone || "").includes(term) ||
+        (c.addressLine || "").toLowerCase().includes(term),
     );
   });
 
   constructor() {
     addIcons({
-      logOutOutline, cloudUploadOutline, syncOutline, personCircleOutline,
-      checkmarkCircle, alertCircle, chevronForward, refreshOutline,
+      logOutOutline,
+      cloudUploadOutline,
+      syncOutline,
+      personCircleOutline,
+      checkmarkCircle,
+      alertCircle,
+      warningOutline,
+      chevronForward,
+      refreshOutline,
+      settingsOutline,
+      locationOutline,
     });
+  }
+
+  // ── Helpers de estado (3 estados) ──
+  estadoIcon(estado: string): string {
+    if (estado === "vencido") return "alert-circle";
+    if (estado === "atrasado") return "warning-outline";
+    return "checkmark-circle";
+  }
+  estadoColor(estado: string): string {
+    if (estado === "vencido") return "danger";
+    if (estado === "atrasado") return "warning";
+    return "success";
+  }
+  estadoBadge(estado: string): string {
+    if (estado === "vencido") return "estado-vencido";
+    if (estado === "atrasado") return "estado-atrasado";
+    return "estado-corriente";
+  }
+  estadoLabel(estado: string): string {
+    if (estado === "vencido") return "Vencido";
+    if (estado === "atrasado") return "Atrasado";
+    return "Al corriente";
   }
 
   async ngOnInit() {
@@ -144,16 +280,19 @@ export class ClientsPage implements OnInit {
 
   async download(silent = false) {
     if (!this.network.online()) {
-      if (!silent) this.notify('Sin conexión — mostrando datos guardados');
+      if (!silent) this.notify("Sin conexión — mostrando datos guardados");
       return;
     }
     try {
       await this.collection.downloadClients();
-      if (!silent) this.notify('Clientes actualizados');
+      await this.collection.downloadEmpresa(); 
+      if (!silent) this.notify("Clientes actualizados");
     } catch {
-      if (!silent) this.notify('No se pudo descargar');
+      if (!silent) this.notify("No se pudo descargar");
     }
   }
+
+
 
   async doRefresh(ev: any) {
     await this.download();
@@ -161,25 +300,40 @@ export class ClientsPage implements OnInit {
   }
 
   async sync() {
-    if (!this.network.online()) { this.notify('Sin conexión'); return; }
+    if (!this.network.online()) {
+      this.notify("Sin conexión");
+      return;
+    }
     const r = await this.collection.syncPending();
-    this.notify(`Sincronizados: ${r.ok}` + (r.fail ? ` · Fallidos: ${r.fail}` : ''));
+    this.notify(
+      `Sincronizados: ${r.ok}` + (r.fail ? ` · Fallidos: ${r.fail}` : ""),
+    );
     await this.download(true);
   }
 
-  onSearch(ev: any) { this.search.set(ev.target.value || ''); }
+  onSearch(ev: any) {
+    this.search.set(ev.target.value || "");
+  }
 
   open(c: AssignedClient) {
-    this.router.navigate(['/client', c.loanId]);
+    this.router.navigate(["/client", c.loanId]);
   }
 
   async logout() {
     await this.auth.logout();
-    this.router.navigate(['/login'], { replaceUrl: true });
+    this.router.navigate(["/login"], { replaceUrl: true });
+  }
+
+  irAjustes() {
+    this.router.navigate(["/settings"]);
   }
 
   private async notify(message: string) {
-    const t = await this.toast.create({ message, duration: 2200, position: 'bottom' });
+    const t = await this.toast.create({
+      message,
+      duration: 2200,
+      position: "bottom",
+    });
     await t.present();
   }
 }

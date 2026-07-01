@@ -16,17 +16,42 @@ export interface AuthResponse {
   user: AuthUser;
 }
 
-// Cliente/crédito asignado al cobrador
+export interface Empresa {
+  nombre: string;
+  rfc?: string;
+  domicilio?: string;
+  telefono?: string;
+  correo?: string;
+  sitioWeb?: string;
+  regimenFiscal?: string;
+  ciudad?: string;
+  estado?: string;
+  codigoPostal?: string;
+  pieLegal?: string;   // avisos del ticket (puede traer varias líneas con \n)
+}
+
+export interface CustomerAddress {
+  street?: string;
+  colonia?: string;
+  municipality?: string;
+  state?: string;
+  zip?: string;
+  references?: string;
+}
+ 
 export interface AssignedClient {
   loanId: string;
   customerId: string;
   customerName: string;
   phone?: string;
-  address?: string;
+  curp?: string;                    // útil para mostrar/ticket
+  address?: string;                 // calle (compat: lo que ya usabas)
+  addressFull?: CustomerAddress;    // domicilio completo (nuevo)
+  addressLine?: string;             // domicilio en una sola línea, listo para mostrar
   principalAmount: number;
   periodicPayment: number;
-  status: string;            // ACTIVO | VENCIDO | ...
-  estado: 'corriente' | 'vencido';
+  status: string;            // ACTIVO | ATRASADO | VENCIDO | ...
+  estado: 'corriente' | 'atrasado' | 'vencido';   // 3 estados (incluye atrasado)
   saldoPendiente?: number;
   moraPendiente?: number;
   proximaCuota?: { periodo: number; vence: string; monto: number } | null;

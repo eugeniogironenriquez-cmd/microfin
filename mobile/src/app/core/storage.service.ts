@@ -1,24 +1,30 @@
-import { Injectable } from '@angular/core';
-import { Preferences } from '@capacitor/preferences';
-import { AuthUser, AssignedClient, LocalPayment, LocalVisit, LocalGestorAccion } from './models';
+import { Injectable } from "@angular/core";
+import { Preferences } from "@capacitor/preferences";
+import {
+  AuthUser,
+  AssignedClient,
+  LocalPayment,
+  LocalVisit,
+  LocalGestorAccion,
+  Empresa,
+} from "./models";
 
 // Claves de almacenamiento local
-const K_TOKEN    = 'access_token';
-const K_REFRESH  = 'refresh_token';
-const K_USER     = 'user';
-const K_CLIENTS  = 'assigned_clients';
-const K_PAYMENTS = 'local_payments';
-const K_VISITS   = 'local_visits';
-const K_GESTOR   = 'local_gestor_acciones';
+const K_TOKEN = "access_token";
+const K_REFRESH = "refresh_token";
+const K_USER = "user";
+const K_CLIENTS = "assigned_clients";
+const K_PAYMENTS = "local_payments";
+const K_VISITS = "local_visits";
+const K_GESTOR = "local_gestor_acciones";
 
 /**
  * Servicio de almacenamiento local (offline-first).
  * Usa Capacitor Preferences, que persiste en el dispositivo
  * incluso sin conexión y entre reinicios de la app.
  */
-@Injectable({ providedIn: 'root' })
+@Injectable({ providedIn: "root" })
 export class StorageService {
-
   // ── Sesión ─────────────────────────────────────────────────
   async setSession(token: string, refresh: string, user: AuthUser) {
     await Preferences.set({ key: K_TOKEN, value: token });
@@ -40,7 +46,11 @@ export class StorageService {
 
   async getUser(): Promise<AuthUser | null> {
     const raw = (await Preferences.get({ key: K_USER })).value;
-    try { return raw ? JSON.parse(raw) : null; } catch { return null; }
+    try {
+      return raw ? JSON.parse(raw) : null;
+    } catch {
+      return null;
+    }
   }
 
   async clearSession() {
@@ -56,13 +66,21 @@ export class StorageService {
 
   async getClients(): Promise<AssignedClient[]> {
     const raw = (await Preferences.get({ key: K_CLIENTS })).value;
-    try { return raw ? JSON.parse(raw) : []; } catch { return []; }
+    try {
+      return raw ? JSON.parse(raw) : [];
+    } catch {
+      return [];
+    }
   }
 
   // ── Pagos locales (cola de sincronización) ─────────────────
   async getPayments(): Promise<LocalPayment[]> {
     const raw = (await Preferences.get({ key: K_PAYMENTS })).value;
-    try { return raw ? JSON.parse(raw) : []; } catch { return []; }
+    try {
+      return raw ? JSON.parse(raw) : [];
+    } catch {
+      return [];
+    }
   }
 
   async savePayments(payments: LocalPayment[]) {
@@ -77,7 +95,7 @@ export class StorageService {
 
   async updatePayment(localId: string, patch: Partial<LocalPayment>) {
     const all = await this.getPayments();
-    const idx = all.findIndex(p => p.localId === localId);
+    const idx = all.findIndex((p) => p.localId === localId);
     if (idx >= 0) {
       all[idx] = { ...all[idx], ...patch };
       await this.savePayments(all);
@@ -85,13 +103,17 @@ export class StorageService {
   }
 
   async getPendingPayments(): Promise<LocalPayment[]> {
-    return (await this.getPayments()).filter(p => !p.synced);
+    return (await this.getPayments()).filter((p) => !p.synced);
   }
 
   // ── Visitas locales (cola de sincronización) ───────────────
   async getVisits(): Promise<LocalVisit[]> {
     const raw = (await Preferences.get({ key: K_VISITS })).value;
-    try { return raw ? JSON.parse(raw) : []; } catch { return []; }
+    try {
+      return raw ? JSON.parse(raw) : [];
+    } catch {
+      return [];
+    }
   }
 
   async saveVisits(visits: LocalVisit[]) {
@@ -106,7 +128,7 @@ export class StorageService {
 
   async updateVisit(localId: string, patch: Partial<LocalVisit>) {
     const all = await this.getVisits();
-    const idx = all.findIndex(v => v.localId === localId);
+    const idx = all.findIndex((v) => v.localId === localId);
     if (idx >= 0) {
       all[idx] = { ...all[idx], ...patch };
       await this.saveVisits(all);
@@ -114,13 +136,17 @@ export class StorageService {
   }
 
   async getPendingVisits(): Promise<LocalVisit[]> {
-    return (await this.getVisits()).filter(v => !v.synced);
+    return (await this.getVisits()).filter((v) => !v.synced);
   }
 
   // ── Acciones de gestor (cola de sincronización) ────────────
   async getGestorAcciones(): Promise<LocalGestorAccion[]> {
     const raw = (await Preferences.get({ key: K_GESTOR })).value;
-    try { return raw ? JSON.parse(raw) : []; } catch { return []; }
+    try {
+      return raw ? JSON.parse(raw) : [];
+    } catch {
+      return [];
+    }
   }
 
   async saveGestorAcciones(items: LocalGestorAccion[]) {
@@ -135,7 +161,7 @@ export class StorageService {
 
   async updateGestorAccion(localId: string, patch: Partial<LocalGestorAccion>) {
     const all = await this.getGestorAcciones();
-    const idx = all.findIndex(x => x.localId === localId);
+    const idx = all.findIndex((x) => x.localId === localId);
     if (idx >= 0) {
       all[idx] = { ...all[idx], ...patch };
       await this.saveGestorAcciones(all);
@@ -143,6 +169,24 @@ export class StorageService {
   }
 
   async getPendingGestorAcciones(): Promise<LocalGestorAccion[]> {
-    return (await this.getGestorAcciones()).filter(x => !x.synced);
+    return (await this.getGestorAcciones()).filter((x) => !x.synced);
+  }
+
+  private readonly EMPRESA_KEY = "empresa_config";
+
+  async setEmpresa(empresa: Empresa): Promise<void> {
+    await Preferences.set({
+      key: this.EMPRESA_KEY,
+      value: JSON.stringify(empresa),
+    });
+  }
+
+  async getEmpresa(): Promise<Empresa | null> {
+    try {
+      const { value } = await Preferences.get({ key: this.EMPRESA_KEY });
+      return value ? JSON.parse(value) : null;
+    } catch {
+      return null;
+    }
   }
 }

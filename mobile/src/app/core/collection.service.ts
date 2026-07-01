@@ -4,7 +4,7 @@ import { firstValueFrom } from 'rxjs';
 import { environment } from '../../environments/environment';
 import { StorageService } from './storage.service';
 import { NetworkService } from './network.service';
-import { AssignedClient, LocalPayment, PaymentInfo, CuotaPendiente, LocalVisit, TipoVisita, LocalGestorAccion, GestorAccionTipo } from './models';
+import { AssignedClient, LocalPayment, PaymentInfo, CuotaPendiente, LocalVisit, TipoVisita, LocalGestorAccion, GestorAccionTipo, Empresa } from './models';
 
 interface ApiEnvelope<T> { success: boolean; data: T; timestamp: string; }
 
@@ -45,19 +45,74 @@ export class CollectionService {
     return list;
   }
 
-  private mapClient(l: any): AssignedClient {
-    const status = l.status || l.estatus || 'ACTIVO';
+    private mapClient(l: any): AssignedClient {
+    const status = (l.status || l.estatus || 'ACTIVO').toUpperCase();
+    const addr = l.customer?.address;
+ 
+    // Domicilio en una sola línea: "calle, colonia, municipio".
+    // Filtra vacíos para no dejar comas sueltas.
+    const addressLine = addr
+      ? [addr.street, addr.colonia, addr.municipality].filter(Boolean).join(', ')
+      : (typeof l.address === 'string' ? l.address : undefined);
+ 
+    // Tres estados visuales (igual que el web): VENCIDO (rojo),
+    // ATRASADO (ámbar: debe cuotas pero el plazo sigue vigente),
+    // corriente (verde, ACTIVO/LIQUIDADO/etc.).
+    const estado: 'corriente' | 'atrasado' | 'vencido' =
+      status === 'VENCIDO' ? 'vencido'
+      : status === 'ATRASADO' ? 'atrasado'
+      : 'corriente';
+ 
     return {
       loanId:          l.id || l.loanId,
       customerId:      l.customerId || l.customer?.id,
       customerName:    l.customer?.fullName || l.customerName || 'Cliente',
       phone:           l.customer?.phone || l.phone,
-      address:         l.customer?.address?.street || l.address,
+      curp:            l.customer?.curp,
+      address:         addr?.street || (typeof l.address === 'string' ? l.address : undefined),
+      addressFull:     addr ? {
+                         street:       addr.street,
+                         colonia:      addr.colonia,
+                         municipality: addr.municipality,
+                         state:        addr.state,
+                         zip:          addr.zip,
+                         references:   addr.references,
+                       } : undefined,
+      addressLine,
       principalAmount: Number(l.principalAmount || 0),
       periodicPayment: Number(l.periodicPayment || 0),
       status,
-      estado:          status === 'VENCIDO' ? 'vencido' : 'corriente',
+      estado,
     };
+  }
+
+    async downloadEmpresa(): Promise<Empresa | null> {
+    const res = await firstValueFrom(
+      this.http.get<ApiEnvelope<any> | any>(`${this.base}/empresa`)
+    );
+    const raw = this.unwrap(res);
+    if (!raw) return null;
+ 
+    const empresa: Empresa = {
+      nombre:        raw.nombre || 'Microcapital-Ixtepec',
+      rfc:           raw.rfc || undefined,
+      domicilio:     raw.domicilio || undefined,
+      telefono:      raw.telefono || undefined,
+      correo:        raw.correo || undefined,
+      sitioWeb:      raw.sitio_web || undefined,
+      regimenFiscal: raw.regimen_fiscal || undefined,
+      ciudad:        raw.ciudad || undefined,
+      estado:        raw.estado || undefined,
+      codigoPostal:  raw.codigo_postal || undefined,
+      pieLegal:      raw.pie_legal || undefined,
+    };
+    await this.storage.setEmpresa(empresa);
+    return empresa;
+  }
+ 
+  /** Lee la empresa de cache (uso offline). Null si nunca se descargó. */
+  async getEmpresa(): Promise<Empresa | null> {
+    return this.storage.getEmpresa();
   }
 
   // ── Info de pago ───────────────────────────────────────────
