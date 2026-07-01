@@ -1,68 +1,153 @@
 import {
-  Module, Controller, Injectable, Get, Post,
-  Body, Param, Query,
-} from '@nestjs/common';
-import { TypeOrmModule, InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
-import { ApiTags, ApiBearerAuth } from '@nestjs/swagger';
-import { CollectionVisit, CollectorAssignment, Loan, LoanStatus, UserRole } from '../common/entities';
-import { Auth, CurrentUser } from '../common/guards/roles.guard';
+  Module,
+  Controller,
+  Injectable,
+  Get,
+  Post,
+  Body,
+  Param,
+  Query,
+} from "@nestjs/common";
+import { TypeOrmModule, InjectRepository } from "@nestjs/typeorm";
+import { Repository } from "typeorm";
+import { ApiTags, ApiBearerAuth } from "@nestjs/swagger";
+import {
+  CollectionVisit,
+  CollectorAssignment,
+  Loan,
+  LoanStatus,
+  ScheduleStatus,
+  UserRole,
+} from "../common/entities";
+import { Auth, CurrentUser } from "../common/guards/roles.guard";
+import { SemaforoService } from "../semaforo/semaforo.module";
+import { SemaforoModule } from "../semaforo/semaforo.module";
 
 @Injectable()
 export class CollectionService {
   constructor(
-    @InjectRepository(CollectionVisit) private visitRepo: Repository<CollectionVisit>,
-    @InjectRepository(CollectorAssignment) private assignRepo: Repository<CollectorAssignment>,
+    @InjectRepository(CollectionVisit)
+    private visitRepo: Repository<CollectionVisit>,
+    @InjectRepository(CollectorAssignment)
+    private assignRepo: Repository<CollectorAssignment>,
     @InjectRepository(Loan) private loanRepo: Repository<Loan>,
+    private semaforoService: SemaforoService,
   ) {}
 
   async getMyLoans(collectorId: string) {
-    return this.loanRepo.createQueryBuilder('l')
-      .leftJoinAndSelect('l.customer', 'c')
-      .leftJoinAndSelect('l.loanType', 'lt')
-      .where('l.collectorId = :collectorId', { collectorId })
-      .andWhere('l.status IN (:...statuses)', { statuses: [LoanStatus.ACTIVO, LoanStatus.VENCIDO] })
+    // Se agrega el join de paymentSchedules para calcular cuotas vencidas,
+    // y ATRASADO al filtro para no perder créditos atrasados (igual que el semáforo).
+    const loans = await this.loanRepo
+      .createQueryBuilder("l")
+      .leftJoinAndSelect("l.customer", "c")
+      .leftJoinAndSelect("l.loanType", "lt")
+      .leftJoinAndSelect("l.paymentSchedules", "ps")
+      .where("l.collectorId = :collectorId", { collectorId })
+      .andWhere("l.status IN (:...statuses)", {
+        statuses: [LoanStatus.ACTIVO, LoanStatus.ATRASADO, LoanStatus.VENCIDO],
+      })
       .getMany();
+
+    // Umbral configurado del semáforo (el mismo que usa la web).
+    const cfg = await this.semaforoService.getConfig();
+
+    // Calcular cuotas vencidas + nivel sobre las cuotas YA cargadas (sin
+    // consultas extra). Misma lógica que SemaforoService.countOverdue:
+    // cuota no pagada con fecha de vencimiento anterior a hoy (día-calendario
+    // de México, UTC-6). La que vence hoy NO cuenta.
+    const MX = 6 * 60 * 60 * 1000;
+    const nowDay = new Date(Date.now() - MX);
+    const todayUTC = Date.UTC(nowDay.getUTCFullYear(), nowDay.getUTCMonth(), nowDay.getUTCDate());
+
+    return loans.map((loan) => {
+      const schedules = (loan as any).paymentSchedules || [];
+      let cuotasVencidas = 0;
+      for (const s of schedules) {
+        if (s.status === ScheduleStatus.PAGADO) continue;
+        const due = new Date(s.dueDate);
+        const dueUTC = Date.UTC(due.getUTCFullYear(), due.getUTCMonth(), due.getUTCDate());
+        if (dueUTC < todayUTC) cuotasVencidas++;
+      }
+      const nivel = this.semaforoService.levelFor(cuotasVencidas, cfg);
+
+      // Quitamos las paymentSchedules del payload (no las necesita la app y pesan)
+      // y devolvemos el resto del crédito + los dos campos nuevos.
+      const { paymentSchedules, ...loanSinSchedules } = loan as any;
+      return {
+        ...loanSinSchedules,
+        cuotasVencidas,
+        nivel,
+      };
+    });
   }
 
   async registerVisit(dto: {
-    loanId: string; collectorId: string; visitType: string;
-    result?: string; notes?: string; geolocation?: string;
+    loanId: string;
+    collectorId: string;
+    visitType: string;
+    result?: string;
+    notes?: string;
+    geolocation?: string;
   }): Promise<CollectionVisit> {
     const visit = this.visitRepo.create({ ...dto, visitedAt: new Date() });
     return this.visitRepo.save(visit);
   }
 
-  async assign(loanId: string, collectorId: string): Promise<CollectorAssignment> {
-    // Desactivar asignación anterior
-    await this.assignRepo.update({ loanId, isActive: true }, { isActive: false });
-    // Actualizar cobrador en préstamo
-    await this.loanRepo.update(loanId, { collectorId });
-    const assignment = this.assignRepo.create({ loanId, collectorId, assignedAt: new Date() });
-    return this.assignRepo.save(assignment);
+  async assign(
+    dto: { collectorId: string; loanIds: string[]; date: string },
+    assignedBy: string,
+  ) {
+    const existing = await this.assignRepo.find({
+      where: { collectorId: dto.collectorId, isActive: true },
+    });
+    for (const a of existing) {
+      a.isActive = false;
+      await this.assignRepo.save(a);
+    }
+
+    const assignments = dto.loanIds.map((loanId) =>
+      this.assignRepo.create({
+        collectorId: dto.collectorId,
+        loanId,
+        assignedAt: new Date(dto.date),
+        isActive: true,
+      }),
+    );
+    return this.assignRepo.save(assignments);
   }
 
   async getVisits(loanId: string) {
-    return this.visitRepo.find({ where: { loanId }, order: { visitedAt: 'DESC' } });
+    return this.visitRepo.find({
+      where: { loanId },
+      order: { visitedAt: "DESC" },
+    });
   }
 
   async getOverdue(filters: { page?: number; limit?: number }) {
     const { page = 1, limit = 20 } = filters;
-    const qb = this.loanRepo.createQueryBuilder('l')
-      .leftJoinAndSelect('l.customer', 'c')
-      .leftJoinAndSelect('l.loanType', 'lt')
-      .where('l.status = :status', { status: LoanStatus.VENCIDO })
-      .orderBy('l.updatedAt', 'ASC')
+    const qb = this.loanRepo
+      .createQueryBuilder("l")
+      .leftJoinAndSelect("l.customer", "c")
+      .leftJoinAndSelect("l.loanType", "lt")
+      .where("l.status = :status", { status: LoanStatus.VENCIDO })
+      .orderBy("l.updatedAt", "ASC")
       .skip((page - 1) * limit)
       .take(limit);
     const [data, total] = await qb.getManyAndCount();
     return { data, total, page, limit };
   }
 
-  async bulkAssign(dto: { collectorId: string; loanIds: string[]; date: string }) {
+  async bulkAssign(dto: {
+    collectorId: string;
+    loanIds: string[];
+    date: string;
+  }) {
     const results = [];
     for (const loanId of dto.loanIds) {
-      await this.assignRepo.update({ loanId, isActive: true }, { isActive: false });
+      await this.assignRepo.update(
+        { loanId, isActive: true },
+        { isActive: false },
+      );
       await this.loanRepo.update(loanId, { collectorId: dto.collectorId });
       const assignment = this.assignRepo.create({
         loanId,
@@ -76,60 +161,68 @@ export class CollectionService {
   }
 }
 
-@ApiTags('collection')
+@ApiTags("collection")
 @ApiBearerAuth()
-@Controller('collection')
+@Controller("collection")
 export class CollectionController {
   constructor(private collectionService: CollectionService) {}
 
-  @Get('my-loans')
+  @Get("my-loans")
   @Auth(UserRole.COBRADOR, UserRole.ADMIN)
-  getMyLoans(@CurrentUser('id') userId: string) {
+  getMyLoans(@CurrentUser("id") userId: string) {
     return this.collectionService.getMyLoans(userId);
   }
 
-  @Get('my-clients')
+  @Get("my-clients")
   @Auth(UserRole.COBRADOR, UserRole.ADMIN)
-  getMyClients(@CurrentUser('id') userId: string) {
+  getMyClients(@CurrentUser("id") userId: string) {
     return this.collectionService.getMyLoans(userId);
   }
 
-  @Post('visits')
+  @Post("visits")
   @Auth(UserRole.COBRADOR, UserRole.ADMIN)
-  registerVisit(@Body() dto: any, @CurrentUser('id') userId: string) {
-    return this.collectionService.registerVisit({ ...dto, collectorId: userId });
+  registerVisit(@Body() dto: any, @CurrentUser("id") userId: string) {
+    return this.collectionService.registerVisit({
+      ...dto,
+      collectorId: userId,
+    });
   }
 
-  @Get('visits/:loanId')
+  @Get("visits/:loanId")
   @Auth()
-  getVisits(@Param('loanId') loanId: string) {
+  getVisits(@Param("loanId") loanId: string) {
     return this.collectionService.getVisits(loanId);
   }
 
-  @Post('assign')
+  @Post("assign")
   @Auth(UserRole.ADMIN)
-  assign(@Body() dto: { loanId: string; collectorId: string }) {
-    return this.collectionService.assign(dto.loanId, dto.collectorId);
+  assign(@Body() dto: any, @CurrentUser("id") userId: string) {
+    return this.collectionService.assign(dto, userId);
   }
 
-  @Get('overdue')
+  @Get("overdue")
   @Auth()
   getOverdue(@Query() q: any) {
     return this.collectionService.getOverdue({
-      page:  q.page  ? Number(q.page)  : 1,
+      page: q.page ? Number(q.page) : 1,
       limit: q.limit ? Number(q.limit) : 20,
     });
   }
 
-  @Post('assignments')
+  @Post("assignments")
   @Auth(UserRole.ADMIN)
-  bulkAssign(@Body() dto: { collectorId: string; loanIds: string[]; date: string }) {
+  bulkAssign(
+    @Body() dto: { collectorId: string; loanIds: string[]; date: string },
+  ) {
     return this.collectionService.bulkAssign(dto);
   }
 }
 
 @Module({
-  imports: [TypeOrmModule.forFeature([CollectionVisit, CollectorAssignment, Loan])],
+  imports: [
+    TypeOrmModule.forFeature([CollectionVisit, CollectorAssignment, Loan]),
+    SemaforoModule,
+  ],
   providers: [CollectionService],
   controllers: [CollectionController],
   exports: [CollectionService],

@@ -56,6 +56,8 @@ export interface AssignedClient {
   saldoPendiente?: number;
   moraPendiente?: number;
   proximaCuota?: { periodo: number; vence: string; monto: number } | null;
+  cuotasVencidas?: number;
+ nivel?: 'VERDE' | 'AMARILLO' | 'ROJO';
 }
 
 export type PaymentType = 'DIA' | 'TOTAL' | 'MORATORIO';

@@ -111,6 +111,8 @@ export class CollectionService {
       termWeeks: Number(l.termWeeks || 0) || undefined,
       status,
       estado,
+      cuotasVencidas:  Number(l.cuotasVencidas || 0),
+      nivel:           l.nivel || undefined,
     };
   }
 

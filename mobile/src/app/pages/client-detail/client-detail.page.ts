@@ -127,26 +127,26 @@ interface SeguimientoItem {
             <div slot="content" class="acc-body">
               @if (loadingAval()) {
                 <div class="center-sm"><ion-spinner name="crescent"></ion-spinner></div>
-              } @else if (aval(); as av) {
+              } @else if (aval()) {
                 <ion-item lines="none">
                   <ion-icon name="person-outline" slot="start" color="medium"></ion-icon>
-                  <ion-label class="ion-text-wrap">{{ av.fullName }}</ion-label>
+                  <ion-label class="ion-text-wrap">{{ aval()!.fullName }}</ion-label>
                 </ion-item>
-                @if (av.relationship) {
+                @if (aval()!.relationship) {
                   <ion-item lines="none">
-                    <ion-label class="sub">Parentesco: {{ av.relationship }}</ion-label>
+                    <ion-label class="sub">Parentesco: {{ aval()!.relationship }}</ion-label>
                   </ion-item>
                 }
-                @if (av.phone) {
-                  <ion-item lines="none" button (click)="llamar(av.phone)">
+                @if (aval()!.phone) {
+                  <ion-item lines="none" button (click)="llamar(aval()!.phone)">
                     <ion-icon name="call-outline" slot="start" color="medium"></ion-icon>
-                    <ion-label>{{ av.phone }}</ion-label>
+                    <ion-label>{{ aval()!.phone }}</ion-label>
                   </ion-item>
                 }
-                @if (av.address) {
+                @if (aval()!.address) {
                   <ion-item lines="none">
                     <ion-icon name="location-outline" slot="start" color="medium"></ion-icon>
-                    <ion-label class="ion-text-wrap">{{ av.address }}</ion-label>
+                    <ion-label class="ion-text-wrap">{{ aval()!.address }}</ion-label>
                   </ion-item>
                 }
               } @else if (!network.online()) {
@@ -157,7 +157,8 @@ interface SeguimientoItem {
             </div>
           </ion-accordion>
 
-          <!-- SEGUIMIENTO -->
+          <!-- SEGUIMIENTO (solo créditos en semáforo rojo) -->
+          @if (esRojo()) {
           <ion-accordion value="seguimiento">
             <ion-item slot="header" color="light">
               <ion-icon name="chatbubbles-outline" slot="start" color="primary"></ion-icon>
@@ -211,6 +212,7 @@ interface SeguimientoItem {
               }
             </div>
           </ion-accordion>
+          }
         </ion-accordion-group>
 
         <!-- Acciones básicas (cobrador y gestor) -->
@@ -334,6 +336,16 @@ export class ClientDetailPage implements OnInit {
     return 'Al corriente';
   }
 
+  // El seguimiento solo aplica a créditos en semáforo ROJO (más de 5 cuotas
+  // vencidas). Usa el nivel calculado por el backend; si no viene (cache vieja),
+  // cae al conteo de cuotas vencidas como respaldo.
+  esRojo(): boolean {
+    const c = this.client();
+    if (!c) return false;
+    if (c.nivel) return c.nivel === 'ROJO';
+    return (c.cuotasVencidas || 0) > 5;
+  }
+
   async ngOnInit() {
     const loanId = this.route.snapshot.paramMap.get('loanId')!;
     const c = this.collection.clients().find(x => x.loanId === loanId) || null;
@@ -349,7 +361,11 @@ export class ClientDetailPage implements OnInit {
 
     // Cargar aval (solo con conexión) y seguimientos (servidor + locales)
     this.cargarAval(loanId);
-    this.cargarSeguimientos(loanId);
+    if (this.esRojo()) {
+      this.cargarSeguimientos(loanId);
+    } else {
+      this.loadingSeg.set(false);
+    }
   }
 
   private async cargarAval(loanId: string) {
