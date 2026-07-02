@@ -636,7 +636,7 @@ const LGRAY  = '#ffffff';*/
         y = drawHead(y);
       }
 
-      doc.rect(tX, y, tW, rH).fill(idx%2===1 ? ALT : WHITE);
+      doc.rect(tX, y, tW, rH).fill(WHITE);
       const cells = [
         String(row.period),
         fdate(row.dueDate),
