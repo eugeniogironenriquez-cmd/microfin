@@ -5,14 +5,35 @@ import {
 import { exec } from 'child_process';
 import { Auth } from '../common/guards/roles.guard';
 
+
 @Controller('printing')
 export class PrintingController {
+
   @Get('printers')
-  @Auth()
   async getPrinters(): Promise<string[]> {
+    const commands = [
+      `powershell -NoProfile -ExecutionPolicy Bypass -Command "Get-Printer | Select-Object -ExpandProperty Name"`,
+      `wmic printer get name`,
+      `powershell -NoProfile -ExecutionPolicy Bypass -Command "Get-CimInstance Win32_Printer | Select-Object -ExpandProperty Name"`,
+    ];
+
+    for (const cmd of commands) {
+      const printers = await this.runCommand(cmd);
+      if (printers.length > 0) return printers;
+    }
+
+    return [];
+  }
+
+  private runCommand(command: string): Promise<string[]> {
     return new Promise((resolve) => {
-      exec('powershell -Command "Get-Printer | Select-Object -ExpandProperty Name"', (error, stdout) => {
-        if (error) {
+      exec(command, { windowsHide: true }, (error, stdout, stderr) => {
+        console.log('CMD:', command);
+        console.log('ERROR:', error?.message);
+        console.log('STDERR:', stderr);
+        console.log('STDOUT:', stdout);
+
+        if (error || !stdout) {
           resolve([]);
           return;
         }
@@ -20,14 +41,13 @@ export class PrintingController {
         const printers = stdout
           .split(/\r?\n/)
           .map(x => x.trim())
-          .filter(Boolean);
+          .filter(Boolean)
+          .filter(x => x.toLowerCase() !== 'name');
 
-        resolve(printers);
+        resolve([...new Set(printers)]);
       });
     });
   }
-
-  
 }
 
 @Module({
