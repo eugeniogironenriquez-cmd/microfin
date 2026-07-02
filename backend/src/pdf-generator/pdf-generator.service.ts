@@ -644,7 +644,7 @@ const LGRAY  = '#ffffff';*/
       ];
       let cx = tX;
       cells.forEach((cell, ci) => {
-        doc.font(RB).fontSize(7.5).fillColor(LGRAY)
+        doc.font(RB).fontSize(7.5).fillColor(GRAY)
            .text(cell, cx+3, y+4, {width:cols[ci].w-6, align:cols[ci].align, lineBreak:false});
         cx += cols[ci].w;
       });
