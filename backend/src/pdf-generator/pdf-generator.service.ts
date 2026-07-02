@@ -392,7 +392,7 @@ export class PdfGeneratorService {
 
     sep(false);
     // Negro en lugar del verde de pantalla.
-    center('¡Gracias por su pago!', 8, BB, TEXT, 2);
+    center('¡Gracias por su pago!!', 8, BB, TEXT, 2);
     center('Conserve este comprobante', 6.5, RB, GRAY, 2);
 
     (doc as any).flushPages?.();
