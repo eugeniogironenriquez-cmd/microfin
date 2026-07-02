@@ -121,6 +121,8 @@ import { environment } from '../../../environments/environment';
                 <button mat-icon-button color="primary" (click)="printTicket(p.id)" matTooltip="Reimprimir ticket (80mm)">
                   <mat-icon>receipt_long</mat-icon>
                 </button>
+
+                
                 <button mat-icon-button (click)="downloadReceipt(p.id)" matTooltip="Comprobante (carta)">
                   <mat-icon>description</mat-icon>
                 </button>
@@ -229,12 +231,13 @@ export class PaymentsQueryComponent implements OnInit {
   // ── Reimpresión / comprobante (mismo patrón del monitor) ──
   async printTicket(id: string) {
     try {
-      const blob = await firstValueFrom(
+      /*const blob = await firstValueFrom(
         this.http.get(`${this.base}/payments/${id}/ticket`, { responseType: 'blob' }),
       );
       const url = URL.createObjectURL(blob);
       const w = window.open(url);
-      if (w) w.onload = () => w.print();
+      if (w) w.onload = () => w.print();*/
+      window.open(`${environment.apiUrl}/payments/${id}/ticket`, '_blank');
     } catch {
       this.snackbar.open('No se pudo generar el ticket', 'Cerrar', { duration: 4000 });
     }

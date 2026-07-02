@@ -581,6 +581,16 @@ export class PaymentsService {
     const stats = { totalCuotas, cuotasPagadas, cuotasPendientes, saldo };
     return this.pdfService.generateThermalReceipt({ payment, loan, company, stats }, res);
   }
+
+async generateThermalTicketHtml(id: string, res: Response): Promise<void> {
+  const data = await this.getThermalTicketData(id);
+
+  const html = this.pdfService.generateThermalReceiptHtml(data);
+
+  res.setHeader('Content-Type', 'text/html; charset=utf-8');
+  res.send(html);
+}
+
 }
 
 @ApiTags('payments')
