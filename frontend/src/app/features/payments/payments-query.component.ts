@@ -229,23 +229,29 @@ export class PaymentsQueryComponent implements OnInit {
   }
 
   // ── Reimpresión / comprobante (mismo patrón del monitor) ──
-  async printTicket(id: string) {
-    try {
-      /*const blob = await firstValueFrom(
-        this.http.get(`${this.base}/payments/${id}/ticket`, { responseType: 'blob' }),
-      );
-      const url = URL.createObjectURL(blob);
-      const w = window.open(url);
-      if (w) w.onload = () => w.print();*/
-      window.open(
-    `${environment.apiUrl}/printing/ticket/${id}/html`,
-    '_blank',
-    'noopener,noreferrer'
-  );
-    } catch {
-      this.snackbar.open('No se pudo generar el ticket', 'Cerrar', { duration: 4000 });
-    }
-  }
+ printTicket(id: string) {
+  this.api.get<any>(`/payments/${id}/ticket-data`).subscribe({
+    next: async (data) => {
+      const resp = await fetch('http://localhost:3100/print-ticket', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          printerName: 'POS-80 11.3.0.1',
+          data,
+        }),
+      });
+
+      const result = await resp.json();
+
+      if (!result.ok) {
+        throw new Error(result.message || 'Error al imprimir');
+      }
+    },
+    error: () => {
+      console.error('No se pudieron obtener los datos del ticket');
+    },
+  });
+}
 
   async downloadReceipt(id: string) {
     try {
