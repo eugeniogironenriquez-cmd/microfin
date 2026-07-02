@@ -613,9 +613,9 @@ export class PdfGeneratorService {
 
     const drawHead = (atY: number): number => {
       let cx = tX;
-      doc.rect(tX, atY, tW, hH).fill(GREEN);
+      doc.rect(tX, atY, tW, hH).fill(GREEN2);
       cols.forEach(c => {
-        doc.font(BB).fontSize(7.5).fillColor(GREEN)
+        doc.font(BB).fontSize(7.5).fillColor(GREEN2)
            .text(c.label, cx+3, atY+6, {width:c.w-6, align:c.align, lineBreak:false});
         cx += c.w;
       });
