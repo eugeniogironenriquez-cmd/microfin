@@ -170,6 +170,7 @@ export class ShellComponent {
         { label: 'Pagos',            icon: 'payment',  route: '/payments',         perm: 'pagos.ver', exact: true },
         { label: 'Monitor de pagos', icon: 'monitor',  route: '/payments/monitor', perm: 'pagos.monitor' },
         { label: 'Eliminar mora',    icon: 'gavel',    route: '/eliminar-mora',    perm: 'moratorios.eliminar' },
+        { label: 'Consulta de Pagos', icon: 'manage_search', route: '/payments/consulta-pagos', perm: 'pagos.consultar' },
       ],
     },
     {
