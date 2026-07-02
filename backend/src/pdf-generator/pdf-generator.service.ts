@@ -5,9 +5,9 @@ import * as fs from 'fs';
 import * as path from 'path';
 
 const GREEN  = '#2795F5';
-const GREEN2 = '#2795F5';
+const GREEN2 = '#000000';
 const GRAY   = '#000000';
-const LGRAY  = '#000000';
+const LGRAY  = '#ffffff';
 const BORDER = '#000000';
 const WHITE  = '#000000';
 const TEXT   = '#000000';
