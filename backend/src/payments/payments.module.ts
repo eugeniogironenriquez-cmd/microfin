@@ -433,6 +433,29 @@ export class PaymentsService {
       .getMany();
   }
 
+    async getPaymentsByRange(from: string, to?: string) {
+    if (!from) throw new BadRequestException('Debe indicar la fecha inicial');
+ 
+    // Inicio: medianoche del día `from`.
+    const start = new Date(`${from}T00:00:00Z`);
+    // Fin: medianoche del día siguiente a `to` (o de `from` si no hay `to`).
+    const endDay = to ? new Date(`${to}T00:00:00Z`) : new Date(`${from}T00:00:00Z`);
+    const end = new Date(endDay);
+    end.setUTCDate(end.getUTCDate() + 1);
+ 
+    if (end <= start) {
+      throw new BadRequestException('La fecha final no puede ser anterior a la inicial');
+    }
+ 
+    return this.paymentRepo.createQueryBuilder('p')
+      .leftJoinAndSelect('p.loan', 'l')
+      .leftJoinAndSelect('l.customer', 'c')
+      .where('p.paymentDate >= :start', { start })
+      .andWhere('p.paymentDate < :end', { end })
+      .orderBy('p.paymentDate', 'DESC')
+      .getMany();
+  }
+
   // Pagos con geolocalización para el monitor web (mapa de cobranza)
   async getGeoPayments(date?: string) {
     // Los paymentDate están en hora de México. Construimos los límites del día
@@ -557,6 +580,11 @@ export class PaymentsController {
 
   @Get('today') @Auth()
   today() { return this.paymentsService.getTodayPayments(); }
+
+  @Get('by-range') @Auth()
+  byRange(@Query('from') from: string, @Query('to') to?: string) {
+    return this.paymentsService.getPaymentsByRange(from, to);
+  }
 
   @Get('geo') @Auth()
   geo(@Query('date') date?: string) {

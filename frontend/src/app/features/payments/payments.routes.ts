@@ -13,4 +13,8 @@ export const paymentsRoutes: Routes = [
     path: 'schedule/:loanId',
     loadComponent: () => import('./payment-schedule.component').then(m => m.PaymentScheduleComponent),
   },
+  { 
+    path: 'consulta-pagos',
+    loadComponent: () => import('./payments-query.component').then(m => m.PaymentsQueryComponent),
+  }
 ];

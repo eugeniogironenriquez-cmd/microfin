@@ -448,8 +448,6 @@ export class PaymentsMonitorComponent implements OnInit, OnDestroy {
     }
     L.push('--------------------------------');
     // Detalle aplicado (en el monitor viene directo en el pago)
-    if (p?.capitalApplied != null)  L.push(`Capital: ${money(p.capitalApplied)}`);
-    if (p?.interestApplied != null) L.push(`Interés: ${money(p.interestApplied)}`);
     if (Number(p?.lateInterestApplied || 0) > 0) {
       L.push(`Moratorio: ${money(p.lateInterestApplied)}`);
     }
