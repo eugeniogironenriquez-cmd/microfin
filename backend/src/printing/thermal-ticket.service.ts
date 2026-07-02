@@ -90,7 +90,9 @@ export class ThermalTicketService {
       fechaAplicacion: fdate(payment?.paymentDate || payment?.createdAt || new Date()),
     };
 
+    const templatePath = this.getTicketTemplatePath();
     let html = fs.readFileSync(this.templatePath, 'utf8');
+
 
     for (const [key, value] of Object.entries(values)) {
       html = html.replaceAll(`{{${key}}}`, value);
@@ -98,4 +100,17 @@ export class ThermalTicketService {
 
     return html;
   }
+
+  private getTicketTemplatePath(): string {
+  const paths = [
+    path.join(process.cwd(), 'dist', 'printing', 'templates', 'ticket-80mm.html'),
+    path.join(process.cwd(), 'src', 'printing', 'templates', 'ticket-80mm.html'),
+    path.join(process.cwd(), 'printing', 'templates', 'ticket-80mm.html'),
+  ];
+
+  const found = paths.find(p => fs.existsSync(p));
+  if (!found) throw new Error(`No se encontró ticket-80mm.html`);
+
+  return found;
+}
 }
