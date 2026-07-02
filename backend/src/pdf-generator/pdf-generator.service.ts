@@ -2,14 +2,14 @@ import { Injectable } from '@nestjs/common';
 import { Response } from 'express';
 import * as PDFDocument from 'pdfkit';
 
-const GREEN  = '#1C4532';
-const GREEN2 = '#0d2b1e';
-const GRAY   = '#718096';
-const LGRAY  = '#F7FAFC';
-const BORDER = '#CBD5E0';
-const WHITE  = '#FFFFFF';
-const TEXT   = '#171923';
-const ALT    = '#F0FFF4';
+const GREEN  = '#000000';
+const GREEN2 = '#000000';
+const GRAY   = '#000000';
+const LGRAY  = '#000000';
+const BORDER = '#000000';
+const WHITE  = '#000000';
+const TEXT   = '#000000';
+const ALT    = '#000000';
 const RB     = 'Helvetica';
 const BB     = 'Helvetica-Bold';
 
