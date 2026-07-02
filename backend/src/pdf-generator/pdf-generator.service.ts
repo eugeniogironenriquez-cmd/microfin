@@ -4,8 +4,8 @@ import * as PDFDocument from 'pdfkit';
 import * as fs from 'fs';
 import * as path from 'path';
 
-const GREEN  = '#000000';
-const GREEN2 = '#000000';
+const GREEN  = '#2795F5';
+const GREEN2 = '#2795F5';
 const GRAY   = '#000000';
 const LGRAY  = '#000000';
 const BORDER = '#000000';
