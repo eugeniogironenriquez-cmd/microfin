@@ -3,10 +3,12 @@ import {
   Body, Param, NotFoundException,
 } from '@nestjs/common';
 import { exec } from 'child_process';
+import { Auth } from '../common/guards/roles.guard';
 
 @Controller('printing')
 export class PrintingController {
   @Get('printers')
+  @Auth()
   async getPrinters(): Promise<string[]> {
     return new Promise((resolve) => {
       exec('powershell -Command "Get-Printer | Select-Object -ExpandProperty Name"', (error, stdout) => {
