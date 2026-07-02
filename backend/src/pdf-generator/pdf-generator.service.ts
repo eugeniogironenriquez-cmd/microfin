@@ -278,7 +278,7 @@ export class PdfGeneratorService {
     if (tieneMora) estH += cuotasConMora.length * 11 + 28;
     const PAGE_H = Math.max(320, estH);
 
-    const doc = new PDFDocument({ size: [TW, PAGE_H], margin: 0, bufferPages: true });
+    const doc = new PDFDocument({ size: [TW, PAGE_H], margin: 0, bufferPages: true, compress: false });
     res.setHeader('Content-Type', 'application/pdf');
     res.setHeader('Content-Disposition',
       `attachment; filename="ticket-${(payment.id||'').substring(0,8)}.pdf"`);
@@ -395,6 +395,7 @@ export class PdfGeneratorService {
     center('¡Gracias por su pago!', 8, BB, TEXT, 2);
     center('Conserve este comprobante', 6.5, RB, GRAY, 2);
 
+    (doc as any).flushPages?.();
     doc.end();
   }
 
