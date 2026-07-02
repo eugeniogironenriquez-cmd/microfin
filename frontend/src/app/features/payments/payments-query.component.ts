@@ -237,7 +237,11 @@ export class PaymentsQueryComponent implements OnInit {
       const url = URL.createObjectURL(blob);
       const w = window.open(url);
       if (w) w.onload = () => w.print();*/
-      window.open(`${environment.apiUrl}/payments/${id}/ticket`, '_blank');
+      window.open(
+    `${environment.apiUrl}/printing/ticket/${id}/html`,
+    '_blank',
+    'noopener,noreferrer'
+  );
     } catch {
       this.snackbar.open('No se pudo generar el ticket', 'Cerrar', { duration: 4000 });
     }

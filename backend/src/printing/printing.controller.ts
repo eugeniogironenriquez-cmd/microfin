@@ -9,7 +9,7 @@ export class PrintingController {
     private readonly paymentsService: PaymentsService,
   ) {}
 
-  @Get('ticket/:id/html') @Auth()
+  @Get('ticket/:id/html')
   async ticketHtml(
     @Param('id') id: string,
     @Res() res: Response,
