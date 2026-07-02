@@ -610,12 +610,16 @@ export class PdfGeneratorService {
     const tX = (PW-tW)/2;
     const rH = 16, hH = 20;
     const contentBottom = PH - FOOTER_H - 20; // leave space for footer
+/*
+const GREEN2 = '#000000';
+const GRAY   = '#000000';
+const LGRAY  = '#ffffff';*/
 
     const drawHead = (atY: number): number => {
       let cx = tX;
       doc.rect(tX, atY, tW, hH).fill(GREEN2);
       cols.forEach(c => {
-        doc.font(BB).fontSize(7.5).fillColor(GREEN2)
+        doc.font(BB).fontSize(7.5).fillColor(LGRAY)
            .text(c.label, cx+3, atY+6, {width:c.w-6, align:c.align, lineBreak:false});
         cx += c.w;
       });
