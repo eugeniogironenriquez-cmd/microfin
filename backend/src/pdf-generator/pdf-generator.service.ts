@@ -1,6 +1,8 @@
 import { Injectable } from '@nestjs/common';
 import { Response } from 'express';
 import * as PDFDocument from 'pdfkit';
+import * as fs from 'fs';
+import * as path from 'path';
 
 const GREEN  = '#000000';
 const GREEN2 = '#000000';
@@ -228,6 +230,73 @@ export class PdfGeneratorService {
     doc.end();
   }
 
+  generateThermalReceiptHtml(data: any): string {
+  const { payment, loan, company, stats } = data;
+
+  let cuotasPagadas: Array<{ periodo: number; fecha: string }> = [];
+
+  try {
+    if (payment.cuotasPagadas) {
+      cuotasPagadas =
+        typeof payment.cuotasPagadas === 'string'
+          ? JSON.parse(payment.cuotasPagadas)
+          : payment.cuotasPagadas;
+    }
+  } catch {
+    cuotasPagadas = [];
+  }
+
+  const cuotasPagadasHtml =
+    cuotasPagadas.length > 0
+      ? cuotasPagadas
+          .sort((a, b) => a.periodo - b.periodo)
+          .map(c => `
+            <div class="row">
+              <span>#${c.periodo}</span>
+              <span>${fdate(c.fecha)}</span>
+            </div>
+          `)
+          .join('')
+      : `
+        <div class="row">
+          <span>—</span>
+          <span>—</span>
+        </div>
+      `;
+
+  const templatePath = path.join(
+    process.cwd(),
+    'src',
+    'printing',
+    'templates',
+    'ticket-80mm.html',
+  );
+
+  let html = fs.readFileSync(templatePath, 'utf8');
+
+  const values: Record<string, string> = {
+    empresa: company?.name || 'Microcapital - Ixtepec',
+    telefono: company?.phone || '—',
+    folio: (payment?.receiptNumber || payment?.id?.substring(0, 8) || '—').toUpperCase(),
+    cliente: loan?.customer?.fullName || '—',
+    monto: cur(loan?.principalAmount),
+    cuota: cur(loan?.periodicPayment),
+    saldo: cur(stats?.saldo),
+    pagoRealizado: `${stats?.cuotasPagadas ?? 0}/${stats?.totalCuotas ?? loan?.termWeeks ?? 0}`,
+    pagosPendientes: String(stats?.cuotasPendientes ?? 0),
+    cuotasPagadasHtml,
+    totalRecibido: cur(payment?.amountPaid),
+    fechaHora: fdatetimeMX(payment?.createdAt || payment?.paymentDate || new Date()),
+    fechaAplicacion: fdateOnly(payment?.paymentDate || payment?.createdAt || new Date()),
+  };
+
+  for (const [key, value] of Object.entries(values)) {
+    html = html.replaceAll(`{{${key}}}`, value);
+  }
+
+  return html;
+}
+
   // ════════════════════════════════════════════════════════════
   // ── TICKET TÉRMICO 80mm ─────────────────────────────────────
   // Ancho 226pt ≈ 80mm. Alto dinámico según contenido.
@@ -398,6 +467,8 @@ export class PdfGeneratorService {
     (doc as any).flushPages?.();
     doc.end();
   }
+
+  
 
   // ── BUILDERS ─────────────────────────────────────────────
   private buildSimPdf(doc: PDFKit.PDFDocument, data: any) {

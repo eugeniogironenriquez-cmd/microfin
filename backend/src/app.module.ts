@@ -35,7 +35,7 @@ import { ConfigMoraModule } from './config-mora/config-mora.module';
 import { SemaforoModule } from './semaforo/semaforo.module';
 import { ImportLoansModule } from './import-loans/import-loans.module';
 import { VisitasModule, Visita } from './visitas/visitas.module';
-import { PrintingModule }  from './settings/printer.module';
+import { PrintingModule } from './printing/printing.module';
 
 
 @Module({
