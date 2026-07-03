@@ -12,6 +12,7 @@ import { MatSnackBar, MatSnackBarModule } from "@angular/material/snack-bar";
 import { MatDividerModule } from "@angular/material/divider";
 import { ApiService } from "../../core/index";
 import { HttpClient } from '@angular/common/http';
+import { environment } from '../../../environments/environment';
 
 @Component({
   selector: "app-company-settings",
@@ -231,6 +232,7 @@ export class CompanySettingsComponent implements OnInit {
   private api = inject(ApiService);
   private fb = inject(FormBuilder);
   private snackbar = inject(MatSnackBar);
+  private http = inject(HttpClient);
 
   loading = signal(true);
   saving = signal(false);
@@ -262,7 +264,7 @@ export class CompanySettingsComponent implements OnInit {
 
   ngOnInit() {
     this.loadStates();
-    this.loadPrinters();
+    this.cargarLogoActual();
     this.api.get<any>("/company").subscribe({
       next: (data) => {
         this.form.patchValue(data);
@@ -318,20 +320,20 @@ export class CompanySettingsComponent implements OnInit {
     input.value = '';
   }
 
-  cargarLogoActual() {
-    const token = localStorage.getItem('access_token') || '';
-    this.api.post<any>(`/company/logo?t=${Date.now()}`, {
+ cargarLogoActual() {
+  const token = localStorage.getItem('access_token') || '';
+    this.http.get(`${environment.apiUrl}/company/logo?t=${Date.now()}`, {
       responseType: 'blob',
       headers: { Authorization: `Bearer ${token}` },
     }).subscribe({
-      next: (blob: Blob) => {
-        const reader = new FileReader();
-        reader.onload = () => this.logoPreview.set(reader.result as string);
-        reader.readAsDataURL(blob);
-      },
-      error: () => this.logoPreview.set(null),  // sin logo aún → placeholder
-    });
-  }
+    next: (blob: Blob) => {
+      const reader = new FileReader();
+      reader.onload = () => this.logoPreview.set(reader.result as string);
+      reader.readAsDataURL(blob);
+    },
+    error: () => this.logoPreview.set(null),
+  });
+}
 
   loadStates() {
     this.loadingStates.set(true);
@@ -344,23 +346,6 @@ export class CompanySettingsComponent implements OnInit {
     });
   }
 
-  loadPrinters() {
-    this.loadingPrinters.set(true);
-
-    this.api.get<any>("/printing/printers").subscribe({
-      next: (r) => {
-        const printers = Array.isArray(r) ? r : (r?.data ?? []);
-        this.printers.set(printers);
-        this.loadingPrinters.set(false);
-      },
-      error: () => {
-        this.snackbar.open("No se pudieron cargar las impresoras", "Cerrar", {
-          duration: 4000,
-        });
-        this.loadingPrinters.set(false);
-      },
-    });
-  }
 
   onStateChange(stateName: string) {
     this.municipalities.set([]);

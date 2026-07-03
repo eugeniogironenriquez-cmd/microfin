@@ -473,14 +473,14 @@ export class PdfGeneratorService {
   // ── BUILDERS ─────────────────────────────────────────────
   private buildSimPdf(doc: PDFKit.PDFDocument, data: any) {
     let y = this.drawHeader(doc, data.companyName||'Microcapital-Ixtepec',
-      'PLAN DE PAGOS', 'Documento informativo, no constituye contrato');
+      'PLAN DE PAGOS', 'Documento informativo, no constituye contrato', data.logoPath);
     y = this.drawSummaryBox(doc, y, data);
     this.drawScheduleTable(doc, y, data.schedule);
   }
 
   private buildLoanPdf(doc: PDFKit.PDFDocument, data: any) {
     let y = this.drawHeader(doc, data.companyName||'Microcapital-Ixtepec',
-      'CONTRATO DE CRÉDITO', `Folio: ${data.loan.id.substring(0,8).toUpperCase()}`);
+      'CONTRATO DE CRÉDITO', `Folio: ${data.loan.id.substring(0,8).toUpperCase()}`, data.logoPath);
     y = this.drawCustomerInfo(doc, y, data.customer);
     if (data.guarantor) y = this.drawGuarantorInfo(doc, y, data.guarantor);
     y = this.drawLoanInfo(doc, y, data.loan, data.loanType);
@@ -493,11 +493,30 @@ export class PdfGeneratorService {
   }
 
   // ── DRAW FUNCTIONS (return next Y) ───────────────────────
-  private drawHeader(doc: PDFKit.PDFDocument, company: string, title: string, sub: string): number {
+  private drawHeader(doc: PDFKit.PDFDocument, company: string, title: string, sub: string, logoPath?: string): number {
     doc.rect(0,0,PW,76).fill(GREEN);
-    doc.font(BB).fontSize(15).fillColor(WHITE).text(company, ML, 20, {lineBreak:false});
+
+    // Logo de la empresa (si viene y el archivo existe en disco).
+    // Se dibuja a la izquierda; el nombre se recorre a la derecha del logo.
+    let nameX = ML;
+    if (logoPath) {
+      try {
+        const fs = require('fs');
+        const resolved = logoPath.startsWith('/') || /^[A-Za-z]:/.test(logoPath)
+          ? logoPath
+          : require('path').join(process.cwd(), logoPath);
+        if (fs.existsSync(resolved) && !/\.svg$/i.test(resolved)) {
+          doc.image(resolved, ML, 12, { fit: [52, 52], align: 'center', valign: 'center' });
+          nameX = ML + 64;
+        }
+      } catch {
+        // Si el logo falla, el PDF sale sin logo (no rompe la generación).
+      }
+    }
+
+    doc.font(BB).fontSize(15).fillColor(WHITE).text(company, nameX, 20, {lineBreak:false});
     doc.font(RB).fontSize(7.5).fillColor('rgba(255,255,255,0.65)')
-       .text('Sistema de Gestión Microfinanciera', ML, 42, {lineBreak:false});
+       .text('Sistema de Gestión Microfinanciera', nameX, 42, {lineBreak:false});
     doc.font(BB).fontSize(12).fillColor(WHITE)
        .text(title, 0, 24, {width:PW-ML,align:'right',lineBreak:false});
     doc.font(RB).fontSize(7.5).fillColor('rgba(255,255,255,0.75)')
