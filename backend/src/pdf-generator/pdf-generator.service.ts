@@ -146,9 +146,28 @@ export class PdfGeneratorService {
 
     // ── HEADER (ancho completo) ──────────────────────────────
     doc.rect(0, 0, PW, 76).fill(GREEN);
-    doc.font(BB).fontSize(17).fillColor(WHITE).text(cName, ML, 20, { lineBreak: false });
+
+    // Logo de la empresa (si viene y el archivo existe en disco).
+    let nameX = ML;
+    const logoPath = company?.logoPath;
+    if (logoPath) {
+      try {
+        const fs = require('fs');
+        const resolved = logoPath.startsWith('/') || /^[A-Za-z]:/.test(logoPath)
+          ? logoPath
+          : require('path').join(process.cwd(), logoPath);
+        if (fs.existsSync(resolved) && !/\.svg$/i.test(resolved)) {
+          doc.image(resolved, ML, 8, { fit: [60, 60], align: 'center', valign: 'center' });
+          nameX = ML + 72;
+        }
+      } catch {
+        // Si el logo falla, el comprobante sale sin logo (no rompe).
+      }
+    }
+
+    doc.font(BB).fontSize(17).fillColor(WHITE).text(cName, nameX, 20, { lineBreak: false });
     doc.font(RB).fontSize(8).fillColor('rgba(255,255,255,0.7)')
-       .text(`RFC: ${company?.rfc || '—'}    Tel: ${company?.phone || '—'}`, ML, 44, { lineBreak: false });
+       .text(`RFC: ${company?.rfc || '—'}    Tel: ${company?.phone || '—'}`, nameX, 44, { lineBreak: false });
     doc.font(BB).fontSize(13).fillColor(WHITE)
        .text('COMPROBANTE DE PAGO', 0, 22, { width: PW - MR, align: 'right', lineBreak: false });
     doc.font(RB).fontSize(8).fillColor('rgba(255,255,255,0.75)')
@@ -506,8 +525,8 @@ export class PdfGeneratorService {
           ? logoPath
           : require('path').join(process.cwd(), logoPath);
         if (fs.existsSync(resolved) && !/\.svg$/i.test(resolved)) {
-          doc.image(resolved, ML, 12, { fit: [52, 52], align: 'center', valign: 'center' });
-          nameX = ML + 64;
+          doc.image(resolved, ML, 8, { fit: [60, 60], align: 'center', valign: 'center' });
+          nameX = ML + 72;
         }
       } catch {
         // Si el logo falla, el PDF sale sin logo (no rompe la generación).
