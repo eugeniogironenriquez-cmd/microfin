@@ -1112,6 +1112,9 @@ export class PaymentsRegisterComponent implements OnInit {
       L.push("--------------------------------");
     }
     L.push(`*TOTAL RECIBIDO: ${money(fv.amountPaid)}*`);
+    if (Number(res?.saldoFavor || 0) > 0) {
+      L.push(`Saldo a favor: ${money(res.saldoFavor)}`);
+    }
     L.push(`Forma de pago: ${fv.method}`);
     L.push(`Fecha y hora: ${fechaHora}`);
     if (res?.liquidado) {

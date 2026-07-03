@@ -18,8 +18,6 @@ function text(s: string) {
   return iconv.encode(s, "cp850");
 }
 
-
-
 export class EscPosTicketService {
   async print(data: any, printerName: string) {
     const { payment, loan, company, stats } = data;
@@ -91,14 +89,17 @@ export class EscPosTicketService {
     if (Number(payment?.lateInterestApplied ?? 0) !== 0) {
       row("Mora Cobrada:", cur(payment.lateInterestApplied));
     }
-    center()
+    center();
     sep();
     left();
     boldOn();
-    row("TOTAL RECIBIDO", cur(payment?.amountPaid));    
+    row("TOTAL RECIBIDO", cur(payment?.amountPaid));
     boldOff();
+    if (Number(data.saldoFavor || 0) > 0) {
+      row("Saldo a favor:", cur(data.saldoFavor));
+    }
     row("Forma de pago:", paymentMethodText(payment?.method));
-    
+
     center();
     sep();
     left();

@@ -46,54 +46,90 @@ import { ApiService } from "../../core/index";
 
       <!-- Filtros -->
       <mat-card class="filtros">
-        <mat-button-toggle-group
-          [(ngModel)]="modo"
-          (change)="onModoChange()"
-          class="modo"
-        >
-          <mat-button-toggle value="dia">Un día</mat-button-toggle>
-          <mat-button-toggle value="rango">Rango</mat-button-toggle>
-        </mat-button-toggle-group>
+        <div class="fila-principal">
+          <mat-button-toggle-group
+            [(ngModel)]="modo"
+            (change)="onModoChange()"
+            class="modo"
+          >
+            <mat-button-toggle value="dia">Un día</mat-button-toggle>
+            <mat-button-toggle value="rango">Rango</mat-button-toggle>
+          </mat-button-toggle-group>
 
-        @if (modo === "dia") {
-          <mat-form-field appearance="outline" class="f-date">
-            <mat-label>Fecha</mat-label>
-            <input matInput [matDatepicker]="dp1" [(ngModel)]="fechaDia" />
-            <mat-datepicker-toggle
-              matSuffix
-              [for]="dp1"
-            ></mat-datepicker-toggle>
-            <mat-datepicker #dp1></mat-datepicker>
-          </mat-form-field>
-        } @else {
-          <mat-form-field appearance="outline" class="f-date">
-            <mat-label>Desde</mat-label>
-            <input matInput [matDatepicker]="dp2" [(ngModel)]="fechaDesde" />
-            <mat-datepicker-toggle
-              matSuffix
-              [for]="dp2"
-            ></mat-datepicker-toggle>
-            <mat-datepicker #dp2></mat-datepicker>
-          </mat-form-field>
-          <mat-form-field appearance="outline" class="f-date">
-            <mat-label>Hasta</mat-label>
-            <input matInput [matDatepicker]="dp3" [(ngModel)]="fechaHasta" />
-            <mat-datepicker-toggle
-              matSuffix
-              [for]="dp3"
-            ></mat-datepicker-toggle>
-            <mat-datepicker #dp3></mat-datepicker>
-          </mat-form-field>
-        }
+          <div class="fechas-group">
+            @if (modo === "dia") {
+              <mat-form-field appearance="outline" class="f-date">
+                <mat-label>Fecha</mat-label>
+                <input matInput [matDatepicker]="dp1" [(ngModel)]="fechaDia" />
+                <mat-datepicker-toggle
+                  matSuffix
+                  [for]="dp1"
+                ></mat-datepicker-toggle>
+                <mat-datepicker #dp1></mat-datepicker>
+              </mat-form-field>
+            } @else {
+              <mat-form-field appearance="outline" class="f-date">
+                <mat-label>Desde</mat-label>
+                <input
+                  matInput
+                  [matDatepicker]="dp2"
+                  [(ngModel)]="fechaDesde"
+                />
+                <mat-datepicker-toggle
+                  matSuffix
+                  [for]="dp2"
+                ></mat-datepicker-toggle>
+                <mat-datepicker #dp2></mat-datepicker>
+              </mat-form-field>
+              <mat-form-field appearance="outline" class="f-date">
+                <mat-label>Hasta</mat-label>
+                <input
+                  matInput
+                  [matDatepicker]="dp3"
+                  [(ngModel)]="fechaHasta"
+                />
+                <mat-datepicker-toggle
+                  matSuffix
+                  [for]="dp3"
+                ></mat-datepicker-toggle>
+                <mat-datepicker #dp3></mat-datepicker>
+              </mat-form-field>
+            }
+          </div>
 
-        <button
-          mat-raised-button
-          color="primary"
-          (click)="consultar()"
-          [disabled]="loading()"
-        >
-          <mat-icon>search</mat-icon> Consultar
-        </button>
+          <button
+            mat-raised-button
+            color="primary"
+            class="btn-consultar"
+            (click)="consultar()"
+            [disabled]="loading()"
+          >
+            <mat-icon>search</mat-icon> Consultar
+          </button>
+
+          @if (pagos().length > 0) {
+            <mat-form-field appearance="outline" class="f-cliente">
+              <mat-label>Filtrar por cliente</mat-label>
+              <input
+                matInput
+                [ngModel]="filtroCliente()"
+                (ngModelChange)="filtroCliente.set($event)"
+                placeholder="Escribe un nombre"
+              />
+              <mat-icon matPrefix>person_search</mat-icon>
+              @if (filtroCliente()) {
+                <button
+                  matSuffix
+                  mat-icon-button
+                  (click)="filtroCliente.set('')"
+                  aria-label="Limpiar"
+                >
+                  <mat-icon>close</mat-icon>
+                </button>
+              }
+            </mat-form-field>
+          }
+        </div>
       </mat-card>
 
       <!-- Resumen -->
@@ -101,7 +137,7 @@ import { ApiService } from "../../core/index";
         <div class="totales">
           <div class="tot-card">
             <span class="tot-lbl">Pagos</span>
-            <span class="tot-val">{{ pagos().length }}</span>
+            <span class="tot-val">{{ pagosFiltrados().length }}</span>
           </div>
           <div class="tot-card">
             <span class="tot-lbl">Total cobrado</span>
@@ -116,19 +152,25 @@ import { ApiService } from "../../core/index";
       <mat-card class="tabla-card">
         @if (loading()) {
           <div class="center"><mat-spinner diameter="40"></mat-spinner></div>
-        } @else if (pagos().length === 0) {
+        } @else if (pagosFiltrados().length === 0) {
           <div class="empty">
             <mat-icon>receipt_long</mat-icon>
             <p>
-              {{
-                consultado()
-                  ? "No hay pagos en el período seleccionado."
-                  : "Elige una fecha y consulta."
-              }}
+              @if (filtroCliente() && pagos().length > 0) {
+                No hay pagos de un cliente que coincida con "{{
+                  filtroCliente()
+                }}".
+              } @else {
+                {{
+                  consultado()
+                    ? "No hay pagos en el período seleccionado."
+                    : "Elige una fecha y consulta."
+                }}
+              }
             </p>
           </div>
         } @else {
-          <table mat-table [dataSource]="pagos()" class="tabla">
+          <table mat-table [dataSource]="pagosFiltrados()" class="tabla">
             <ng-container matColumnDef="fecha">
               <th mat-header-cell *matHeaderCellDef>Fecha y hora</th>
               <td mat-cell *matCellDef="let p">
@@ -225,19 +267,43 @@ import { ApiService } from "../../core/index";
         margin: 0 0 18px;
       }
       .filtros {
+        padding: 18px 20px;
+        margin-bottom: 16px;
+        border-radius: 14px;
+      }
+      .fila-principal {
         display: flex;
         align-items: center;
-        gap: 14px;
-        padding: 16px;
+        gap: 12px;
         flex-wrap: wrap;
-        margin-bottom: 16px;
+      }
+      .fechas-group {
+        display: flex;
+        align-items: center;
+        gap: 12px;
       }
       .modo {
         height: 40px;
       }
       .f-date {
-        width: 180px;
+        width: 170px;
+      }
+      .f-date,
+      .f-cliente {
         margin-bottom: -1.25em;
+      }
+      .f-cliente {
+        width: 280px;
+        margin-left: auto;
+      }
+      .btn-consultar {
+        height: 40px;
+        border-radius: 999px;
+        padding: 0 22px;
+      }
+      /* Alinear alturas: ocultar el espacio de mensajes bajo los campos */
+      .filtros ::ng-deep .mat-mdc-form-field-subscript-wrapper {
+        display: none;
       }
       .totales {
         display: flex;
@@ -315,8 +381,21 @@ export class PaymentsQueryComponent implements OnInit {
   printing = signal(false);
   private api = inject(ApiService);
 
+  // Filtro local por nombre de cliente (sobre lo ya consultado).
+  filtroCliente = signal<string>("");
+
+  // Pagos tras aplicar el filtro por nombre de cliente.
+  pagosFiltrados = computed(() => {
+    const q = this.filtroCliente().trim().toLowerCase();
+    if (!q) return this.pagos();
+    return this.pagos().filter((p) => {
+      const nombre = (p.loan?.customer?.fullName || "").toLowerCase();
+      return nombre.includes(q);
+    });
+  });
+
   totalCobrado = computed(() =>
-    this.pagos().reduce((s, p) => s + Number(p.amountPaid || 0), 0),
+    this.pagosFiltrados().reduce((s, p) => s + Number(p.amountPaid || 0), 0),
   );
 
   ngOnInit() {}
@@ -478,14 +557,17 @@ export class PaymentsQueryComponent implements OnInit {
     L.push(`Folio: ${folio}`);
     L.push(`Cliente: ${cliente}`);
     L.push("--------------------------------");
-    if (p?.capitalApplied != null)
+    /*if (p?.capitalApplied != null)
       L.push(`Capital: ${money(p.capitalApplied)}`);
     if (p?.interestApplied != null)
-      L.push(`Interés: ${money(p.interestApplied)}`);
+      L.push(`Interés: ${money(p.interestApplied)}`);*/
     if (Number(p?.lateInterestApplied || 0) > 0)
       L.push(`Moratorio: ${money(p.lateInterestApplied)}`);
     L.push("--------------------------------");
     L.push(`*TOTAL RECIBIDO: ${money(p?.amountPaid)}*`);
+    if (Number(p?.saldoFavor || 0) > 0) {
+      L.push(`Saldo a favor: ${money(p.saldoFavor)}`);
+    }
     if (p?.method) L.push(`Forma de pago: ${p.method}`);
     L.push(`Fecha y hora: ${fh}`);
     L.push("--------------------------------");
@@ -500,10 +582,20 @@ export class PaymentsQueryComponent implements OnInit {
       });
       return;
     }
-    window.open(
-      `https://wa.me/${numero}?text=${encodeURIComponent(this.textoTicket(p))}`,
-      "_blank",
-    );
+    const url = `https://wa.me/${numero}?text=${encodeURIComponent(this.textoTicket(p))}`;
+    const ventana = window.open(url, "_blank");
+
+    // Detectar si el navegador bloqueó la ventana emergente.
+    if (!ventana || ventana.closed || typeof ventana.closed === "undefined") {
+      // Bloqueado: ofrecer reintento con un clic (acción directa del usuario,
+      // que el navegador sí permite).
+      const ref = this.snackbar.open(
+        "El navegador bloqueó WhatsApp. Toca para abrirlo.",
+        "Abrir WhatsApp",
+        { duration: 8000 },
+      );
+      ref.onAction().subscribe(() => window.open(url, "_blank"));
+    }
   }
 
   fmtFecha(iso: string): string {
