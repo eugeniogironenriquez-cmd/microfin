@@ -446,7 +446,7 @@ export class Loan {
   @Column({ name: 'monto_total', type: 'decimal', precision: 12, scale: 2, nullable: true })
   totalAmount: number;
 
-  @Column({name: 'saldo_favor', type: 'decimal', precision: 12, scale: 2, default: 0,})
+  @Column({name: 'saldo_a_favor', type: 'decimal', precision: 12, scale: 2, default: 0,})
   saldoFavor: number;
 
   @Column({ name: 'pago_periodico', type: 'decimal', precision: 12, scale: 2, nullable: true })
