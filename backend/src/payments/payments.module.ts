@@ -482,7 +482,6 @@ export class PaymentsService {
         }
         lateInterestApplied = this.calculator.round(lateInterestApplied);
       }
-
     }
 
     // Folio secuencial del día: contamos los pagos del día-calendario de México.
@@ -666,7 +665,7 @@ export class PaymentsService {
       );
     }
 
-    return this.paymentRepo
+    const rows = await this.paymentRepo
       .createQueryBuilder("p")
       .leftJoinAndSelect("p.loan", "l")
       .leftJoinAndSelect("l.customer", "c")
@@ -674,6 +673,12 @@ export class PaymentsService {
       .andWhere("p.paymentDate < :end", { end })
       .orderBy("p.paymentDate", "DESC")
       .getMany();
+
+    for (const p of rows as any[]) {
+      p.saldoFavor = await this.getSaldoFavorActual(p.loanId);
+    }
+
+    return rows;
   }
 
   // Pagos con geolocalización para el monitor web (mapa de cobranza)
