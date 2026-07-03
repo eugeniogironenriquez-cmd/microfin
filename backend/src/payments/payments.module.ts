@@ -790,11 +790,14 @@ export class PaymentsService {
       saldo,
     };
 
+    const saldoFavor = await this.getSaldoFavorActual(payment.loanId);
+
     return {
       payment,
       loan,
       company,
       stats,
+      saldoFavor,
     };
   }
 

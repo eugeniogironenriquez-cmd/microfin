@@ -20,7 +20,7 @@ function text(s: string) {
 
 export class EscPosTicketService {
   async print(data: any, printerName: string) {
-    const { payment, loan, company, stats } = data;
+    const { payment, loan, company, stats, saldoFavor } = data;
 
     let cuotasPagadas: any[] = [];
     try {
@@ -95,8 +95,8 @@ export class EscPosTicketService {
     boldOn();
     row("TOTAL RECIBIDO", cur(payment?.amountPaid));
     boldOff();
-    if (Number(data.saldoFavor || 0) > 0) {
-      row("Saldo a favor:", cur(data.saldoFavor));
+    if (Number(saldoFavor || 0) > 0) {
+      row("Saldo a favor:", cur(saldoFavor));
     }
     row("Forma de pago:", paymentMethodText(payment?.method));
 
