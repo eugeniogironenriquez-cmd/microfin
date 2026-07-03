@@ -168,6 +168,12 @@ export class PdfGeneratorService {
     doc.font(BB).fontSize(17).fillColor(WHITE).text(cName, nameX, 20, { lineBreak: false });
     doc.font(RB).fontSize(8).fillColor('rgba(255,255,255,0.7)')
        .text(`RFC: ${company?.rfc || '—'}    Tel: ${company?.phone || '—'}`, nameX, 44, { lineBreak: false });
+    // Dirección de la empresa (address, city, state) debajo del RFC/Tel.
+    const cAddr = [company?.address, company?.city, company?.state].filter(Boolean).join(', ');
+    if (cAddr) {
+      doc.font(RB).fontSize(7).fillColor('rgba(255,255,255,0.7)')
+         .text(cAddr, nameX, 56, { width: (PW - MR) - nameX - 150, lineBreak: false });
+    }
     doc.font(BB).fontSize(13).fillColor(WHITE)
        .text('COMPROBANTE DE PAGO', 0, 22, { width: PW - MR, align: 'right', lineBreak: false });
     doc.font(RB).fontSize(8).fillColor('rgba(255,255,255,0.75)')
@@ -491,15 +497,19 @@ export class PdfGeneratorService {
 
   // ── BUILDERS ─────────────────────────────────────────────
   private buildSimPdf(doc: PDFKit.PDFDocument, data: any) {
+    const addr = data.companyAddress
+      || [data.address, data.city, data.state].filter(Boolean).join(', ');
     let y = this.drawHeader(doc, data.companyName||'Microcapital-Ixtepec',
-      'PLAN DE PAGOS', 'Documento informativo, no constituye contrato', data.logoPath);
+      'PLAN DE PAGOS', 'Documento informativo, no constituye contrato', data.logoPath, addr);
     y = this.drawSummaryBox(doc, y, data);
     this.drawScheduleTable(doc, y, data.schedule);
   }
 
   private buildLoanPdf(doc: PDFKit.PDFDocument, data: any) {
+    const addr = data.companyAddress
+      || [data.address, data.city, data.state].filter(Boolean).join(', ');
     let y = this.drawHeader(doc, data.companyName||'Microcapital-Ixtepec',
-      'CONTRATO DE CRÉDITO', `Folio: ${data.loan.id.substring(0,8).toUpperCase()}`, data.logoPath);
+      'CONTRATO DE CRÉDITO', `Folio: ${data.loan.id.substring(0,8).toUpperCase()}`, data.logoPath, addr);
     y = this.drawCustomerInfo(doc, y, data.customer);
     if (data.guarantor) y = this.drawGuarantorInfo(doc, y, data.guarantor);
     y = this.drawLoanInfo(doc, y, data.loan, data.loanType);
@@ -512,7 +522,7 @@ export class PdfGeneratorService {
   }
 
   // ── DRAW FUNCTIONS (return next Y) ───────────────────────
-  private drawHeader(doc: PDFKit.PDFDocument, company: string, title: string, sub: string, logoPath?: string): number {
+  private drawHeader(doc: PDFKit.PDFDocument, company: string, title: string, sub: string, logoPath?: string, address?: string): number {
     doc.rect(0,0,PW,76).fill(GREEN);
 
     // Logo de la empresa (si viene y el archivo existe en disco).
@@ -533,13 +543,18 @@ export class PdfGeneratorService {
       }
     }
 
-    doc.font(BB).fontSize(15).fillColor(WHITE).text(company, nameX, 20, {lineBreak:false});
+    doc.font(BB).fontSize(15).fillColor(WHITE).text(company, nameX, 16, {lineBreak:false});
     doc.font(RB).fontSize(7.5).fillColor('rgba(255,255,255,0.65)')
-       .text('Sistema de Gestión Microfinanciera', nameX, 42, {lineBreak:false});
+       .text('Sistema de Gestión Microfinanciera', nameX, 38, {lineBreak:false});
+    // Dirección de la empresa debajo del subtítulo (si viene).
+    if (address) {
+      doc.font(RB).fontSize(7).fillColor('rgba(255,255,255,0.65)')
+         .text(address, nameX, 50, {width: (PW-ML) - nameX - 150, lineBreak:false});
+    }
     doc.font(BB).fontSize(12).fillColor(WHITE)
-       .text(title, 0, 24, {width:PW-ML,align:'right',lineBreak:false});
+       .text(title, 0, 22, {width:PW-ML,align:'right',lineBreak:false});
     doc.font(RB).fontSize(7.5).fillColor('rgba(255,255,255,0.75)')
-       .text(sub, 0, 42, {width:PW-ML,align:'right',lineBreak:false});
+       .text(sub, 0, 40, {width:PW-ML,align:'right',lineBreak:false});
     return 90; // fixed Y after header
   }
 

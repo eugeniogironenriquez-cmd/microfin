@@ -936,6 +936,7 @@ export class LoansService {
       companyName: company?.name,
       legalFooter: company?.legalFooter,
       logoPath: company?.logoPath,
+      companyAddress: [company.address, company.city, company.state].filter(Boolean).join(', '),
     }, res);
   }
 }
