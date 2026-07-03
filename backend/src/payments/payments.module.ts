@@ -954,6 +954,12 @@ export class PaymentsController {
   ticketData(@Param("id") id: string) {
     return this.paymentsService.getThermalTicketData(id);
   }
+
+  @Get("saldo-favor/:loanId")
+  @Auth()
+  saldoFavor(@Param("loanId") loanId: string) {
+    return this.paymentsService.getSaldoFavorActual(loanId);
+  }
 }
 
 @Module({

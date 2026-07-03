@@ -175,6 +175,53 @@ import { ApiService, Loan, PaymentSchedule } from "../../core/index";
                       }
                     </div>
                   </div>
+
+                  @if (saldoFavor() > 0) {
+                    <div class="saldo-favor-card">
+                      <div class="saldo-favor-header">
+                        <mat-icon>account_balance_wallet</mat-icon>
+                        <strong>
+                          Saldo a favor disponible:
+                          {{ saldoFavor() | currency: "MXN" }}
+                        </strong>
+                      </div>
+
+                      <mat-checkbox
+                        formControlName="usarSaldoFavor"
+                        color="primary"
+                      >
+                        Aplicar saldo a favor
+                      </mat-checkbox>
+
+                      @if (paymentForm.value.usarSaldoFavor) {
+                        <mat-button-toggle-group
+                          formControlName="saldoFavorModo"
+                          class="saldo-toggle"
+                        >
+                          <mat-button-toggle value="TODO">
+                            Todo
+                          </mat-button-toggle>
+                          <mat-button-toggle value="PARCIAL">
+                            Parcial
+                          </mat-button-toggle>
+                        </mat-button-toggle-group>
+
+                        @if (paymentForm.value.saldoFavorModo === "PARCIAL") {
+                          <mat-form-field appearance="outline" class="w-full">
+                            <mat-label>Monto a aplicar</mat-label>
+                            <input
+                              matInput
+                              type="number"
+                              step="0.01"
+                              formControlName="montoSaldoFavor"
+                              [max]="saldoFavor()"
+                            />
+                            <span matPrefix>$&nbsp;</span>
+                          </mat-form-field>
+                        }
+                      }
+                    </div>
+                  }
                 }
 
                 <form
@@ -229,6 +276,10 @@ import { ApiService, Loan, PaymentSchedule } from "../../core/index";
                     />
                     <span matPrefix>$&nbsp;</span>
                   </mat-form-field>
+
+                  <mat-checkbox formControlName="guardarExcedenteSaldoFavor">
+                    Guardar cualquier excedente como saldo a favor
+                  </mat-checkbox>
 
                   <!-- Check excedente a mora (solo DIA/TOTAL con mora pendiente) -->
                   @if (
@@ -848,6 +899,7 @@ export class PaymentsRegisterComponent implements OnInit {
   schedule = signal<PaymentSchedule[]>([]);
   info = signal<any>(null);
   printing = signal(false);
+  saldoFavor = signal(0);
 
   saving = signal(false);
   paymentResult = signal<any>(null);
@@ -887,6 +939,10 @@ export class PaymentsRegisterComponent implements OnInit {
     method: ["EFECTIVO", Validators.required],
     reference: [""],
     notes: [""],
+    usarSaldoFavor: [false],
+    montoSaldoFavor: [0],
+    guardarExcedenteSaldoFavor: [true],
+    saldoFavorModo: ["TODO"],
   });
 
   typeHint = computed(() => {
@@ -973,6 +1029,11 @@ export class PaymentsRegisterComponent implements OnInit {
     // Info de pago (cuota, saldo, mora)
     this.api.get<any>(`/payments/info/${loan.id}`).subscribe({
       next: (i) => this.info.set(i),
+    });
+
+    this.api.get<number>(`/payments/saldo-favor/${loan.id}`).subscribe({
+      next: (saldo) => this.saldoFavor.set(Number(saldo || 0)),
+      error: () => this.saldoFavor.set(0),
     });
   }
 
@@ -1163,6 +1224,12 @@ export class PaymentsRegisterComponent implements OnInit {
       return;
     }
 
+    const usarSaldoFavor = !!fv.usarSaldoFavor;
+    const montoSaldoFavor =
+      usarSaldoFavor && fv.saldoFavorModo === "PARCIAL"
+        ? Number(fv.montoSaldoFavor || 0)
+        : this.saldoFavor();
+
     // En modo selectivo el backend usa paymentType TOTAL + periodos (paga esas cuotas).
     // Si además se marcó "cobrar mora", se envía applyExcedenteToMora para abonar el resto.
     const body: any = {
@@ -1172,6 +1239,9 @@ export class PaymentsRegisterComponent implements OnInit {
       reference: fv.reference,
       notes: fv.notes,
       paymentType: isSelectivo ? "TOTAL" : fv.paymentType,
+      usarSaldoFavor: fv.usarSaldoFavor,
+      montoSaldoFavor: fv.montoSaldoFavor,
+      guardarExcedenteSaldoFavor: fv.guardarExcedenteSaldoFavor,
       applyExcedenteToMora: isSelectivo
         ? !!fv.cobrarMora
         : !!fv.applyExcedenteToMora,

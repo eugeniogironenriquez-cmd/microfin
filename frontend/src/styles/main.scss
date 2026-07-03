@@ -585,6 +585,26 @@ mat-toolbar.toolbar * { color: var(--white) !important; }
     color:#555;
 }
 
+.saldo-favor-card {
+  background: #f0fff4;
+  border: 1px solid #bbf7d0;
+  border-radius: 8px;
+  padding: 12px;
+  margin-bottom: 12px;
+}
+
+.saldo-favor-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.saldo-toggle {
+  width: 100%;
+  margin: 8px 0 12px;
+}
+
 .logo-section { margin: 16px 0; }
 .logo-label { font-size: 14px; font-weight: 600; color: #2d3748; display: block; margin-bottom: 8px; }
 .logo-box {
