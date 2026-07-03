@@ -92,7 +92,7 @@ export class CompanyController {
       throw new NotFoundException('No hay logo configurado');
     }
     // Envía el archivo tal cual (Express infiere el tipo por extensión).
-    return res.sendFile(path, { root: process.cwd() });
+    return res.sendFile(path);
   }
 
 }
