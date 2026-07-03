@@ -549,7 +549,7 @@ export class PdfGeneratorService {
     // Dirección de la empresa debajo del subtítulo (si viene).
     if (address) {
       doc.font(RB).fontSize(7).fillColor('rgba(255,255,255,0.65)')
-         .text(address, nameX, 50, {width: (PW-ML) - nameX - 150, lineBreak:false});
+         .text(address, nameX, 38, {lineBreak:false});
     }
     doc.font(BB).fontSize(12).fillColor(WHITE)
        .text(title, 0, 22, {width:PW-ML,align:'right',lineBreak:false});
