@@ -935,6 +935,7 @@ export class LoansService {
       } : undefined,
       companyName: company?.name,
       legalFooter: company?.legalFooter,
+      logoPath: company?.logoPath,
     }, res);
   }
 }
