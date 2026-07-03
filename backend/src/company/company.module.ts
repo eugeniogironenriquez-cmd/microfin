@@ -64,9 +64,11 @@ export class CompanyController {
   @UseInterceptors(FileInterceptor('logo', {
     storage: diskStorage({
       destination: (req, file, cb) => {
-        const dir = join(process.env.UPLOAD_DEST || './uploads', 'empresa');
-        if (!existsSync(dir)) mkdirSync(dir, { recursive: true });
-        cb(null, dir);
+        const baseDir = process.env.UPLOAD_DEST || join(process.cwd(), '..', 'storage', 'uploads');
+
+        //const dir = join(process.env.UPLOAD_DEST || './uploads', 'empresa');
+        if (!existsSync(baseDir)) mkdirSync(baseDir, { recursive: true });
+        cb(null, baseDir);
       },
       filename: (req, file, cb) => cb(null, `logo${extname(file.originalname)}`),
     }),
