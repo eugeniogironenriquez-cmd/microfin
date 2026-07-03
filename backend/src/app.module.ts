@@ -58,7 +58,7 @@ import { PrintingModule } from './printing/printing.module';
           CashSession, AuditLog, CompanySettings, LateFeeRule,
           State, Municipality, Guarantor, ExpenseCategory, Expense,
           Role, Permiso, PlazoCredito, ConfigMora,
-          ConfigSemaforo, HistorialComportamiento,Visita
+          ConfigSemaforo, HistorialComportamiento,Visita,CustomerCreditBalance
         ],
         synchronize: false,
         logging: config.get('NODE_ENV') === 'development',
