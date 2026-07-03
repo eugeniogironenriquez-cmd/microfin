@@ -509,7 +509,7 @@ export class PdfGeneratorService {
     const addr = data.companyAddress
       || [data.address, data.city, data.state].filter(Boolean).join(', ');
     let y = this.drawHeader(doc, data.companyName||'Microcapital-Ixtepec',
-      'CONTRATO DE CRÉDITO', `Folio: ${data.loan.id.substring(0,8).toUpperCase()}`, data.logoPath, addr);
+      'CONTRATO DE CRÉDITO', `Folio: ${data.loan.id.toUpperCase()}`, data.logoPath, addr);
     y = this.drawCustomerInfo(doc, y, data.customer);
     if (data.guarantor) y = this.drawGuarantorInfo(doc, y, data.guarantor);
     y = this.drawLoanInfo(doc, y, data.loan, data.loanType);
@@ -553,8 +553,8 @@ export class PdfGeneratorService {
     }
     doc.font(BB).fontSize(12).fillColor(WHITE)
        .text(title, 0, 22, {width:PW-ML,align:'right',lineBreak:false});
-    doc.font(RB).fontSize(7.5).fillColor('rgba(255,255,255,0.75)')
-       .text(sub, 0, 40, {width:PW-ML,align:'right',lineBreak:false});
+    doc.font(RB).fontSize(6.5).fillColor('rgba(255,255,255,0.75)')
+       .text(sub, PW/2, 40, {width:PW/2-MR,align:'right',lineBreak:false});
     return 90; // fixed Y after header
   }
 
