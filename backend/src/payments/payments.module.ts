@@ -483,21 +483,6 @@ export class PaymentsService {
         lateInterestApplied = this.calculator.round(lateInterestApplied);
       }
 
-      let saldoFavorGenerado = 0;
-
-      if (dto.guardarExcedenteSaldoFavor !== false && remaining > 0) {
-        saldoFavorGenerado = this.calculator.round(remaining);
-
-        loan.saldoFavor = this.calculator.round(
-          Number(loan.saldoFavor || 0) -
-            saldoFavorAplicado +
-            saldoFavorGenerado,
-        );
-
-        await this.loanRepo.save(loan);
-
-        remaining = 0;
-      }
     }
 
     // Folio secuencial del día: contamos los pagos del día-calendario de México.
