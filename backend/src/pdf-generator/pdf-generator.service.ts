@@ -577,15 +577,18 @@ export class PdfGeneratorService {
 
   private drawCustomerInfo(doc: PDFKit.PDFDocument, y: number, customer: any): number {
     y = this.drawSectionTitle(doc, y, 'DATOS DEL ACREDITADO');
-    const H = 70;
+    const H = 92;
     doc.rect(ML, y, PW-ML*2, H).fillAndStroke(LGRAY, BORDER);
+
+    const domicilio = customer.address
+      ? [customer.address.street, customer.address.colonia, customer.address.municipality].filter(Boolean).join(', ')
+      : '—';
+
+    // Campos en dos columnas (nombre, curp, rfc, teléfono, email).
     const fields = [
       ['Nombre', customer.fullName], ['CURP', customer.curp],
       ['RFC', customer.rfc||'—'], ['Teléfono', customer.phone],
       ['Email', customer.email||'—'],
-      ['Domicilio', customer.address
-        ? [customer.address.street,customer.address.colonia,customer.address.municipality].filter(Boolean).join(', ')
-        : '—'],
     ];
     const cw = (PW-ML*2-28)/2;
     fields.forEach((f, i) => {
@@ -594,25 +597,40 @@ export class PdfGeneratorService {
       doc.font(RB).fontSize(7).fillColor(GRAY).text(f[0], cx, cy, {lineBreak:false});
       doc.font(BB).fontSize(8).fillColor(TEXT).text(f[1], cx, cy+9, {width:cw-10,lineBreak:false});
     });
+
+    // Domicilio en su propia fila a ANCHO COMPLETO (evita el desborde).
+    const domY = y + 8 + Math.ceil(fields.length/2)*20;
+    doc.font(RB).fontSize(7).fillColor(GRAY).text('Domicilio', ML+14, domY, {lineBreak:false});
+    doc.font(BB).fontSize(8).fillColor(TEXT)
+       .text(domicilio, ML+14, domY+9, {width: PW-ML*2-28, lineBreak:true});
+
     return y + H + 6;
   }
 
   private drawGuarantorInfo(doc: PDFKit.PDFDocument, y: number, guarantor: any): number {
     y = this.drawSectionTitle(doc, y, 'DATOS DEL AVAL');
-    const H = 56;
+    const H = 84;
     doc.rect(ML, y, PW-ML*2, H).fillAndStroke('#FFFBEB', '#FDE68A');
+
+    // Campos en dos columnas (nombre, curp, teléfono, parentesco).
     const fields = [
       ['Nombre', guarantor.fullName], ['CURP', guarantor.curp],
       ['Teléfono', guarantor.phone], ['Parentesco', guarantor.relationship||'—'],
-      ['Domicilio', guarantor.address||'—'],
     ];
-    const cw = (PW-ML*2-28)/3;
+    const cw = (PW-ML*2-28)/2;
     fields.forEach((f, i) => {
-      const cx = ML+14 + (i%3)*cw;
-      const cy = y + 8 + Math.floor(i/3)*22;
+      const cx = ML+14 + (i%2)*cw;
+      const cy = y + 8 + Math.floor(i/2)*20;
       doc.font(RB).fontSize(7).fillColor(GRAY).text(f[0], cx, cy, {lineBreak:false});
-      doc.font(BB).fontSize(8).fillColor(TEXT).text(f[1], cx, cy+9, {width:cw-8,lineBreak:false});
+      doc.font(BB).fontSize(8).fillColor(TEXT).text(f[1], cx, cy+9, {width:cw-10,lineBreak:false});
     });
+
+    // Domicilio en su propia fila a ANCHO COMPLETO.
+    const domY = y + 8 + Math.ceil(fields.length/2)*20;
+    doc.font(RB).fontSize(7).fillColor(GRAY).text('Domicilio', ML+14, domY, {lineBreak:false});
+    doc.font(BB).fontSize(8).fillColor(TEXT)
+       .text(guarantor.address||'—', ML+14, domY+9, {width: PW-ML*2-28, lineBreak:true});
+
     return y + H + 6;
   }
 
