@@ -81,7 +81,7 @@ import { GuarantorFormComponent } from './guarantor-form.component';
                 <mat-card-header><mat-card-title>Datos del crédito</mat-card-title></mat-card-header>
                 <mat-card-content>
                   <div class="info-rows">
-                    <div class="info-row"><span>Folio</span><strong class="font-mono">{{ loan()!.id.substring(0,8).toUpperCase() }}</strong></div>
+                    <div class="info-row"><span>Folio</span><strong class="font-mono">{{ loan()!.id.toUpperCase() }}</strong></div>
                     <div class="info-row"><span>Estado</span>
                       <span class="badge badge-{{ loan()!.status | lowercase }}">{{ loan()!.status }}</span>
                     </div>

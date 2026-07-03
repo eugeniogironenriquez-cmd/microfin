@@ -544,8 +544,8 @@ export class PdfGeneratorService {
     }
 
     doc.font(BB).fontSize(15).fillColor(WHITE).text(company, nameX, 16, {lineBreak:false});
-    doc.font(RB).fontSize(7.5).fillColor('rgba(255,255,255,0.65)')
-       .text('Sistema de Gestión Microfinanciera', nameX, 38, {lineBreak:false});
+    /*doc.font(RB).fontSize(7.5).fillColor('rgba(255,255,255,0.65)')
+       .text('Sistema de Gestión Microfinanciera', nameX, 38, {lineBreak:false});*/
     // Dirección de la empresa debajo del subtítulo (si viene).
     if (address) {
       doc.font(RB).fontSize(7).fillColor('rgba(255,255,255,0.65)')
