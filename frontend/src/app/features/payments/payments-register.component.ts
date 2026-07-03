@@ -476,6 +476,13 @@ import { ApiService, Loan, PaymentSchedule } from "../../core/index";
           </mat-card>
         }
       </div>
+      @if (printing()) {
+        <div class="loading-overlay">
+          <mat-spinner diameter="60"></mat-spinner>
+
+          <div class="loading-text">Enviando ticket a la impresora...</div>
+        </div>
+      }
     </div>
   `,
   styles: [
@@ -840,6 +847,7 @@ export class PaymentsRegisterComponent implements OnInit {
   selectedLoan = signal<Loan | null>(null);
   schedule = signal<PaymentSchedule[]>([]);
   info = signal<any>(null);
+  printing = signal(false);
 
   saving = signal(false);
   paymentResult = signal<any>(null);
@@ -1219,7 +1227,48 @@ export class PaymentsRegisterComponent implements OnInit {
   }
   // Abre el ticket térmico (80mm) para imprimir en la impresora térmica
   printTicketById(id: string) {
-    this.pdfSvc.open(`/payments/${id}/ticket`);
+    this.printing.set(true);
+
+    this.api.get<any>(`/payments/${id}/ticket-data`).subscribe({
+      next: async (data) => {
+        try {
+          const resp = await fetch("http://localhost:3100/print-ticket", {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify({
+              data,
+            }),
+          });
+
+          const result = await resp.json();
+
+          if (!result.ok) {
+            throw new Error(result.message || "Error al imprimir");
+          }
+
+          this.snackbar.open("Ticket enviado a impresión", "OK", {
+            duration: 2500,
+          });
+        } catch (e: any) {
+          this.snackbar.open(e.message || "Error al imprimir", "Cerrar", {
+            duration: 4000,
+          });
+        } finally {
+          this.printing.set(false);
+        }
+      },
+      error: () => {
+        this.printing.set(false);
+
+        this.snackbar.open(
+          "No se pudieron obtener los datos del ticket",
+          "Cerrar",
+          { duration: 4000 },
+        );
+      },
+    });
   }
 
   clearPayment() {

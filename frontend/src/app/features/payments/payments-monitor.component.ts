@@ -234,6 +234,13 @@ import * as XLSX from "xlsx";
           </table>
         </mat-card-content>
       </mat-card>
+      @if (printing()) {
+        <div class="loading-overlay">
+          <mat-spinner diameter="60"></mat-spinner>
+
+          <div class="loading-text">Enviando ticket a la impresora...</div>
+        </div>
+      }
     }
   `,
   styles: [
@@ -345,6 +352,7 @@ export class PaymentsMonitorComponent implements OnInit, OnDestroy {
   private api = inject(ApiService);
   private pdfSvc = inject(PdfDownloadService);
   private snackbar = inject(MatSnackBar);
+  printing = signal(false);
 
   payments = signal<any[]>([]);
   loading = signal(true);
@@ -388,11 +396,6 @@ export class PaymentsMonitorComponent implements OnInit, OnDestroy {
     });
   }
 
-  // Imprimir ticket térmico 80mm (abre PDF en pestaña nueva para imprimir)
-  printTicket(id: string) {
-    this.pdfSvc.open(`/payments/${id}/ticket`);
-  }
-
   // Descargar comprobante carta
   downloadReceipt(id: string) {
     this.pdfSvc.download(
@@ -401,77 +404,139 @@ export class PaymentsMonitorComponent implements OnInit, OnDestroy {
     );
   }
 
-   telefonoDe(p: any): string | null {
+  telefonoDe(p: any): string | null {
     const raw = p?.loan?.customer?.phone;
     if (!raw) return null;
-    const soloDigitos = String(raw).replace(/\D/g, '');
+    const soloDigitos = String(raw).replace(/\D/g, "");
     return soloDigitos.length >= 10 ? soloDigitos : null;
   }
- 
+
   /** Número en formato wa.me (México = 52). */
   private waNumero(p: any): string | null {
     const tel = this.telefonoDe(p);
     if (!tel) return null;
-    if (tel.length === 12 && tel.startsWith('52')) return tel;
-    if (tel.length === 10) return '52' + tel;
+    if (tel.length === 12 && tel.startsWith("52")) return tel;
+    if (tel.length === 10) return "52" + tel;
     return tel;
   }
- 
+
   /** Arma el texto del comprobante para un pago del monitor. */
   private construirTextoTicket(p: any): string {
     const money = (v: any) =>
-      '$' + (Number(v) || 0).toLocaleString('es-MX', {
-        minimumFractionDigits: 2, maximumFractionDigits: 2,
+      "$" +
+      (Number(v) || 0).toLocaleString("es-MX", {
+        minimumFractionDigits: 2,
+        maximumFractionDigits: 2,
       });
- 
-    const empresa = 'MICROCAPITAL - IXTEPEC';
-    const cliente = p?.loan?.customer?.fullName || 'Cliente';
-    const folio = p?.receiptNumber || (p?.id ? p.id.substring(0, 8).toUpperCase() : '—');
- 
+
+    const empresa = "MICROCAPITAL - IXTEPEC";
+    const cliente = p?.loan?.customer?.fullName || "Cliente";
+    const folio =
+      p?.receiptNumber || (p?.id ? p.id.substring(0, 8).toUpperCase() : "—");
+
     // Fecha y hora del pago (createdAt), en zona de México.
-    const fechaBase = p?.createdAt || p?.paymentDate || new Date().toISOString();
-    const fechaHora = new Intl.DateTimeFormat('es-MX', {
-      timeZone: 'America/Mexico_City',
-      day: '2-digit', month: '2-digit', year: 'numeric',
-      hour: '2-digit', minute: '2-digit', hour12: false,
-    }).format(new Date(fechaBase)).replace(',', '');
- 
+    const fechaBase =
+      p?.createdAt || p?.paymentDate || new Date().toISOString();
+    const fechaHora = new Intl.DateTimeFormat("es-MX", {
+      timeZone: "America/Mexico_City",
+      day: "2-digit",
+      month: "2-digit",
+      year: "numeric",
+      hour: "2-digit",
+      minute: "2-digit",
+      hour12: false,
+    })
+      .format(new Date(fechaBase))
+      .replace(",", "");
+
     const L: string[] = [];
     L.push(`*${empresa}*`);
-    L.push('COMPROBANTE DE PAGO');
-    L.push('--------------------------------');
+    L.push("COMPROBANTE DE PAGO");
+    L.push("--------------------------------");
     L.push(`Folio: ${folio}`);
     L.push(`Cliente: ${cliente}`);
     if (p?.loan) {
-      if (p.loan.principalAmount != null) L.push(`Monto del crédito: ${money(p.loan.principalAmount)}`);
-      if (p.loan.periodicPayment != null) L.push(`Cuota: ${money(p.loan.periodicPayment)}`);
+      if (p.loan.principalAmount != null)
+        L.push(`Monto del crédito: ${money(p.loan.principalAmount)}`);
+      if (p.loan.periodicPayment != null)
+        L.push(`Cuota: ${money(p.loan.periodicPayment)}`);
     }
-    L.push('--------------------------------');
+    L.push("--------------------------------");
     // Detalle aplicado (en el monitor viene directo en el pago)
     if (Number(p?.lateInterestApplied || 0) > 0) {
       L.push(`Moratorio: ${money(p.lateInterestApplied)}`);
     }
-    L.push('--------------------------------');
+    L.push("--------------------------------");
     L.push(`*TOTAL RECIBIDO: ${money(p?.amountPaid)}*`);
     if (p?.method) L.push(`Forma de pago: ${p.method}`);
     L.push(`Fecha y hora: ${fechaHora}`);
-    L.push('--------------------------------');
-    L.push('Gracias por su pago.');
-    L.push('Conserve este comprobante.');
- 
-    return L.join('\n');
+    L.push("--------------------------------");
+    L.push("Gracias por su pago.");
+    L.push("Conserve este comprobante.");
+
+    return L.join("\n");
   }
- 
+
   /** Abre WhatsApp con el comprobante prellenado al número del cliente. */
   compartirWhatsApp(p: any) {
     const numero = this.waNumero(p);
     if (!numero) {
-      this.snackbar.open('El cliente no tiene un teléfono válido registrado', 'Cerrar', { duration: 4000 });
+      this.snackbar.open(
+        "El cliente no tiene un teléfono válido registrado",
+        "Cerrar",
+        { duration: 4000 },
+      );
       return;
     }
     const texto = this.construirTextoTicket(p);
     const url = `https://wa.me/${numero}?text=${encodeURIComponent(texto)}`;
-    window.open(url, '_blank');
+    window.open(url, "_blank");
+  }
+
+  // ── Reimpresión / comprobante (mismo patrón del monitor) ──
+  printTicket(id: string) {
+    this.printing.set(true);
+
+    this.api.get<any>(`/payments/${id}/ticket-data`).subscribe({
+      next: async (data) => {
+        try {
+          const resp = await fetch("http://localhost:3100/print-ticket", {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify({
+              data,
+            }),
+          });
+
+          const result = await resp.json();
+
+          if (!result.ok) {
+            throw new Error(result.message || "Error al imprimir");
+          }
+
+          this.snackbar.open("Ticket enviado a impresión", "OK", {
+            duration: 2500,
+          });
+        } catch (e: any) {
+          this.snackbar.open(e.message || "Error al imprimir", "Cerrar", {
+            duration: 4000,
+          });
+        } finally {
+          this.printing.set(false);
+        }
+      },
+      error: () => {
+        this.printing.set(false);
+
+        this.snackbar.open(
+          "No se pudieron obtener los datos del ticket",
+          "Cerrar",
+          { duration: 4000 },
+        );
+      },
+    });
   }
 
   exportExcel() {

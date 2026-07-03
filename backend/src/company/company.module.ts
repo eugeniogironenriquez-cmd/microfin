@@ -1,6 +1,6 @@
 import {
   Module, Controller, Injectable, Get, Put, Post,
-  Body, UploadedFile, UseInterceptors, BadRequestException,
+  Body, UploadedFile, UseInterceptors, BadRequestException, Res, NotFoundException
 } from '@nestjs/common';
 import { TypeOrmModule, InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
@@ -11,6 +11,9 @@ import { extname, join } from 'path';
 import { existsSync, mkdirSync } from 'fs';
 import { CompanySettings, UserRole } from '../common/entities';
 import { Auth } from '../common/guards/roles.guard';
+import { Response } from 'express';
+
+//   import { existsSync, mkdirSync } from 'fs';            // existsSync ya estaba
 
 @Injectable()
 export class CompanyService {
@@ -77,6 +80,19 @@ export class CompanyController {
   uploadLogo(@UploadedFile() file: Express.Multer.File) {
     return this.companyService.uploadLogo(file);
   }
+
+  @Get('logo')
+  @Auth()
+  async getLogo(@Res() res: Response) {
+    const settings = await this.companyService.get();
+    const path = settings.logoPath;
+    if (!path || !existsSync(path)) {
+      throw new NotFoundException('No hay logo configurado');
+    }
+    // Envía el archivo tal cual (Express infiere el tipo por extensión).
+    return res.sendFile(path, { root: process.cwd() });
+  }
+
 }
 
 @Module({

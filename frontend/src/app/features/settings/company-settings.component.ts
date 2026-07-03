@@ -11,6 +11,7 @@ import { MatProgressSpinnerModule } from "@angular/material/progress-spinner";
 import { MatSnackBar, MatSnackBarModule } from "@angular/material/snack-bar";
 import { MatDividerModule } from "@angular/material/divider";
 import { ApiService } from "../../core/index";
+import { HttpClient } from '@angular/common/http';
 
 @Component({
   selector: "app-company-settings",
@@ -152,50 +153,44 @@ import { ApiService } from "../../core/index";
             </mat-form-field>
 
             <mat-divider class="divider"></mat-divider>
+            <div class="logo-section">
+              <label class="logo-label">Logo de la empresa</label>
 
-            <h3 class="section-title">Impresión</h3>
+              <div class="logo-box">
+                @if (logoPreview()) {
+                  <img [src]="logoPreview()" alt="Logo" class="logo-preview" />
+                } @else {
+                  <div class="logo-placeholder">
+                    <mat-icon>image</mat-icon>
+                    <span>Sin logo</span>
+                  </div>
+                }
+              </div>
 
-            <div class="form-grid">
-              <mat-form-field appearance="outline" class="col-span-2">
-                <mat-label>Impresora de tickets</mat-label>
-                <mat-select formControlName="ticketPrinter">
-                  @if (loadingPrinters()) {
-                    <mat-option disabled>Cargando impresoras...</mat-option>
-                  } @else if (printers().length === 0) {
-                    <mat-option disabled
-                      >No se encontraron impresoras</mat-option
-                    >
-                  }
-
-                  @for (p of printers(); track p) {
-                    <mat-option [value]="p">{{ p }}</mat-option>
-                  }
-                </mat-select>
-                <mat-icon matPrefix>print</mat-icon>
-              </mat-form-field>
-
-              <mat-form-field appearance="outline">
-                <mat-label>Ancho del ticket</mat-label>
-                <mat-select formControlName="ticketWidth">
-                  <mat-option value="58">58 mm</mat-option>
-                  <mat-option value="80">80 mm</mat-option>
-                </mat-select>
-              </mat-form-field>
-
-              <mat-form-field appearance="outline">
-                <mat-label>Corte automático</mat-label>
-                <mat-select formControlName="autoCut">
-                  <mat-option [value]="true">Sí</mat-option>
-                  <mat-option [value]="false">No</mat-option>
-                </mat-select>
-              </mat-form-field>
-            </div>
-
-            <div style="margin-top:8px">
-              <button mat-stroked-button type="button" (click)="loadPrinters()">
-                <mat-icon>refresh</mat-icon>
-                Actualizar impresoras
+              <input
+                #fileInput
+                type="file"
+                accept="image/png,image/jpeg,image/jpg"
+                (change)="onLogoSelected($event)"
+                hidden
+              />
+              <button
+                mat-stroked-button
+                type="button"
+                (click)="fileInput.click()"
+                [disabled]="subiendoLogo()"
+              >
+                @if (subiendoLogo()) {
+                  <mat-spinner diameter="20"></mat-spinner>
+                } @else {
+                  <ng-container
+                    ><mat-icon>upload</mat-icon> Subir logo</ng-container
+                  >
+                }
               </button>
+              <p class="logo-hint">
+                PNG o JPG, máximo 2MB. Aparecerá en el comprobante carta.
+              </p>
             </div>
 
             <div class="form-actions" style="margin-top:24px">
@@ -245,6 +240,8 @@ export class CompanySettingsComponent implements OnInit {
   loadingMunicipalities = signal(false);
   printers = signal<string[]>([]);
   loadingPrinters = signal(false);
+  logoPreview = signal<string | null>(null);
+  subiendoLogo = signal(false);
 
   form = this.fb.group({
     name: ["", Validators.required],
@@ -274,6 +271,65 @@ export class CompanySettingsComponent implements OnInit {
         this.loading.set(false);
       },
       error: () => this.loading.set(false),
+    });
+  }
+
+    onLogoSelected(event: Event) {
+    const input = event.target as HTMLInputElement;
+    const file = input.files?.[0];
+    if (!file) return;
+ 
+    // Validación cliente (el backend también valida).
+    const okTipo = ['image/png', 'image/jpeg', 'image/jpg'].includes(file.type);
+    if (!okTipo) {
+      this.snackbar.open('Solo se permiten imágenes PNG o JPG', 'Cerrar', { duration: 4000 });
+      input.value = '';
+      return;
+    }
+    if (file.size > 2 * 1024 * 1024) {
+      this.snackbar.open('El logo no debe superar 2MB', 'Cerrar', { duration: 4000 });
+      input.value = '';
+      return;
+    }
+ 
+    // Vista previa inmediata desde el archivo local (sin esperar al servidor).
+    const reader = new FileReader();
+    reader.onload = () => this.logoPreview.set(reader.result as string);
+    reader.readAsDataURL(file);
+ 
+    // Subir con tu ApiService. El campo DEBE llamarse 'logo'
+    // (coincide con FileInterceptor('logo') del backend).
+    const formData = new FormData();
+    formData.append('logo', file);
+ 
+    this.subiendoLogo.set(true);
+    this.api.post<any>('/company/logo', formData).subscribe({
+      next: () => {
+        this.subiendoLogo.set(false);
+        this.snackbar.open('Logo actualizado', 'OK', { duration: 3000 });
+        // La vista previa ya muestra el archivo local, no hace falta recargar.
+      },
+      error: (err: any) => {
+        this.subiendoLogo.set(false);
+        this.snackbar.open(err?.error?.message || 'No se pudo subir el logo', 'Cerrar', { duration: 4000 });
+      },
+    });
+ 
+    input.value = '';
+  }
+
+  cargarLogoActual() {
+    const token = localStorage.getItem('access_token') || '';
+    this.api.post<any>(`/company/logo?t=${Date.now()}`, {
+      responseType: 'blob',
+      headers: { Authorization: `Bearer ${token}` },
+    }).subscribe({
+      next: (blob: Blob) => {
+        const reader = new FileReader();
+        reader.onload = () => this.logoPreview.set(reader.result as string);
+        reader.readAsDataURL(blob);
+      },
+      error: () => this.logoPreview.set(null),  // sin logo aún → placeholder
     });
   }
 

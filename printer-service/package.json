@@ -5,8 +5,9 @@
   "main": "index.js",
   "scripts": {
     "dev": "npx ts-node src/main.ts",
-    "build": "tsc",
-    "start": "node dist/main.js"
+    "build": "npx tsc",
+    "start": "node dist/main.js",
+    "exe": "npm run build && npx pkg . --out-path release"
   },
   "keywords": [],
   "author": "",
@@ -14,9 +15,22 @@
   "dependencies": {
     "cors": "^2.8.6",
     "express": "^5.2.1",
+    "iconv-lite": "^0.7.2",
     "node-thermal-printer": "^4.6.0"
   },
   "devDependencies": {
-    "@types/node": "^26.1.0"
+    "@types/node": "^26.1.0",
+    "pkg": "^5.8.1",
+    "typescript": "^6.0.3"
+  },
+  "bin": "dist/main.js",
+  "pkg": {
+    "scripts": [
+      "dist/**/*.js"
+    ],
+    "targets": [
+      "node18-win-x64"
+    ],
+    "outputPath": "release"
   }
 }
