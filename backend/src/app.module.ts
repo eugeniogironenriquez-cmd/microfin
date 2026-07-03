@@ -10,6 +10,7 @@ import {
   State, Municipality, Guarantor, ExpenseCategory, Expense,
   Role, Permiso, PlazoCredito, ConfigMora,
   ConfigSemaforo, HistorialComportamiento,
+  CustomerCreditBalance,
 } from './common/entities';
 import { AuthModule }        from './auth/auth.module';
 import { UsersModule }       from './users/users.module';
@@ -57,7 +58,7 @@ import { PrintingModule } from './printing/printing.module';
           CashSession, AuditLog, CompanySettings, LateFeeRule,
           State, Municipality, Guarantor, ExpenseCategory, Expense,
           Role, Permiso, PlazoCredito, ConfigMora,
-          ConfigSemaforo, HistorialComportamiento,Visita,
+          ConfigSemaforo, HistorialComportamiento,Visita
         ],
         synchronize: false,
         logging: config.get('NODE_ENV') === 'development',
@@ -67,7 +68,7 @@ import { PrintingModule } from './printing/printing.module';
     CashModule, CollectionModule, ReportsModule, SettingsModule, RateRangesModule,
     CompanyModule, LateFeeRulesModule, LocationModule, GuarantorModule,
     DisbursementModule, ExpensesModule, OverdueJobModule, LoanDocumentsModule,
-    PlazosCreditoModule, ConfigMoraModule, SemaforoModule, ImportLoansModule,VisitasModule,PrintingModule,
+    PlazosCreditoModule, ConfigMoraModule, SemaforoModule, ImportLoansModule,VisitasModule,PrintingModule
   ],
 })
 export class AppModule implements OnApplicationBootstrap, NestModule {

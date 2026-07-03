@@ -27,6 +27,7 @@ import {
   PaymentSource,
   SyncStatus,
   UserRole,
+  CustomerCreditBalance,
 } from "../common/entities";
 import {
   Auth,
@@ -53,6 +54,8 @@ export class PaymentsService {
     private scheduleRepo: Repository<PaymentSchedule>,
     @InjectRepository(Loan) private loanRepo: Repository<Loan>,
     @InjectRepository(CashSession) private cashRepo: Repository<CashSession>,
+    @InjectRepository(CustomerCreditBalance)
+    private saldoFavorRepo: Repository<CustomerCreditBalance>,
     private calculator: FinancialCalculator,
     private dataSource: DataSource,
     private companyService: CompanyService,
@@ -288,6 +291,9 @@ export class PaymentsService {
       localId?: string;
       lat?: number;
       lng?: number;
+      usarSaldoFavor?: boolean;
+      montoSaldoFavor?: number;
+      guardarExcedenteSaldoFavor?: boolean;
     },
     userId: string,
     source: PaymentSource = PaymentSource.CAJA,
@@ -335,6 +341,21 @@ export class PaymentsService {
     });
 
     let remaining = Number(dto.amountPaid);
+
+    let saldoFavorAplicado = 0;
+    const saldoFavorDisponible = await this.getSaldoFavorActual(dto.loanId);
+
+    if (dto.usarSaldoFavor && saldoFavorDisponible > 0) {
+      saldoFavorAplicado = this.calculator.round(
+        Math.min(
+          Number(dto.montoSaldoFavor || saldoFavorDisponible),
+          saldoFavorDisponible,
+        ),
+      );
+
+      remaining = this.calculator.round(remaining + saldoFavorAplicado);
+    }
+
     let capitalApplied = 0,
       interestApplied = 0,
       lateInterestApplied = 0;
@@ -461,6 +482,22 @@ export class PaymentsService {
         }
         lateInterestApplied = this.calculator.round(lateInterestApplied);
       }
+
+      let saldoFavorGenerado = 0;
+
+      if (dto.guardarExcedenteSaldoFavor && remaining > 0) {
+        saldoFavorGenerado = this.calculator.round(remaining);
+
+        loan.saldoFavor = this.calculator.round(
+          Number(loan.saldoFavor || 0) -
+            saldoFavorAplicado +
+            saldoFavorGenerado,
+        );
+
+        await this.loanRepo.save(loan);
+
+        remaining = 0;
+      }
     }
 
     // Folio secuencial del día: contamos los pagos del día-calendario de México.
@@ -484,6 +521,13 @@ export class PaymentsService {
     const seq = Number(countResult?.[0]?.cnt || 0) + 1;
     const dateStr = `${mxNow.getUTCFullYear()}${String(mxNow.getUTCMonth() + 1).padStart(2, "0")}${String(mxNow.getUTCDate()).padStart(2, "0")}`;
     const receiptNumber = `REC-${dateStr}-${String(seq).padStart(4, "0")}`;
+
+    let saldoFavorGenerado = 0;
+
+    if (dto.guardarExcedenteSaldoFavor && remaining > 0) {
+      saldoFavorGenerado = this.calculator.round(remaining);
+      remaining = 0;
+    }
 
     const payment = this.paymentRepo.create({
       loanId: dto.loanId,
@@ -510,6 +554,44 @@ export class PaymentsService {
     });
     const saved = await this.paymentRepo.save(payment);
 
+    let saldoFavorFinal = saldoFavorDisponible;
+
+    if (saldoFavorAplicado > 0) {
+      saldoFavorFinal = this.calculator.round(
+        saldoFavorFinal - saldoFavorAplicado,
+      );
+
+      await this.saldoFavorRepo.save(
+        this.saldoFavorRepo.create({
+          loanId: dto.loanId,
+          paymentId: saved.id,
+          tipo: "SALIDA",
+          concepto: "Aplicación de saldo a favor",
+          monto: saldoFavorAplicado,
+          saldoResultante: saldoFavorFinal,
+          createdBy: userId,
+        }),
+      );
+    }
+
+    if (saldoFavorGenerado > 0) {
+      saldoFavorFinal = this.calculator.round(
+        saldoFavorFinal + saldoFavorGenerado,
+      );
+
+      await this.saldoFavorRepo.save(
+        this.saldoFavorRepo.create({
+          loanId: dto.loanId,
+          paymentId: saved.id,
+          tipo: "ENTRADA",
+          concepto: "Excedente de pago",
+          monto: saldoFavorGenerado,
+          saldoResultante: saldoFavorFinal,
+          createdBy: userId,
+        }),
+      );
+    }
+
     const pendingCount = await this.scheduleRepo.count({
       where: { loanId: dto.loanId, status: ScheduleStatus.PENDIENTE },
     });
@@ -519,10 +601,30 @@ export class PaymentsService {
 
     return {
       payment: saved,
-      applied: { capitalApplied, interestApplied, lateInterestApplied },
+      applied: {
+        capitalApplied,
+        interestApplied,
+        lateInterestApplied,
+        saldoFavorAplicado,
+        saldoFavorGenerado,
+      },
       excedente: this.calculator.round(remaining),
+      saldoFavor: saldoFavorFinal,
       liquidado: pendingCount === 0,
     };
+  }
+
+  async getSaldoFavorActual(loanId: string): Promise<number> {
+    const row = await this.saldoFavorRepo
+      .createQueryBuilder("s")
+      .select(
+        'COALESCE(SUM(CASE WHEN s.tipo = "ENTRADA" THEN s.monto ELSE -s.monto END), 0)',
+        "saldo",
+      )
+      .where("s.prestamo_id = :loanId", { loanId })
+      .getRawOne();
+
+    return this.calculator.round(Number(row?.saldo || 0));
   }
 
   async getHistory(loanId: string): Promise<Payment[]> {
@@ -856,7 +958,13 @@ export class PaymentsController {
 
 @Module({
   imports: [
-    TypeOrmModule.forFeature([Payment, PaymentSchedule, Loan, CashSession]),
+    TypeOrmModule.forFeature([
+      Payment,
+      PaymentSchedule,
+      Loan,
+      CashSession,
+      CustomerCreditBalance,
+    ]),
     LoansModule,
     CompanyModule,
     PdfGeneratorModule,
