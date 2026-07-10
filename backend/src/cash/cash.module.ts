@@ -3,7 +3,7 @@ import {
   Body, Param, Req, BadRequestException, NotFoundException,
 } from '@nestjs/common';
 import { TypeOrmModule, InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { Repository, IsNull } from 'typeorm';
 import { ApiTags, ApiBearerAuth } from '@nestjs/swagger';
 import { CashSession, Payment, UserRole } from '../common/entities';
 import { Auth, CurrentUser } from '../common/guards/roles.guard';
@@ -16,7 +16,7 @@ export class CashService {
   ) {}
 
   async getOpenSession(cashierId: string): Promise<CashSession | null> {
-    return this.sessionRepo.findOne({ where: { cashierId, closedAt: null as any } });
+    return this.sessionRepo.findOne({ where: { cashierId, closedAt: IsNull() } });
   }
 
   async open(cashierId: string, openingBalance: number): Promise<CashSession> {
@@ -93,6 +93,37 @@ export class CashController {
   @Get('history')
   @Auth(UserRole.ADMIN, UserRole.CAJERO)
   history(@CurrentUser('id') userId: string) { return this.cashService.getHistory(userId); }
+
+  // ─── Alias que usa el frontend web (rutas simplificadas) ───
+  // El frontend llama /cash/status, /cash/open y /cash/close (sin /session/
+  // ni id). Estos endpoints delegan en la misma lógica.
+
+  @Get('status')
+  @Auth(UserRole.ADMIN, UserRole.CAJERO)
+  status(@CurrentUser('id') userId: string) {
+    return this.cashService.getOpenSession(userId);
+  }
+
+  @Post('open')
+  @Auth(UserRole.ADMIN, UserRole.CAJERO)
+  openAlias(@Body('openingBalance') amount: number, @CurrentUser('id') userId: string) {
+    return this.cashService.open(userId, amount);
+  }
+
+  @Post('close')
+  @Auth(UserRole.ADMIN, UserRole.CAJERO)
+  async closeAlias(
+    @Body('closingBalance') amount: number,
+    @Body('notes') notes: string | undefined,
+    @CurrentUser('id') userId: string,
+  ) {
+    // El frontend no envía el id de sesión: se cierra la sesión abierta del usuario.
+    const session = await this.cashService.getOpenSession(userId);
+    if (!session) {
+      throw new BadRequestException('No hay una caja abierta para cerrar');
+    }
+    return this.cashService.close(session.id, amount, notes);
+  }
 }
 
 @Module({

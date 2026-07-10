@@ -57,28 +57,121 @@ export class CollectionService {
     // de México, UTC-6). La que vence hoy NO cuenta.
     const MX = 6 * 60 * 60 * 1000;
     const nowDay = new Date(Date.now() - MX);
-    const todayUTC = Date.UTC(nowDay.getUTCFullYear(), nowDay.getUTCMonth(), nowDay.getUTCDate());
+    const todayUTC = Date.UTC(
+      nowDay.getUTCFullYear(),
+      nowDay.getUTCMonth(),
+      nowDay.getUTCDate(),
+    );
 
     return loans.map((loan) => {
       const schedules = (loan as any).paymentSchedules || [];
+
       let cuotasVencidas = 0;
+
       for (const s of schedules) {
-        if (s.status === ScheduleStatus.PAGADO) continue;
+        if (s.status === ScheduleStatus.PAGADO) {
+          continue;
+        }
+
         const due = new Date(s.dueDate);
-        const dueUTC = Date.UTC(due.getUTCFullYear(), due.getUTCMonth(), due.getUTCDate());
-        if (dueUTC < todayUTC) cuotasVencidas++;
+
+        const dueUTC = Date.UTC(
+          due.getUTCFullYear(),
+          due.getUTCMonth(),
+          due.getUTCDate(),
+        );
+
+        if (dueUTC < todayUTC) {
+          cuotasVencidas++;
+        }
       }
+
       const nivel = this.semaforoService.levelFor(cuotasVencidas, cfg);
 
-      // Quitamos las paymentSchedules del payload (no las necesita la app y pesan)
-      // y devolvemos el resto del crédito + los dos campos nuevos.
+      const cuotasPendientes = schedules
+        .filter(
+          (s: any) =>
+            s.status !== ScheduleStatus.PAGADO &&
+            Number(s.balanceDue ?? s.totalDue ?? 0) > 0,
+        )
+        .sort(
+          (a: any, b: any) =>
+            new Date(a.dueDate).getTime() - new Date(b.dueDate).getTime(),
+        );
+
+      const siguienteCuota = cuotasPendientes[0];
+
+      const cuotaDelDia = cuotasPendientes.find((s: any) => {
+        const due = new Date(s.dueDate);
+
+        const dueUTC = Date.UTC(
+          due.getUTCFullYear(),
+          due.getUTCMonth(),
+          due.getUTCDate(),
+        );
+
+        return dueUTC === todayUTC;
+      });
+
+      const proximaCuota = siguienteCuota
+        ? {
+            periodo: Number(siguienteCuota.periodNumber),
+            vence: this.formatDateOnly(siguienteCuota.dueDate),
+            monto: Number(
+              siguienteCuota.balanceDue ??
+                siguienteCuota.totalDue ??
+                loan.periodicPayment ??
+                0,
+            ),
+          }
+        : null;
+
+      const cuotaHoy = cuotaDelDia
+        ? {
+            periodo: Number(cuotaDelDia.periodNumber),
+            vence: this.formatDateOnly(cuotaDelDia.dueDate),
+            monto: Number(
+              cuotaDelDia.balanceDue ??
+                cuotaDelDia.totalDue ??
+                loan.periodicPayment ??
+                0,
+            ),
+          }
+        : null;
+
       const { paymentSchedules, ...loanSinSchedules } = loan as any;
+
       return {
         ...loanSinSchedules,
         cuotasVencidas,
         nivel,
+        proximaCuota,
+        cuotaHoy,
+        tieneCuotaHoy: cuotaHoy !== null,
       };
     });
+  }
+
+  private formatDateOnly(value: string | Date): string {
+    if (!value) {
+      return "";
+    }
+
+    if (typeof value === "string") {
+      const match = value.match(/^\d{4}-\d{2}-\d{2}/);
+
+      if (match) {
+        return match[0];
+      }
+    }
+
+    const date = new Date(value);
+
+    const year = date.getUTCFullYear();
+    const month = String(date.getUTCMonth() + 1).padStart(2, "0");
+    const day = String(date.getUTCDate()).padStart(2, "0");
+
+    return `${year}-${month}-${day}`;
   }
 
   async registerVisit(dto: {

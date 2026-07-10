@@ -18,6 +18,7 @@ async function bootstrap() {
     'http://localhost',                           // app móvil (WebView),
     'https://localhost',                           // app móvil (WebView),
     'http://localhost:8100',                           // app móvil (WebView)
+     'http://192.168.1.6',                           // app móvil (WebView)
   ],
   methods: 'GET,HEAD,PUT,PATCH,POST,DELETE,OPTIONS',
   allowedHeaders: ['Content-Type', 'Authorization'],

@@ -103,6 +103,9 @@ import { ApiService, AuthService } from '../../core/index';
             <button mat-stroked-button color="primary" type="submit">
               <mat-icon>search</mat-icon> Consultar
             </button>
+            <button mat-raised-button color="primary" type="button" (click)="exportCashFlow()">
+              <mat-icon>download</mat-icon> Descargar Excel
+            </button>
           </form>
         </mat-card-content>
       </mat-card>
@@ -199,6 +202,21 @@ export class ReportsDashboardComponent implements OnInit {
     const { start, end } = this.cashFlowForm.value;
     this.api.get<any[]>('/reports/cash-flow', { start, end }).subscribe({
       next: (data) => this.cashFlow.set(data),
+    });
+  }
+
+  exportCashFlow() {
+    const { start, end } = this.cashFlowForm.value;
+    const qs = new URLSearchParams({ start: start || '', end: end || '' }).toString();
+    this.api.getBlob(`/reports/export/cash-flow?${qs}`).subscribe({
+      next: (blob) => {
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `flujo-de-caja-${new Date().toISOString().split('T')[0]}.xlsx`;
+        a.click();
+        URL.revokeObjectURL(url);
+      },
     });
   }
 }

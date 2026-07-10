@@ -532,6 +532,7 @@ export class PaymentsQueryComponent implements OnInit {
     const d = String(raw).replace(/\D/g, "");
     return d.length >= 10 ? d : null;
   }
+
   private waNumero(p: any): string | null {
     const tel = this.telefonoDe(p);
     if (!tel) return null;
@@ -539,6 +540,7 @@ export class PaymentsQueryComponent implements OnInit {
     if (tel.length === 10) return "52" + tel;
     return tel;
   }
+
   private textoTicket(p: any): string {
     const money = (v: any) =>
       "$" +
@@ -549,7 +551,7 @@ export class PaymentsQueryComponent implements OnInit {
     const cliente = p?.loan?.customer?.fullName || "Cliente";
     const folio =
       p?.receiptNumber || (p?.id ? p.id.substring(0, 8).toUpperCase() : "—");
-    const fh = this.fmtFecha(p?.paymentDate || p?.createdAt);
+    const fh = this.fmtFecha(p?.createdAt);
     const L: string[] = [];
     L.push("*MICROCAPITAL - IXTEPEC*");
     L.push("COMPROBANTE DE PAGO");
@@ -563,7 +565,24 @@ export class PaymentsQueryComponent implements OnInit {
       L.push(`Interés: ${money(p.interestApplied)}`);*/
     if (Number(p?.lateInterestApplied || 0) > 0)
       L.push(`Moratorio: ${money(p.lateInterestApplied)}`);
-    L.push("--------------------------------");
+    try {
+      const cuotas =
+        typeof p?.cuotasPagadas === "string"
+          ? JSON.parse(p.cuotasPagadas)
+          : p?.cuotasPagadas || [];
+
+      if (cuotas.length > 0) {
+        L.push("Cuotas pagadas:");
+
+        cuotas
+          .sort((a: any, b: any) => a.periodo - b.periodo)
+          .forEach((c: any) => {
+            L.push(`• #${c.periodo} (${c.fecha})`);
+          });
+
+        L.push("--------------------------------");
+      }
+    } catch {}
     L.push(`*TOTAL RECIBIDO: ${money(p?.amountPaid)}*`);
     if (Number(p?.saldoFavor || 0) > 0) {
       L.push(`Saldo a favor: ${money(p.saldoFavor)}`);
@@ -615,6 +634,7 @@ export class PaymentsQueryComponent implements OnInit {
       return iso;
     }
   }
+
   fmtHora(iso: string): string {
     if (!iso) return "";
 
@@ -651,20 +671,12 @@ import { Inject } from "@angular/core";
       </div>
       <div class="row">
         <span>Fecha</span
-        ><strong>{{ fmt(p.paymentDate || p.createdAt) }}</strong>
+        ><strong>{{ fmt(p.createdAt) }}</strong>
       </div>
       <div class="row">
         <span>Forma de pago</span><strong>{{ p.method }}</strong>
       </div>
       <hr />
-      <div class="row">
-        <span>Capital</span
-        ><strong>{{ p.capitalApplied | currency: "MXN" }}</strong>
-      </div>
-      <div class="row">
-        <span>Interés</span
-        ><strong>{{ p.interestApplied | currency: "MXN" }}</strong>
-      </div>
       @if (num(p.lateInterestApplied) > 0) {
         <div class="row">
           <span>Moratorio</span

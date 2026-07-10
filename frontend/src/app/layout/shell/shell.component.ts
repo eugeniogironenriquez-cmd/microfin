@@ -161,7 +161,8 @@ export class ShellComponent {
         { label: 'Próximos a liquidar', icon: 'flag',        route: '/proximos-liquidar', perm: 'prestamos.proximos' },
         { label: 'Cargar créditos',    icon: 'upload_file',  route: '/carga-manual',      perm: 'prestamos.importar' },
         { label: 'Desembolso',         icon: 'payments',     route: '/disbursements',     perm: 'prestamos.desembolsar' },
-        { label: 'Reestructuración',   icon: 'refresh',      route: '/restructuring',     perm: 'prestamos.reestructurar' },
+        // OCULTO (movido al portal del gestor): Reestructuración
+        // { label: 'Reestructuración',   icon: 'refresh',      route: '/restructuring',     perm: 'prestamos.reestructurar' },
       ],
     },
     {

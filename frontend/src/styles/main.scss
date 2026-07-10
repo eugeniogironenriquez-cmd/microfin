@@ -605,6 +605,10 @@ mat-toolbar.toolbar * { color: var(--white) !important; }
   margin: 8px 0 12px;
 }
 
+.kpi-orange {
+  background: linear-gradient(135deg, #fb923c 0%, #c2410c 100%);
+}
+
 .logo-section { margin: 16px 0; }
 .logo-label { font-size: 14px; font-weight: 600; color: #2d3748; display: block; margin-bottom: 8px; }
 .logo-box {

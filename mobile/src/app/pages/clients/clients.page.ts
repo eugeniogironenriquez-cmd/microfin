@@ -68,7 +68,9 @@ import { AssignedClient } from "../../core/models";
   template: `
     <ion-header>
       <ion-toolbar color="primary">
-        <ion-title>{{ mp.esGestor() ? 'Cartera en rojo' : 'Mis clientes' }}</ion-title>
+        <ion-title>{{
+          mp.esGestor() ? "Cartera en rojo" : "Mis clientes"
+        }}</ion-title>
         <ion-buttons slot="end">
           <ion-button (click)="sync()" [disabled]="collection.syncing()">
             @if (collection.syncing()) {
@@ -113,10 +115,16 @@ import { AssignedClient } from "../../core/models";
       } @else if (filtered().length === 0) {
         <div class="empty">
           <ion-icon name="person-circle-outline"></ion-icon>
-          <p>{{ mp.esGestor() ? 'No hay créditos en rojo.' : 'No hay clientes asignados.' }}</p>
+          <p>
+            {{
+              mp.esGestor()
+                ? "No hay créditos en rojo con cuota para hoy."
+                : "No hay clientes con cuota pendiente para hoy."
+            }}
+          </p>
           <ion-button fill="outline" (click)="download()">
             <ion-icon slot="start" name="refresh-outline"></ion-icon>
-            {{ mp.esGestor() ? 'Actualizar cartera' : 'Descargar clientes' }}
+            {{ mp.esGestor() ? "Actualizar cartera" : "Descargar clientes" }}
           </ion-button>
         </div>
       } @else {
@@ -137,10 +145,18 @@ import { AssignedClient } from "../../core/models";
                   </p>
                 }
                 <p>
-                  Cuota:
-                  {{
-                    c.periodicPayment | currency: "MXN" : "symbol" : "1.0-0"
-                  }}
+                  @if (c.proximaCuota) {
+                    Cuota {{ c.proximaCuota.periodo }}:
+                    {{
+                      c.proximaCuota.monto
+                        | currency: "MXN" : "symbol" : "1.0-0"
+                    }}
+                  } @else {
+                    Cuota:
+                    {{
+                      c.periodicPayment | currency: "MXN" : "symbol" : "1.0-0"
+                    }}
+                  }
                   · {{ c.phone || "s/tel" }}
                 </p>
               </ion-label>
@@ -223,15 +239,52 @@ export class ClientsPage implements OnInit {
 
   filtered = computed(() => {
     const term = this.search().toLowerCase().trim();
-    const list = this.collection.clients();
-    if (!term) return list;
+    const hoy = this.obtenerFechaLocalActual();
+
+    const list = this.collection.clients().filter((cliente) => {
+      return (
+        cliente.tieneCuotaHoy === true ||
+        cliente.estado === "atrasado" ||
+        cliente.estado === "vencido"
+      );
+    });
+
+    if (!term) {
+      return list;
+    }
+
     return list.filter(
-      (c) =>
-        c.customerName.toLowerCase().includes(term) ||
-        (c.phone || "").includes(term) ||
-        (c.addressLine || "").toLowerCase().includes(term),
+      (cliente) =>
+        cliente.customerName.toLowerCase().includes(term) ||
+        (cliente.phone || "").includes(term) ||
+        (cliente.addressLine || "").toLowerCase().includes(term),
     );
   });
+
+  private obtenerFechaLocalActual(): string {
+    const hoy = new Date();
+
+    const year = hoy.getFullYear();
+    const month = String(hoy.getMonth() + 1).padStart(2, "0");
+    const day = String(hoy.getDate()).padStart(2, "0");
+
+    return `${year}-${month}-${day}`;
+  }
+
+  private normalizarFecha(fecha: string): string {
+    /*
+     * Admite valores como:
+     * 2026-07-10
+     * 2026-07-10T00:00:00.000Z
+     * 2026-07-10 00:00:00
+     *
+     * No usamos new Date(fecha) porque podría modificar el día
+     * por diferencia de zona horaria.
+     */
+    const coincidencia = fecha.match(/^\d{4}-\d{2}-\d{2}/);
+
+    return coincidencia ? coincidencia[0] : "";
+  }
 
   constructor() {
     addIcons({

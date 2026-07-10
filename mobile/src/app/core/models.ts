@@ -55,9 +55,25 @@ export interface AssignedClient {
   estado: 'corriente' | 'atrasado' | 'vencido';   // 3 estados (incluye atrasado)
   saldoPendiente?: number;
   moraPendiente?: number;
-  proximaCuota?: { periodo: number; vence: string; monto: number } | null;
+
+ proximaCuota?: {
+    periodo: number;
+    vence: string;
+    monto: number;
+  } | null;
+
+  cuotaHoy?: {
+    periodo: number;
+    vence: string;
+    monto: number;
+  } | null;
+
+  tieneCuotaHoy?: boolean;
+
   cuotasVencidas?: number;
- nivel?: 'VERDE' | 'AMARILLO' | 'ROJO';
+  nivel?: "VERDE" | "AMARILLO" | "ROJO";
+
+
 }
 
 export type PaymentType = 'DIA' | 'TOTAL' | 'MORATORIO';
@@ -107,7 +123,20 @@ export interface PaymentInfo {
   moraPendiente: number;
   moraPorDia: number;
   totalDiasMora: number;
-  proximaCuota?: { periodo: number; vence: string; monto: number } | null;
+
+  proximaCuota?: {
+    periodo: number;
+    vence: string;
+    monto: number;
+  } | null;
+
+  cuotaHoy?: {
+    periodo: number;
+    vence: string;
+    monto: number;
+  } | null;
+
+  tieneCuotaHoy?: boolean;
 }
 
 // Cuota pendiente para el modo selectivo (marcar cuáles paga)

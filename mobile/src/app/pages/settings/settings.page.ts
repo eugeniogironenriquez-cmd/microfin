@@ -5,12 +5,13 @@ import {
   IonHeader, IonToolbar, IonTitle, IonContent, IonButtons, IonBackButton,
   IonCard, IonCardHeader, IonCardTitle, IonCardContent, IonButton, IonIcon,
   IonSpinner, IonItem, IonLabel, IonList, IonListHeader, IonNote, IonChip,
+  IonSegment, IonSegmentButton,
   ToastController,
 } from '@ionic/angular/standalone';
 import { addIcons } from 'ionicons';
 import {
   printOutline, bluetoothOutline, searchOutline, checkmarkCircle,
-  trashOutline, refreshOutline, closeCircleOutline,
+  trashOutline, refreshOutline, closeCircleOutline, resizeOutline,
 } from 'ionicons/icons';
 
 import { ThermalPrinterService, DiscoveredDevice } from '../../core/thermal-printer.service';
@@ -23,6 +24,7 @@ import { ThermalPrinterService, DiscoveredDevice } from '../../core/thermal-prin
     IonHeader, IonToolbar, IonTitle, IonContent, IonButtons, IonBackButton,
     IonCard, IonCardHeader, IonCardTitle, IonCardContent, IonButton, IonIcon,
     IonSpinner, IonItem, IonLabel, IonList, IonListHeader, IonNote, IonChip,
+    IonSegment, IonSegmentButton,
   ],
   template: `
     <ion-header>
@@ -53,6 +55,21 @@ import { ThermalPrinterService, DiscoveredDevice } from '../../core/thermal-prin
               <ion-chip slot="end" [color]="printer.connected() ? 'success' : 'medium'">
                 {{ printer.connected() ? 'Conectada' : 'Guardada' }}
               </ion-chip>
+            </ion-item>
+
+            <!-- Ancho del papel (80mm o 58mm) -->
+            <ion-item lines="none" class="ancho-papel">
+              <ion-icon name="resize-outline" slot="start"></ion-icon>
+              <ion-label>Ancho del papel</ion-label>
+              <ion-segment slot="end" [value]="p.paperWidth || 80"
+                           (ionChange)="cambiarAncho($event)">
+                <ion-segment-button [value]="80">
+                  <ion-label>80mm</ion-label>
+                </ion-segment-button>
+                <ion-segment-button [value]="58">
+                  <ion-label>58mm</ion-label>
+                </ion-segment-button>
+              </ion-segment>
             </ion-item>
 
             <div class="acciones">
@@ -143,8 +160,22 @@ export class SettingsPage {
   constructor() {
     addIcons({
       printOutline, bluetoothOutline, searchOutline, checkmarkCircle,
-      trashOutline, refreshOutline, closeCircleOutline,
+      trashOutline, refreshOutline, closeCircleOutline, resizeOutline,
     });
+  }
+
+  // Cambia el ancho del papel (58/80mm) y lo guarda en la impresora recordada.
+  async cambiarAncho(ev: any) {
+    const ancho = Number(ev?.detail?.value) === 58 ? 58 : 80;
+    const actual = this.printer.printer();
+    if (!actual) return;
+    await this.printer.guardarImpresora({ ...actual, paperWidth: ancho as 58 | 80 });
+    const t = await this.toast.create({
+      message: `Ancho de papel: ${ancho}mm`,
+      duration: 1500,
+      position: 'bottom',
+    });
+    await t.present();
   }
 
   async buscar() {

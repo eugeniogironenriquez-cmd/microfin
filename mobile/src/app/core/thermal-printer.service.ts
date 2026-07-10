@@ -10,6 +10,7 @@ const PRINTER_KEY = 'thermal_printer';
 export interface SavedPrinter {
   address: string;
   name: string;
+  paperWidth?: 58 | 80;   // ancho del papel en mm (default 80)
 }
 
 export interface DiscoveredDevice {
@@ -28,6 +29,22 @@ const EMPRESA_FALLBACK: Empresa = {
 export class ThermalPrinterService {
   // Impresora recordada (se carga al iniciar).
   readonly printer = signal<SavedPrinter | null>(null);
+
+  // Ancho del papel en mm (58 o 80). Default 80 si no está configurado.
+  private get paperWidthMm(): 58 | 80 {
+    return this.printer()?.paperWidth === 58 ? 58 : 80;
+  }
+
+  // Caracteres por línea según el ancho del papel (fuente normal ESC/POS).
+  // 58mm ≈ 32 caracteres, 80mm ≈ 48 caracteres.
+  private get lineWidth(): number {
+    return this.paperWidthMm === 58 ? 29 : 48;
+  }
+
+  // Línea separadora del ancho correcto.
+  private get separator(): string {
+    return '-'.repeat(this.lineWidth);
+  }
   // Dispositivos encontrados durante el escaneo.
   readonly devices = signal<DiscoveredDevice[]>([]);
   readonly scanning = signal(false);
@@ -159,9 +176,9 @@ export class ThermalPrinterService {
       // ── Encabezado ──
       p = p.align('center').bold().text(`${empresa.nombre}\n`).clearFormatting();
       if (telEmpresa) p = p.align('center').text(`Tel: ${telEmpresa}\n`);
-      p = p.text('--------------------------------\n');
+      p = p.text(`${this.separator}\n`);
       p = p.align('center').bold().text('COMPROBANTE DE PAGO\n').clearFormatting();
-      p = p.text('--------------------------------\n');
+      p = p.text(`${this.separator}\n`);
 
       // ── Datos del crédito / cliente ──
       p = p.align('left');
@@ -172,7 +189,7 @@ export class ThermalPrinterService {
         p = p.text(`Cuota: ${money(snap.periodicPayment)}\n`);
         p = p.text(`Saldo: ${money(snap.saldoPendiente)}\n`);
       }
-      p = p.text('--------------------------------\n');
+      p = p.text(`${this.separator}\n`);
 
       // ── Progreso del pago ──
       if (snap && snap.totalCuotas > 0) {
@@ -185,34 +202,40 @@ export class ThermalPrinterService {
         p = p.text('Cuotas pagadas:\n');
         for (const c of snap.cuotasPagadas.slice().sort((a, b) => a.periodo - b.periodo)) {
           const f = c.fecha ? this.formatFecha(c.fecha) : '';
-          // "#28            30/06/2026"  (número a la izq, fecha a la der aprox.)
-          p = p.text(`  #${c.periodo}${' '.repeat(Math.max(1, 12 - String(c.periodo).length))}${f}\n`);
+          // "#28            30/06/2026" — número a la izq, fecha a la der.
+          // El relleno se adapta al ancho del papel (58/80mm).
+          const etiqueta = `  #${c.periodo}`;
+          const relleno = Math.max(1, this.lineWidth - etiqueta.length - f.length);
+          p = p.text(`${etiqueta}${' '.repeat(relleno)}${f}\n`);
         }
       }
-      // Moratorio si aplica
+      // Moratorio si aplica (etiqueta como el web: "Importe moratorio:")
       if (snap && snap.mora > 0) {
-        p = p.text(`Moratorio: ${money(snap.mora)}\n`);
+        p = p.text(`Importe moratorio: ${money(snap.mora)}\n`);
       }
-      p = p.text('--------------------------------\n');
+      p = p.text(`${this.separator}\n`);
 
       // Si aún no se sincroniza, dejarlo claro en el ticket.
       if (!payment.synced) {
-        p = p.align('center').text('** Pendiente de sincronizar **\n');
-        p = p.align('left');
+        //p = p.align('center').text('** Pendiente de sincronizar **\n');
+        //p = p.align('left');
       }
 
-      // ── Total ──
+      // ── Total (como el web: "TOTAL RECIBIDO") ──
       p = p.align('center').bold().doubleWidth()
-           .text(`TOTAL: ${money(payment.amountPaid)}\n`)
+           .text(`TOTAL RECIBIDO\n`)
            .clearFormatting();
-      p = p.text('--------------------------------\n');
+      p = p.align('center').bold().doubleWidth()
+           .text(`${money(payment.amountPaid)}\n`)
+           .clearFormatting();
+      p = p.text(`${this.separator}\n`);
 
       // ── Fechas ──
       p = p.align('left');
-      p = p.text(`Fecha y hora: ${fechaHora}\n`);
-      p = p.text(`Fecha de aplicacion: ${fechaAplic}\n`);
+      p = p.text(`Fecha : ${fechaHora}\n`);
+      //p = p.text(`Fecha de aplicacion: ${fechaAplic}\n`);
       if (payment.method) p = p.text(`Metodo: ${payment.method}\n`);
-      p = p.text('--------------------------------\n');
+      p = p.text(`${this.separator}\n`);
 
       // ── Pie de avisos (pie_legal de la empresa, puede traer varias líneas) ──
       if (empresa.pieLegal) {
@@ -222,12 +245,12 @@ export class ThermalPrinterService {
           p = p.text(`${linea}\n`);
         }
       }
-      p = p.text('\n');
-      p = p.align('center').bold().text('Gracias por su pago\n').clearFormatting();
-      p = p.text('Conserve este comprobante\n');
+      //p = p.text('\n');
+      p = p.align('center').bold().text('!Gracias por su pago!!\n').clearFormatting();
+      //p = p.align('center').text('Conserve este comprobante\n');
 
-      // Alimentar papel y cortar.
-      p = p.text('\n\n\n').cutPaper();
+      // Alimentar papel y cortar. Un solo salto para no dejar mucho espacio.
+      //p = p.text('\n').cutPaper();
 
       await p.write();
       return true;
@@ -249,10 +272,10 @@ export class ThermalPrinterService {
     try {
       await CapacitorThermalPrinter.begin()
         .align('center').bold().text(`${empresa.nombre}\n`).clearFormatting()
-        .text('--------------------------------\n')
+        .text(`${this.separator}\n`)
         .text('IMPRESION DE PRUEBA\n')
         .text(`${this.formatFechaHora(new Date().toISOString())}\n`)
-        .text('--------------------------------\n')
+        .text(`${this.separator}\n`)
         .text('Si lees esto, la impresora\n')
         .text('esta configurada correctamente.\n')
         .text('\n\n\n')

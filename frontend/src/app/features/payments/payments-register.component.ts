@@ -177,7 +177,7 @@ import { ApiService, Loan, PaymentSchedule } from "../../core/index";
                   </div>
 
                   @if (saldoFavor() > 0) {
-                    <div class="saldo-favor-card">
+                    <div class="saldo-favor-card" [formGroup]="paymentForm">
                       <div class="saldo-favor-header">
                         <mat-icon>account_balance_wallet</mat-icon>
                         <strong>
@@ -189,6 +189,7 @@ import { ApiService, Loan, PaymentSchedule } from "../../core/index";
                       <mat-checkbox
                         formControlName="usarSaldoFavor"
                         color="primary"
+                        (change)="onUsarSaldoChange($event)"
                       >
                         Aplicar saldo a favor
                       </mat-checkbox>
@@ -197,6 +198,7 @@ import { ApiService, Loan, PaymentSchedule } from "../../core/index";
                         <mat-button-toggle-group
                           formControlName="saldoFavorModo"
                           class="saldo-toggle"
+                          (change)="recalcSelectivo()"
                         >
                           <mat-button-toggle value="TODO">
                             Todo
@@ -215,6 +217,7 @@ import { ApiService, Loan, PaymentSchedule } from "../../core/index";
                               step="0.01"
                               formControlName="montoSaldoFavor"
                               [max]="saldoFavor()"
+                              (input)="recalcSelectivo()"
                             />
                             <span matPrefix>$&nbsp;</span>
                           </mat-form-field>
@@ -423,13 +426,8 @@ import { ApiService, Loan, PaymentSchedule } from "../../core/index";
                   <button
                     mat-stroked-button
                     class="wa-btn"
-                    (click)="compartirWhatsApp()"
+                    (click)="compartirWhatsApp(paymentResult()?.payment)"
                     [disabled]="!telefonoCliente()"
-                    [matTooltip]="
-                      telefonoCliente()
-                        ? 'Enviar comprobante por WhatsApp'
-                        : 'El cliente no tiene teléfono registrado'
-                    "
                   >
                     <mat-icon>share</mat-icon> WhatsApp
                   </button>
@@ -932,7 +930,7 @@ export class PaymentsRegisterComponent implements OnInit {
     paymentType: ["DIA", Validators.required],
     amountPaid: [
       null as number | null,
-      [Validators.required, Validators.min(0.01)],
+      [Validators.required, Validators.min(0)],
     ],
     applyExcedenteToMora: [false],
     cobrarMora: [false],
@@ -1045,103 +1043,121 @@ export class PaymentsRegisterComponent implements OnInit {
     return soloDigitos.length >= 10 ? soloDigitos : null;
   }
 
-  private waNumero(): string | null {
-    const tel = this.telefonoCliente();
-    if (!tel) return null;
+  // ── WhatsApp (mismo formato del monitor) ──
+  telefonoDe(p: any): string | null {
+    const raw = p?.loan?.customer?.phone;
+    if (!raw) return null;
+    const d = String(raw).replace(/\D/g, "");
+    return d.length >= 10 ? d : null;
+  }
+
+  private waNumero(p?: any): string | null {
+    const raw =
+      p?.loan?.customer?.phone || this.selectedLoan()?.customer?.phone;
+    if (!raw) return null;
+
+    const tel = String(raw).replace(/\D/g, "");
     if (tel.length === 12 && tel.startsWith("52")) return tel;
     if (tel.length === 10) return "52" + tel;
-    // Otros largos: devolver tal cual (por si ya viene con lada internacional)
+
     return tel;
   }
 
-  /** Arma el texto del comprobante (mismo contenido que el ticket). */
-  private construirTextoTicket(): string {
-    const loan = this.selectedLoan();
-    const res = this.paymentResult();
-    const i = this.info();
-    const fv = this.paymentForm.value;
-
+  private textoTicket(p: any): string {
     const money = (v: any) =>
       "$" +
       (Number(v) || 0).toLocaleString("es-MX", {
         minimumFractionDigits: 2,
         maximumFractionDigits: 2,
       });
-
-    const empresa = "MICROCAPITAL - IXTEPEC";
-    const cliente = loan?.customer?.fullName || "Cliente";
-    const folio = this.lastPaymentId()
-      ? this.lastPaymentId()!.substring(0, 8).toUpperCase()
-      : "—";
-
-    // Fecha y hora actual en zona de México
-    const ahora = new Date();
-    const fechaHora = new Intl.DateTimeFormat("es-MX", {
-      timeZone: "America/Mexico_City",
-      day: "2-digit",
-      month: "2-digit",
-      year: "numeric",
-      hour: "2-digit",
-      minute: "2-digit",
-      hour12: false,
-    })
-      .format(ahora)
-      .replace(",", "");
-
+    const cliente =
+      p?.loan?.customer?.fullName ||
+      this.selectedLoan()?.customer?.fullName ||
+      "Cliente";
+    const folio =
+      p?.receiptNumber || (p?.id ? p.id.substring(0, 8).toUpperCase() : "—");
+    const fh = this.fmtFecha(p?.createdAt);
     const L: string[] = [];
-    L.push(`*${empresa}*`);
+    L.push("*MICROCAPITAL - IXTEPEC*");
     L.push("COMPROBANTE DE PAGO");
     L.push("--------------------------------");
     L.push(`Folio: ${folio}`);
     L.push(`Cliente: ${cliente}`);
-    if (loan) {
-      L.push(`Monto del crédito: ${money(loan.principalAmount)}`);
-      L.push(`Cuota: ${money(loan.periodicPayment)}`);
-    }
-    if (i) {
-      L.push(`Saldo pendiente: ${money(i.saldoPendiente)}`);
-    }
     L.push("--------------------------------");
-    // Detalle de lo aplicado (si el backend lo devolvió)
-    if (res?.applied) {
-      L.push(`Capital: ${money(res.applied.capitalApplied)}`);
-      L.push(`Interés: ${money(res.applied.interestApplied)}`);
-      if (Number(res.applied.lateInterestApplied) > 0) {
-        L.push(`Moratorio: ${money(res.applied.lateInterestApplied)}`);
+    /*if (p?.capitalApplied != null)
+      L.push(`Capital: ${money(p.capitalApplied)}`);
+    if (p?.interestApplied != null)
+      L.push(`Interés: ${money(p.interestApplied)}`);*/
+    if (Number(p?.lateInterestApplied || 0) > 0)
+      L.push(`Moratorio: ${money(p.lateInterestApplied)}`);
+    try {
+      const cuotas =
+        typeof p?.cuotasPagadas === "string"
+          ? JSON.parse(p.cuotasPagadas)
+          : p?.cuotasPagadas || [];
+
+      if (cuotas.length > 0) {
+        L.push("Cuotas pagadas:");
+
+        cuotas
+          .sort((a: any, b: any) => a.periodo - b.periodo)
+          .forEach((c: any) => {
+            L.push(`• #${c.periodo} (${c.fecha})`);
+          });
       }
-      L.push("--------------------------------");
+    } catch {}
+    L.push(`*TOTAL RECIBIDO: ${money(p?.amountPaid)}*`);
+    if (Number(p?.saldoFavor || 0) > 0) {
+      L.push(`Saldo a favor: ${money(p.saldoFavor)}`);
     }
-    L.push(`*TOTAL RECIBIDO: ${money(fv.amountPaid)}*`);
-    if (Number(res?.saldoFavor || 0) > 0) {
-      L.push(`Saldo a favor: ${money(res.saldoFavor)}`);
-    }
-    L.push(`Forma de pago: ${fv.method}`);
-    L.push(`Fecha y hora: ${fechaHora}`);
-    if (res?.liquidado) {
-      L.push("");
-      L.push("*¡CRÉDITO LIQUIDADO POR COMPLETO!*");
-    }
+    if (p?.method) L.push(`Forma de pago: ${p.method}`);
+    L.push(`Fecha y hora: ${fh}`);
     L.push("--------------------------------");
     L.push("Gracias por su pago.");
-    L.push("Conserve este comprobante.");
-
     return L.join("\n");
   }
 
+  fmtFecha(iso: string): string {
+    try {
+      return new Intl.DateTimeFormat("es-MX", {
+        timeZone: "America/Mexico_City",
+        day: "2-digit",
+        month: "2-digit",
+        year: "numeric",
+        hour: "2-digit",
+        minute: "2-digit",
+        hour12: false,
+      })
+        .format(new Date(iso))
+        .replace(",", "");
+    } catch {
+      return iso;
+    }
+  }
+
   /** Abre WhatsApp con el comprobante prellenado al número del cliente. */
-  compartirWhatsApp() {
-    const numero = this.waNumero();
+  compartirWhatsApp(p: any) {
+    const numero = this.waNumero(p);
     if (!numero) {
-      this.snackbar.open(
-        "El cliente no tiene un teléfono válido registrado",
-        "Cerrar",
-        { duration: 4000 },
-      );
+      this.snackbar.open("El cliente no tiene teléfono válido", "Cerrar", {
+        duration: 4000,
+      });
       return;
     }
-    const texto = this.construirTextoTicket();
-    const url = `https://wa.me/${numero}?text=${encodeURIComponent(texto)}`;
-    window.open(url, "_blank");
+    const url = `https://wa.me/${numero}?text=${encodeURIComponent(this.textoTicket(p))}`;
+    const ventana = window.open(url, "_blank");
+
+    // Detectar si el navegador bloqueó la ventana emergente.
+    if (!ventana || ventana.closed || typeof ventana.closed === "undefined") {
+      // Bloqueado: ofrecer reintento con un clic (acción directa del usuario,
+      // que el navegador sí permite).
+      const ref = this.snackbar.open(
+        "El navegador bloqueó WhatsApp. Toca para abrirlo.",
+        "Abrir WhatsApp",
+        { duration: 8000 },
+      );
+      ref.onAction().subscribe(() => window.open(url, "_blank"));
+    }
   }
 
   onTypeChange(type: string) {
@@ -1186,17 +1202,46 @@ export class PaymentsRegisterComponent implements OnInit {
     this.recalcSelectivo();
   }
 
-  // Suma el saldo de las cuotas marcadas (+ mora si la casilla está activa)
+  // Handler del checkbox "usar saldo a favor". El evento (change) de mat-checkbox
+  // trae el valor nuevo en $event.checked, que es más confiable que leer el
+  // form control (que puede no haberse propagado aún). Lo forzamos y recalculamos.
+  onUsarSaldoChange(ev: any) {
+    const checked = !!ev?.checked;
+    this.paymentForm.get("usarSaldoFavor")?.setValue(checked);
+    if (!checked) {
+      // Al desactivar, volver el modo a TODO por defecto.
+      this.paymentForm.get("saldoFavorModo")?.setValue("TODO");
+    }
+    this.recalcSelectivo();
+  }
+
+  // Suma el saldo de las cuotas marcadas (+ mora si la casilla está activa).
+  // Si se usa saldo a favor, se descuenta del efectivo requerido: el saldo cubre
+  // parte (o todo) del total, así que el cliente solo da en efectivo la diferencia.
   recalcSelectivo() {
     const set = this.selectedPeriodos();
     let total = 0;
     for (const s of this.schedule()) {
       if (set.has(s.periodNumber)) total += Number(s.balanceDue);
     }
-    if (this.paymentForm.value.cobrarMora && this.info()) {
+    if (this.paymentForm.get("cobrarMora")?.value && this.info()) {
       total += Number(this.info()!.moraPendiente || 0);
     }
-    this.paymentForm.patchValue({ amountPaid: Math.round(total * 100) / 100 });
+
+    // Descontar el saldo a favor que se va a aplicar. Leemos los controles
+    // directamente (no paymentForm.value) para tener el valor actual y evitar
+    // desfases de timing tras marcar el checkbox.
+    let efectivo = total;
+    if (this.paymentForm.get("usarSaldoFavor")?.value) {
+      const modo = this.paymentForm.get("saldoFavorModo")?.value;
+      const saldoAUsar =
+        modo === "PARCIAL"
+          ? Number(this.paymentForm.get("montoSaldoFavor")?.value || 0)
+          : Math.min(this.saldoFavor(), total); // modo TODO: solo lo que cubre el total
+      efectivo = Math.max(0, total - saldoAUsar);
+    }
+
+    this.paymentForm.patchValue({ amountPaid: Math.round(efectivo * 100) / 100 });
   }
 
   nextDue() {
@@ -1227,11 +1272,31 @@ export class PaymentsRegisterComponent implements OnInit {
       return;
     }
 
+    // Un pago en $0 solo tiene sentido si se cubre con saldo a favor.
+    const efectivo = Number(this.paymentForm.get("amountPaid")?.value || 0);
+    const usaSaldo = !!this.paymentForm.get("usarSaldoFavor")?.value;
+    if (efectivo <= 0 && !usaSaldo) {
+      this.snackbar.open(
+        "El monto debe ser mayor a 0, o usa saldo a favor para cubrir el pago",
+        "Cerrar",
+        { duration: 4500 },
+      );
+      return;
+    }
+
     const usarSaldoFavor = !!fv.usarSaldoFavor;
     const montoSaldoFavor =
       usarSaldoFavor && fv.saldoFavorModo === "PARCIAL"
         ? Number(fv.montoSaldoFavor || 0)
         : this.saldoFavor();
+
+    // Si se USA saldo a favor, no se debe además guardar excedente: el "excedente"
+    // que quedaría proviene del propio saldo aplicado, y guardarlo lo devolvería,
+    // anulando el uso (el saldo no bajaría). Solo se guarda excedente cuando NO se
+    // usa saldo a favor.
+    const guardarExcedente = usarSaldoFavor
+      ? false
+      : !!fv.guardarExcedenteSaldoFavor;
 
     // En modo selectivo el backend usa paymentType TOTAL + periodos (paga esas cuotas).
     // Si además se marcó "cobrar mora", se envía applyExcedenteToMora para abonar el resto.
@@ -1242,9 +1307,9 @@ export class PaymentsRegisterComponent implements OnInit {
       reference: fv.reference,
       notes: fv.notes,
       paymentType: isSelectivo ? "TOTAL" : fv.paymentType,
-      usarSaldoFavor: fv.usarSaldoFavor,
-      montoSaldoFavor: fv.montoSaldoFavor,
-      guardarExcedenteSaldoFavor: fv.guardarExcedenteSaldoFavor,
+      usarSaldoFavor,
+      montoSaldoFavor,
+      guardarExcedenteSaldoFavor: guardarExcedente,
       applyExcedenteToMora: isSelectivo
         ? !!fv.cobrarMora
         : !!fv.applyExcedenteToMora,
@@ -1261,10 +1326,26 @@ export class PaymentsRegisterComponent implements OnInit {
         this.saving.set(false);
         this.selectedPeriodos.set(new Set());
         // Recargar calendario e info
-        this.setActiveLoan(this.selectedLoan()!);
+        const loan = this.selectedLoan();
+
+        if (loan) {
+          this.api.get<any>(`/loans/${loan.id}/schedule`).subscribe({
+            next: (s) =>
+              this.schedule.set(Array.isArray(s) ? s : (s?.data ?? [])),
+          });
+
+          this.api.get<any>(`/payments/info/${loan.id}`).subscribe({
+            next: (i) => this.info.set(i),
+          });
+
+          this.api.get<number>(`/payments/saldo-favor/${loan.id}`).subscribe({
+            next: (saldo) => this.saldoFavor.set(Number(saldo || 0)),
+            error: () => this.saldoFavor.set(0),
+          });
+        }
         // Abrir automáticamente el TICKET TÉRMICO 80mm al registrar el pago
         if (result?.payment?.id) {
-          setTimeout(() => this.printTicketById(result.payment.id), 800);
+          //setTimeout(() => this.printTicketById(result.payment.id), 800);
         }
       },
       error: (err) => {

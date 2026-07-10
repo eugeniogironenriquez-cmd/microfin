@@ -12,6 +12,19 @@ import { ApiService } from '../../core/index';
 // Leaflet se carga desde CDN en runtime (ver loadLeaflet()). Declaramos L como any.
 declare const L: any;
 
+/**
+ * Fecha de HOY en la zona de México (America/Mexico_City), formato YYYY-MM-DD.
+ * Evita el bug de new Date().toISOString() que usa UTC y, por la tarde/noche
+ * en México (UTC-6), devuelve el día siguiente.
+ */
+function hoyMexico(): string {
+  return new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'America/Mexico_City',
+    year: 'numeric', month: '2-digit', day: '2-digit',
+  }).format(new Date());
+}
+
+
 interface GeoPayment {
   id: string; lat: number; lng: number; amount: number;
   collectorId?: string; collectorName?: string;
@@ -109,7 +122,7 @@ interface GeoVisit {
 export class GeoMonitorComponent implements OnInit, OnDestroy {
   private api = inject(ApiService);
 
-  fecha = new Date().toISOString().slice(0, 10);  // hoy YYYY-MM-DD
+  fecha = hoyMexico();  // hoy YYYY-MM-DD en zona de México
   filtro: string[] = ['pagos', 'visitas'];
 
   payments = signal<GeoPayment[]>([]);

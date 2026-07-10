@@ -15,6 +15,24 @@ import { MatPaginatorModule, PageEvent } from '@angular/material/paginator';
 import { MatDividerModule } from '@angular/material/divider';
 import { ApiService } from '../../core/index';
 
+/**
+ * Fecha de HOY en la zona de México (America/Mexico_City), formato YYYY-MM-DD.
+ * Evita el bug de new Date().toISOString() que usa UTC y, por la tarde/noche
+ * en México (UTC-6), devuelve el día siguiente.
+ */
+function hoyMexico(): string {
+  // 'en-CA' produce el formato YYYY-MM-DD directamente.
+  return new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'America/Mexico_City',
+    year: 'numeric', month: '2-digit', day: '2-digit',
+  }).format(new Date());
+}
+
+/** Primer día del mes actual en zona de México, formato YYYY-MM-DD. */
+function inicioMesMexico(): string {
+  return hoyMexico().substring(0, 7) + '-01';
+}
+
 @Component({
   selector: 'app-expenses',
   standalone: true,
@@ -261,10 +279,10 @@ export class ExpensesComponent implements OnInit {
 
   // FormControls para las fechas del reporte (reemplaza ngModel)
   reportStartCtrl = new FormControl(
-    new Date().toISOString().substring(0, 7) + '-01'
+    inicioMesMexico()
   );
   reportEndCtrl = new FormControl(
-    new Date().toISOString().substring(0, 10)
+    hoyMexico()
   );
 
   expCols = ['fecha', 'categoria', 'descripcion', 'monto'];
@@ -274,7 +292,7 @@ export class ExpensesComponent implements OnInit {
   form = this.fb.group({
     categoryId:  ['', Validators.required],
     amount:      [null as number | null, [Validators.required, Validators.min(0.01)]],
-    expenseDate: [new Date().toISOString().substring(0, 10), Validators.required],
+    expenseDate: [hoyMexico(), Validators.required],
     method:      ['EFECTIVO'],
     description: ['', Validators.required],
   });

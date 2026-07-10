@@ -13,9 +13,10 @@ import {
   BadRequestException,
 } from "@nestjs/common";
 import { TypeOrmModule, InjectRepository } from "@nestjs/typeorm";
-import { Repository, DataSource } from "typeorm";
+import { Repository, DataSource, In } from "typeorm";
 import { ApiTags, ApiBearerAuth, ApiOperation } from "@nestjs/swagger";
 import { Response } from "express";
+import { OverdueJobService } from "../jobs/overdue-job.module";
 import {
   Payment,
   PaymentSchedule,
@@ -39,6 +40,7 @@ import { FinancialCalculator } from "../loans/loans.module";
 import { CompanyModule, CompanyService } from "../company/company.module";
 import { PdfGeneratorModule } from "../pdf-generator/pdf-generator.module";
 import { PdfGeneratorService } from "../pdf-generator/pdf-generator.service";
+import { OverdueJobModule } from "../jobs/overdue-job.module";
 import {
   ConfigMoraModule,
   ConfigMoraService,
@@ -61,6 +63,7 @@ export class PaymentsService {
     private companyService: CompanyService,
     private pdfService: PdfGeneratorService,
     private moraService: ConfigMoraService,
+    private overdueJobService: OverdueJobService,
   ) {}
 
   async getMoraInfo(loanId: string) {
@@ -253,28 +256,112 @@ export class PaymentsService {
   }
 
   async getPaymentInfo(loanId: string) {
-    const loan = await this.loanRepo.findOne({ where: { id: loanId } });
-    if (!loan) throw new NotFoundException("Préstamo no encontrado");
+    const loan = await this.loanRepo.findOne({
+      where: { id: loanId },
+    });
+
+    if (!loan) {
+      throw new NotFoundException("Préstamo no encontrado");
+    }
+
     const mora = await this.getMoraInfo(loanId);
     const saldoPendiente = await this.getSaldoPendiente(loanId);
+
+    const estadosPendientes = [
+      ScheduleStatus.PENDIENTE,
+      ScheduleStatus.PARCIAL,
+    ];
+
+    // Primera cuota pendiente, aunque sea de días anteriores
     const nextDue = await this.scheduleRepo.findOne({
-      where: { loanId, status: ScheduleStatus.PENDIENTE },
-      order: { periodNumber: "ASC" },
+      where: {
+        loanId,
+        status: In(estadosPendientes),
+      },
+      order: {
+        dueDate: "ASC",
+        periodNumber: "ASC",
+      },
     });
+
+    /*
+     * Día actual en México, representado como rango UTC:
+     * desde YYYY-MM-DD 00:00:00 UTC
+     * hasta el siguiente día 00:00:00 UTC.
+     *
+     * Tus fechas de calendario se guardan ancladas a medianoche UTC.
+     */
+    const hoyMexico = new Intl.DateTimeFormat("en-CA", {
+      timeZone: "America/Mexico_City",
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+    }).format(new Date());
+
+    const inicioHoy = new Date(`${hoyMexico}T00:00:00.000Z`);
+    const finHoy = new Date(inicioHoy);
+    finHoy.setUTCDate(finHoy.getUTCDate() + 1);
+
+    const cuotaHoy = await this.scheduleRepo
+      .createQueryBuilder("s")
+      .where("s.loanId = :loanId", { loanId })
+      .andWhere("s.status IN (:...statuses)", {
+        statuses: estadosPendientes,
+      })
+      .andWhere("s.dueDate >= :inicioHoy", { inicioHoy })
+      .andWhere("s.dueDate < :finHoy", { finHoy })
+      .orderBy("s.periodNumber", "ASC")
+      .getOne();
+
     return {
       cuotaDiaria: Number(loan.periodicPayment),
       saldoPendiente,
       moraPendiente: mora.moraPendiente,
       moraPorDia: mora.moraPorDia,
       totalDiasMora: mora.totalDiasMora,
+
+      // Primera cuota pendiente
       proximaCuota: nextDue
         ? {
             periodo: nextDue.periodNumber,
-            vence: nextDue.dueDate,
+            vence: this.fechaSolo(nextDue.dueDate),
             monto: Number(nextDue.balanceDue),
           }
         : null,
+
+      // Cuota programada específicamente para hoy
+      cuotaHoy: cuotaHoy
+        ? {
+            periodo: cuotaHoy.periodNumber,
+            vence: this.fechaSolo(cuotaHoy.dueDate),
+            monto: Number(cuotaHoy.balanceDue),
+          }
+        : null,
+
+      tieneCuotaHoy: cuotaHoy !== null,
     };
+  }
+
+  private fechaSolo(fecha: string | Date): string {
+    if (!fecha) {
+      return "";
+    }
+
+    if (typeof fecha === "string") {
+      const match = fecha.match(/^\d{4}-\d{2}-\d{2}/);
+
+      if (match) {
+        return match[0];
+      }
+    }
+
+    const date = new Date(fecha);
+
+    const year = date.getUTCFullYear();
+    const month = String(date.getUTCMonth() + 1).padStart(2, "0");
+    const day = String(date.getUTCDate()).padStart(2, "0");
+
+    return `${year}-${month}-${day}`;
   }
 
   async register(
@@ -385,7 +472,10 @@ export class PaymentsService {
       lateInterestApplied = this.calculator.round(lateInterestApplied);
     } else {
       const schedules = await this.scheduleRepo.find({
-        where: { loanId: dto.loanId, status: ScheduleStatus.PENDIENTE },
+        where: {
+          loanId: dto.loanId,
+          status: In([ScheduleStatus.PENDIENTE, ScheduleStatus.PARCIAL]),
+        },
         order: { periodNumber: "ASC" },
       });
 
@@ -508,9 +598,31 @@ export class PaymentsService {
 
     let saldoFavorGenerado = 0;
 
-    if (dto.guardarExcedenteSaldoFavor && remaining > 0) {
+    // Protección: si en este pago se USÓ saldo a favor, no se guarda excedente.
+    // El "remaining" incluye el saldo aplicado; guardarlo lo devolvería y anularía
+    // el uso (el saldo no bajaría). Solo se guarda excedente cuando NO se usó saldo.
+    if (
+      dto.guardarExcedenteSaldoFavor &&
+      saldoFavorAplicado === 0 &&
+      remaining > 0
+    ) {
       saldoFavorGenerado = this.calculator.round(remaining);
       remaining = 0;
+    }
+
+    // Ajuste: aplicar del saldo a favor SOLO lo que realmente se consumió.
+    // Si se solicitó usar saldo a favor pero sobró dinero (remaining > 0), ese
+    // sobrante proviene del propio saldo (el efectivo se aplica primero a cuotas).
+    // Se descuenta del saldo aplicado para que el resto quede intacto como saldo.
+    if (saldoFavorAplicado > 0 && remaining > 0) {
+      const consumidoDelSaldo = this.calculator.round(
+        Math.max(0, saldoFavorAplicado - remaining),
+      );
+      // El sobrante del saldo no se toca (no sale de la bolsa).
+      remaining = this.calculator.round(
+        remaining - (saldoFavorAplicado - consumidoDelSaldo),
+      );
+      saldoFavorAplicado = consumidoDelSaldo;
     }
 
     const payment = this.paymentRepo.create({
@@ -576,12 +688,23 @@ export class PaymentsService {
       );
     }
 
+    /*
     const pendingCount = await this.scheduleRepo.count({
-      where: { loanId: dto.loanId, status: ScheduleStatus.PENDIENTE },
+      where: {
+        loanId: dto.loanId,
+        status: In([ScheduleStatus.PENDIENTE, ScheduleStatus.PARCIAL]),
+      },
     });
     if (pendingCount === 0) {
       await this.loanRepo.update(dto.loanId, { status: LoanStatus.LIQUIDADO });
-    }
+    }*/
+
+    
+
+    const nuevoEstado =
+  await this.overdueJobService.refreshLoanStatus(dto.loanId);
+
+const liquidado = nuevoEstado === LoanStatus.LIQUIDADO;
 
     return {
       payment: saved,
@@ -968,6 +1091,7 @@ export class PaymentsController {
     CompanyModule,
     PdfGeneratorModule,
     ConfigMoraModule,
+    OverdueJobModule,
   ],
   providers: [PaymentsService],
   controllers: [PaymentsController],

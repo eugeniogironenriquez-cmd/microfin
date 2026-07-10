@@ -142,11 +142,13 @@ const STATUS_CONFIG: Record<string, { label: string; color: string }> = {
               <button mat-icon-button [routerLink]="['/loans', row.id]" matTooltip="Ver detalle">
                 <mat-icon>visibility</mat-icon>
               </button>
+              <!-- OCULTO (movido al portal del gestor): botón Reestructurar
               @if (['ATRASADO', 'VENCIDO'].includes(row.status) && auth.can('prestamos.reestructurar')) {
                 <button mat-icon-button [routerLink]="['/loans', row.id, 'restructure']" matTooltip="Reestructurar" color="accent">
                   <mat-icon>refresh</mat-icon>
                 </button>
               }
+              -->
             </td>
           </ng-container>
 

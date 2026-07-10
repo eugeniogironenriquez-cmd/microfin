@@ -67,8 +67,6 @@ export class CollectionService {
     const status = (l.status || l.estatus || "ACTIVO").toUpperCase();
     const addr = l.customer?.address;
 
-    // Domicilio en una sola línea: "calle, colonia, municipio".
-    // Filtra vacíos para no dejar comas sueltas.
     const addressLine = addr
       ? [addr.street, addr.colonia, addr.municipality]
           .filter(Boolean)
@@ -77,9 +75,6 @@ export class CollectionService {
         ? l.address
         : undefined;
 
-    // Tres estados visuales (igual que el web): VENCIDO (rojo),
-    // ATRASADO (ámbar: debe cuotas pero el plazo sigue vigente),
-    // corriente (verde, ACTIVO/LIQUIDADO/etc.).
     const estado: "corriente" | "atrasado" | "vencido" =
       status === "VENCIDO"
         ? "vencido"
@@ -93,8 +88,107 @@ export class CollectionService {
       customerName: l.customer?.fullName || l.customerName || "Cliente",
       phone: l.customer?.phone || l.phone,
       curp: l.customer?.curp,
+
       address:
         addr?.street || (typeof l.address === "string" ? l.address : undefined),
+
+      addressFull: addr
+        ? {
+            street: addr.street,
+            colonia: addr.colonia,
+            municipality: addr.municipality,
+            state: addr.state,
+            zip: addr.zip,
+            references: addr.references,
+          }
+        : undefined,
+
+      addressLine,
+
+      principalAmount: Number(l.principalAmount || 0),
+      periodicPayment: Number(l.periodicPayment || 0),
+      termWeeks: Number(l.termWeeks || 0) || undefined,
+
+      status,
+      estado,
+
+      saldoPendiente: Number(l.saldoPendiente || 0),
+      moraPendiente: Number(l.moraPendiente || 0),
+
+      proximaCuota: l.proximaCuota
+        ? {
+            periodo: Number(l.proximaCuota.periodo || 0),
+            vence: l.proximaCuota.vence,
+            monto: Number(l.proximaCuota.monto || 0),
+          }
+        : null,
+
+      cuotasVencidas: Number(l.cuotasVencidas || 0),
+      nivel: l.nivel || undefined,
+    };
+  }
+
+  private fechaSolo(fecha: string | Date): string {
+    if (!fecha) {
+      return "";
+    }
+
+    if (typeof fecha === "string") {
+      const match = fecha.match(/^\d{4}-\d{2}-\d{2}/);
+
+      if (match) {
+        return match[0];
+      }
+    }
+
+    const date = new Date(fecha);
+
+    const year = date.getUTCFullYear();
+    const month = String(date.getUTCMonth() + 1).padStart(2, "0");
+    const day = String(date.getUTCDate()).padStart(2, "0");
+
+    return `${year}-${month}-${day}`;
+  }
+
+  async downloadClientsGestor(): Promise<AssignedClient[]> {
+    const res = await firstValueFrom(
+      this.http.get<ApiEnvelope<any> | any>(`${this.base}/semaforo/gestor`),
+    );
+    const raw = this.unwrap(res);
+    // El semáforo puede devolver { data: [...] } o un array directo.
+    const lista: any[] = Array.isArray(raw) ? raw : raw?.data || [];
+
+    const clients: AssignedClient[] = lista.map((r) => this.mapClientGestor(r));
+    this.clients.set(clients);
+    await this.storage.setClients(clients);
+    return clients;
+  }
+
+  private mapClientGestor(r: any): AssignedClient {
+    const addr = r.customerAddress;
+    const addressLine = addr
+      ? [addr.street, addr.colonia, addr.municipality]
+          .filter(Boolean)
+          .join(", ")
+      : typeof r.customerAddress === "string"
+        ? r.customerAddress
+        : undefined;
+
+    // Un crédito rojo siempre está atrasado/vencido; para el badge usamos
+    // 'vencido' si el status lo dice, si no 'atrasado'.
+    const status = (r.status || "ATRASADO").toUpperCase();
+    const estado: "corriente" | "atrasado" | "vencido" =
+      status === "VENCIDO" ? "vencido" : "atrasado";
+
+    return {
+      loanId: r.id || r.loanId,
+      customerId: r.customerId,
+      customerName: r.customerName || "Cliente",
+      phone: r.customerPhone || r.phone,
+      curp: r.customerCurp || undefined,
+      address:
+        addr?.street ||
+        (typeof r.customerAddress === "string" ? r.customerAddress : undefined),
       addressFull: addr
         ? {
             street: addr.street,
@@ -106,63 +200,11 @@ export class CollectionService {
           }
         : undefined,
       addressLine,
-      principalAmount: Number(l.principalAmount || 0),
-      periodicPayment: Number(l.periodicPayment || 0),
-      termWeeks: Number(l.termWeeks || 0) || undefined,
-      status,
-      estado,
-      cuotasVencidas:  Number(l.cuotasVencidas || 0),
-      nivel:           l.nivel || undefined,
-    };
-  }
-
-    async downloadClientsGestor(): Promise<AssignedClient[]> {
-    const res = await firstValueFrom(
-      this.http.get<ApiEnvelope<any> | any>(`${this.base}/semaforo/gestor`),
-    );
-    const raw = this.unwrap(res);
-    // El semáforo puede devolver { data: [...] } o un array directo.
-    const lista: any[] = Array.isArray(raw) ? raw : (raw?.data || []);
- 
-    const clients: AssignedClient[] = lista.map((r) => this.mapClientGestor(r));
-    this.clients.set(clients);
-    await this.storage.setClients(clients);
-    return clients;
-  }
-
-  private mapClientGestor(r: any): AssignedClient {
-    const addr = r.customerAddress;
-    const addressLine = addr
-      ? [addr.street, addr.colonia, addr.municipality].filter(Boolean).join(', ')
-      : (typeof r.customerAddress === 'string' ? r.customerAddress : undefined);
- 
-    // Un crédito rojo siempre está atrasado/vencido; para el badge usamos
-    // 'vencido' si el status lo dice, si no 'atrasado'.
-    const status = (r.status || 'ATRASADO').toUpperCase();
-    const estado: 'corriente' | 'atrasado' | 'vencido' =
-      status === 'VENCIDO' ? 'vencido' : 'atrasado';
- 
-    return {
-      loanId:          r.id || r.loanId,
-      customerId:      r.customerId,
-      customerName:    r.customerName || 'Cliente',
-      phone:           r.customerPhone || r.phone,
-      curp:            r.customerCurp || undefined,
-      address:         addr?.street || (typeof r.customerAddress === 'string' ? r.customerAddress : undefined),
-      addressFull:     addr ? {
-                         street:       addr.street,
-                         colonia:      addr.colonia,
-                         municipality: addr.municipality,
-                         state:        addr.state,
-                         zip:          addr.zip,
-                         references:   addr.references,
-                       } : undefined,
-      addressLine,
       principalAmount: Number(r.principalAmount || 0),
       periodicPayment: Number(r.periodicPayment || 0),
-      termWeeks:       Number(r.termWeeks || 0) || undefined,
-      cuotasVencidas:  Number(r.overdueCount ?? r.cuotasVencidas ?? 0),
-      nivel:           (r.level || r.nivel || 'ROJO'),
+      termWeeks: Number(r.termWeeks || 0) || undefined,
+      cuotasVencidas: Number(r.overdueCount ?? r.cuotasVencidas ?? 0),
+      nivel: r.level || r.nivel || "ROJO",
       status,
       estado,
     };
@@ -252,14 +294,15 @@ export class CollectionService {
   }
 
   // ── Sincronización ─────────────────────────────────────────
-/** Sincroniza todos los pendientes (pagos, visitas, acciones de gestor). */
+  /** Sincroniza todos los pendientes (pagos, visitas, acciones de gestor). */
   async syncPending(): Promise<{ ok: number; fail: number }> {
     // Evitar reentradas: si ya se está sincronizando, no arrancar otra.
     if (this.syncing()) return { ok: 0, fail: 0 };
     if (!(await this.network.isOnline())) return { ok: 0, fail: 0 };
- 
+
     this.syncing.set(true);
-    let ok = 0, fail = 0;
+    let ok = 0,
+      fail = 0;
     try {
       const pending = await this.storage.getPendingPayments();
       for (const p of pending) {
@@ -280,11 +323,13 @@ export class CollectionService {
     return { ok, fail };
   }
 
-    /** Aval del crédito (solo lectura, requiere conexión). */
+  /** Aval del crédito (solo lectura, requiere conexión). */
   async getAval(loanId: string): Promise<any | null> {
     try {
       const res = await firstValueFrom(
-        this.http.get<ApiEnvelope<any> | any>(`${this.base}/loans/${loanId}/guarantor`),
+        this.http.get<ApiEnvelope<any> | any>(
+          `${this.base}/loans/${loanId}/guarantor`,
+        ),
       );
       return this.unwrap(res) || null;
     } catch {
@@ -292,11 +337,13 @@ export class CollectionService {
     }
   }
 
-    /** Historial de seguimientos/visitas del servidor (requiere conexión). */
+  /** Historial de seguimientos/visitas del servidor (requiere conexión). */
   async getSeguimientosServidor(loanId: string): Promise<any[]> {
     try {
       const res = await firstValueFrom(
-        this.http.get<ApiEnvelope<any> | any>(`${this.base}/visitas/prestamo/${loanId}`),
+        this.http.get<ApiEnvelope<any> | any>(
+          `${this.base}/visitas/prestamo/${loanId}`,
+        ),
       );
       const data = this.unwrap(res);
       return Array.isArray(data) ? data : [];
@@ -305,7 +352,7 @@ export class CollectionService {
     }
   }
 
-    /** Seguimientos locales pendientes (aún no sincronizados) de un crédito. */
+  /** Seguimientos locales pendientes (aún no sincronizados) de un crédito. */
   async getSeguimientosLocales(loanId: string): Promise<LocalVisit[]> {
     const visits = await this.storage.getVisits();
     return visits.filter((v) => v.loanId === loanId && !v.synced);

@@ -1,11 +1,19 @@
-import { Injectable, Module, Controller, Post } from '@nestjs/common';
-import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
-import { Loan, PaymentSchedule, LoanStatus, ScheduleStatus } from '../common/entities';
-import { TypeOrmModule } from '@nestjs/typeorm';
-import { Auth } from '../common/index';
-import { UserRole } from '../common/entities';
-import { ConfigMoraModule, ConfigMoraService } from '../config-mora/config-mora.module';
+import { Injectable, Module, Controller, Post } from "@nestjs/common";
+import { InjectRepository } from "@nestjs/typeorm";
+import { In, Repository } from "typeorm";
+import {
+  Loan,
+  PaymentSchedule,
+  LoanStatus,
+  ScheduleStatus,
+} from "../common/entities";
+import { TypeOrmModule } from "@nestjs/typeorm";
+import { Auth } from "../common/index";
+import { UserRole } from "../common/entities";
+import {
+  ConfigMoraModule,
+  ConfigMoraService,
+} from "../config-mora/config-mora.module";
 
 @Injectable()
 export class OverdueJobService {
@@ -13,8 +21,9 @@ export class OverdueJobService {
   private lastRun: Date | null = null;
 
   constructor(
-    @InjectRepository(Loan)            private loanRepo: Repository<Loan>,
-    @InjectRepository(PaymentSchedule) private scheduleRepo: Repository<PaymentSchedule>,
+    @InjectRepository(Loan) private loanRepo: Repository<Loan>,
+    @InjectRepository(PaymentSchedule)
+    private scheduleRepo: Repository<PaymentSchedule>,
     private moraService: ConfigMoraService,
   ) {}
 
@@ -27,36 +36,115 @@ export class OverdueJobService {
     if (this.lastRun) {
       const sameDay =
         this.lastRun.getUTCFullYear() === now.getUTCFullYear() &&
-        this.lastRun.getUTCMonth()    === now.getUTCMonth()    &&
-        this.lastRun.getUTCDate()     === now.getUTCDate();
+        this.lastRun.getUTCMonth() === now.getUTCMonth() &&
+        this.lastRun.getUTCDate() === now.getUTCDate();
       if (sameDay) return; // ya corrió hoy (día de México)
     }
     this.lastRun = now;
     const result = await this.markOverdueLoans();
-    console.log(`[OverdueJob] ${new Date().toISOString()}: ${result.vencidos} vencidos, ${result.atrasados} atrasados, ${result.restored} al corriente, ${result.moraStamped} moras estampadas`);
+    console.log(
+      `[OverdueJob] ${new Date().toISOString()}: ${result.vencidos} vencidos, ${result.atrasados} atrasados, ${result.restored} al corriente, ${result.moraStamped} moras estampadas`,
+    );
   }
 
-  async markOverdueLoans(): Promise<{ vencidos: number; atrasados: number; restored: number; moraStamped: number }> {
+  async refreshLoanStatus(loanId: string): Promise<LoanStatus> {
+    const MX = 6 * 60 * 60 * 1000;
+    const mxNow = new Date(Date.now() - MX);
+
+    const today = new Date(
+      Date.UTC(
+        mxNow.getUTCFullYear(),
+        mxNow.getUTCMonth(),
+        mxNow.getUTCDate(),
+        0,
+        0,
+        0,
+        0,
+      ),
+    );
+
+    const pendientes = await this.scheduleRepo.find({
+      where: {
+        loanId,
+        status: In([ScheduleStatus.PENDIENTE, ScheduleStatus.PARCIAL]),
+      },
+      order: {
+        dueDate: "ASC",
+      },
+    });
+
+    if (pendientes.length === 0) {
+      await this.loanRepo.update(loanId, {
+        status: LoanStatus.LIQUIDADO,
+      });
+
+      return LoanStatus.LIQUIDADO;
+    }
+
+    const tieneVencidas = pendientes.some(
+      (cuota) => new Date(cuota.dueDate) < today,
+    );
+
+    const tieneActualesOFuturas = pendientes.some(
+      (cuota) => new Date(cuota.dueDate) >= today,
+    );
+
+    let nuevoEstado: LoanStatus;
+
+    if (!tieneVencidas) {
+      nuevoEstado = LoanStatus.ACTIVO;
+    } else if (tieneActualesOFuturas) {
+      nuevoEstado = LoanStatus.ATRASADO;
+    } else {
+      nuevoEstado = LoanStatus.VENCIDO;
+    }
+
+    await this.loanRepo.update(loanId, {
+      status: nuevoEstado,
+    });
+
+    return nuevoEstado;
+  }
+
+  async markOverdueLoans(): Promise<{
+    vencidos: number;
+    atrasados: number;
+    restored: number;
+    moraStamped: number;
+  }> {
     // El servidor corre en UTC; la empresa opera en México (UTC-6). Las fechas de
     // vencimiento están ancladas a medianoche UTC = día-calendario de México.
     // Calculamos "hoy" como el día-calendario de México para que una cuota que
     // vence HOY no genere mora hasta que el día (en México) haya terminado.
     const MX = 6 * 60 * 60 * 1000;
     const mxNow = new Date(Date.now() - MX);
-    const today = new Date(Date.UTC(mxNow.getUTCFullYear(), mxNow.getUTCMonth(), mxNow.getUTCDate(), 0, 0, 0, 0));
+    const today = new Date(
+      Date.UTC(
+        mxNow.getUTCFullYear(),
+        mxNow.getUTCMonth(),
+        mxNow.getUTCDate(),
+        0,
+        0,
+        0,
+        0,
+      ),
+    );
 
     // ── 1. ESTAMPAR MORA FIJA a cuotas recién vencidas ───────────
     // Cada cuota vencida y sin pagar que aún NO tenga mora estampada
     // recibe su mora fija (= monto configurado), UNA sola vez.
     // La condición `mora_generada = 0` evita duplicar si el job corre de nuevo.
     const moraPorDia = await this.moraService.getMoraPorDia();
-    const rMora = await this.scheduleRepo.query(`
+    const rMora = await this.scheduleRepo.query(
+      `
       UPDATE calendario_pagos
       SET mora_generada = ?
       WHERE estatus IN ('PENDIENTE','PARCIAL')
         AND fecha_vencimiento < ?
         AND mora_generada = 0
-    `, [moraPorDia, today]);
+    `,
+      [moraPorDia, today],
+    );
 
     // ── 2. MARCAR ESTADOS según cuotas vencidas y fin del plazo ──
     // Definiciones:
@@ -69,7 +157,8 @@ export class OverdueJobService {
     // VENCIDO: tiene cuotas pendientes vencidas Y NO existe ninguna cuota
     // pendiente con fecha de vencimiento >= hoy (es decir, ya no quedan
     // cuotas futuras: el plazo se acabó y aún debe).
-    const rVencido = await this.loanRepo.query(`
+    const rVencido = await this.loanRepo.query(
+      `
       UPDATE prestamos p
       SET p.estatus = 'VENCIDO'
       WHERE p.estatus IN ('ACTIVO','ATRASADO','VENCIDO')
@@ -85,11 +174,14 @@ export class OverdueJobService {
             AND cp2.estatus IN ('PENDIENTE','PARCIAL')
             AND cp2.fecha_vencimiento >= ?
         )
-    `, [today, today]);
+    `,
+      [today, today],
+    );
 
     // ATRASADO: tiene cuotas pendientes vencidas PERO todavía existen cuotas
     // pendientes futuras (fecha_vencimiento >= hoy): el plazo sigue corriendo.
-    const rAtrasado = await this.loanRepo.query(`
+    const rAtrasado = await this.loanRepo.query(
+      `
       UPDATE prestamos p
       SET p.estatus = 'ATRASADO'
       WHERE p.estatus IN ('ACTIVO','ATRASADO','VENCIDO')
@@ -105,12 +197,15 @@ export class OverdueJobService {
             AND cp2.estatus IN ('PENDIENTE','PARCIAL')
             AND cp2.fecha_vencimiento >= ?
         )
-    `, [today, today]);
+    `,
+      [today, today],
+    );
 
     // ACTIVO (al corriente): estaba ATRASADO o VENCIDO pero ya NO tiene
     // ninguna cuota pendiente vencida. Vuelve a ACTIVO.
     // NOTA: aunque la cuota se pague, su mora_generada permanece como adeudo.
-    const rActivo = await this.loanRepo.query(`
+    const rActivo = await this.loanRepo.query(
+      `
       UPDATE prestamos p
       SET p.estatus = 'ACTIVO'
       WHERE p.estatus IN ('ATRASADO','VENCIDO')
@@ -120,28 +215,35 @@ export class OverdueJobService {
             AND cp.estatus IN ('PENDIENTE','PARCIAL')
             AND cp.fecha_vencimiento < ?
         )
-    `, [today]);
+    `,
+      [today],
+    );
 
     return {
-      vencidos:    rVencido.affectedRows || 0,
-      atrasados:   rAtrasado.affectedRows || 0,
-      restored:    rActivo.affectedRows || 0,
+      vencidos: rVencido.affectedRows || 0,
+      atrasados: rAtrasado.affectedRows || 0,
+      restored: rActivo.affectedRows || 0,
       moraStamped: rMora.affectedRows || 0,
     };
   }
 }
 
-@Controller('jobs')
+@Controller("jobs")
 export class OverdueJobController {
   constructor(private svc: OverdueJobService) {}
 
-  @Post('mark-overdue')
+  @Post("mark-overdue")
   @Auth(UserRole.ADMIN)
-  runNow() { return this.svc.markOverdueLoans(); }
+  runNow() {
+    return this.svc.markOverdueLoans();
+  }
 }
 
 @Module({
-  imports: [TypeOrmModule.forFeature([Loan, PaymentSchedule]), ConfigMoraModule],
+  imports: [
+    TypeOrmModule.forFeature([Loan, PaymentSchedule]),
+    ConfigMoraModule,
+  ],
   providers: [OverdueJobService],
   controllers: [OverdueJobController],
   exports: [OverdueJobService],

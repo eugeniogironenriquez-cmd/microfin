@@ -15,6 +15,19 @@ import { MatCheckboxModule } from '@angular/material/checkbox';
 import { FormsModule } from '@angular/forms';
 import { MatChipsModule } from '@angular/material/chips';
 import { ApiService } from '../../core/index';
+import { forkJoin } from 'rxjs';
+
+/**
+ * Fecha de HOY en la zona de México (America/Mexico_City), formato YYYY-MM-DD.
+ * Evita el bug de new Date().toISOString() que usa UTC y, por la tarde/noche
+ * en México (UTC-6), devuelve el día siguiente.
+ */
+function hoyMexico(): string {
+  return new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'America/Mexico_City',
+    year: 'numeric', month: '2-digit', day: '2-digit',
+  }).format(new Date());
+}
 
 @Component({
   selector: 'app-assignments',
@@ -86,7 +99,7 @@ import { ApiService } from '../../core/index';
           } @else if (loans().length === 0) {
             <div class="empty-state">
               <mat-icon>check_circle</mat-icon>
-              <p>Sin créditos vencidos o activos disponibles</p>
+             <p>Sin créditos vencidos, atrasados o activos disponibles</p>
             </div>
           } @else {
             <table mat-table [dataSource]="loans()">
@@ -170,7 +183,7 @@ export class AssignmentsComponent implements OnInit {
 
   form = this.fb.group({
     collectorId: ['', Validators.required],
-    date: [new Date().toISOString().split('T')[0], Validators.required],
+    date: [hoyMexico(), Validators.required],
   });
 
   selectedLoans = () => Array.from(this.selectedIds());
@@ -193,28 +206,48 @@ export class AssignmentsComponent implements OnInit {
       error: (e) => console.error('Error cargando cobradores:', e),
     });
 
-    // Cargar créditos activos y vencidos
-    const extractList = (r: any): any[] => {
-      if (Array.isArray(r)) return r;
-      if (Array.isArray(r?.data)) return r.data;
-      if (Array.isArray(r?.data?.data)) return r.data.data;
-      return [];
-    };
+// Cargar créditos activos, atrasados y vencidos
+const extractList = (r: any): any[] => {
+  if (Array.isArray(r)) return r;
+  if (Array.isArray(r?.data)) return r.data;
+  if (Array.isArray(r?.data?.data)) return r.data.data;
+  return [];
+};
 
-    this.api.get<any>('/loans', { status: 'ACTIVO', limit: 100 }).subscribe({
-      next: (r) => {
-        const activos = extractList(r);
-        this.api.get<any>('/loans', { status: 'VENCIDO', limit: 100 }).subscribe({
-          next: (r2) => {
-            const vencidos = extractList(r2);
-            this.loans.set([...vencidos, ...activos]);
-            this.loading.set(false);
-          },
-          error: () => { this.loans.set(activos); this.loading.set(false); },
-        });
-      },
-      error: () => this.loading.set(false),
-    });
+this.loading.set(true);
+
+forkJoin({
+  activos: this.api.get<any>('/loans', {
+    status: 'ACTIVO',
+    limit: 100,
+  }),
+
+  atrasados: this.api.get<any>('/loans', {
+    status: 'ATRASADO',
+    limit: 100,
+  }),
+
+  vencidos: this.api.get<any>('/loans', {
+    status: 'VENCIDO',
+    limit: 100,
+  }),
+}).subscribe({
+  next: ({ activos, atrasados, vencidos }) => {
+    this.loans.set([
+      ...extractList(vencidos),
+      ...extractList(atrasados),
+      ...extractList(activos),
+    ]);
+
+    this.loading.set(false);
+  },
+
+  error: (err) => {
+    console.error('Error cargando créditos disponibles:', err);
+    this.loans.set([]);
+    this.loading.set(false);
+  },
+});
   }
 
   toggleLoan(id: string) {

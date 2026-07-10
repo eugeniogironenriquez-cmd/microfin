@@ -404,14 +404,15 @@ export class PaymentsMonitorComponent implements OnInit, OnDestroy {
     );
   }
 
+
+    // ── WhatsApp (mismo formato del monitor) ──
   telefonoDe(p: any): string | null {
     const raw = p?.loan?.customer?.phone;
     if (!raw) return null;
-    const soloDigitos = String(raw).replace(/\D/g, "");
-    return soloDigitos.length >= 10 ? soloDigitos : null;
+    const d = String(raw).replace(/\D/g, "");
+    return d.length >= 10 ? d : null;
   }
 
-  /** Número en formato wa.me (México = 52). */
   private waNumero(p: any): string | null {
     const tel = this.telefonoDe(p);
     if (!tel) return null;
@@ -420,77 +421,99 @@ export class PaymentsMonitorComponent implements OnInit, OnDestroy {
     return tel;
   }
 
-  /** Arma el texto del comprobante para un pago del monitor. */
-  private construirTextoTicket(p: any): string {
+  private textoTicket(p: any): string {
     const money = (v: any) =>
       "$" +
       (Number(v) || 0).toLocaleString("es-MX", {
         minimumFractionDigits: 2,
         maximumFractionDigits: 2,
       });
-
-    const empresa = "MICROCAPITAL - IXTEPEC";
     const cliente = p?.loan?.customer?.fullName || "Cliente";
     const folio =
       p?.receiptNumber || (p?.id ? p.id.substring(0, 8).toUpperCase() : "—");
-
-    // Fecha y hora del pago (createdAt), en zona de México.
-    const fechaBase =
-      p?.createdAt || p?.paymentDate || new Date().toISOString();
-    const fechaHora = new Intl.DateTimeFormat("es-MX", {
-      timeZone: "America/Mexico_City",
-      day: "2-digit",
-      month: "2-digit",
-      year: "numeric",
-      hour: "2-digit",
-      minute: "2-digit",
-      hour12: false,
-    })
-      .format(new Date(fechaBase))
-      .replace(",", "");
-
+    const fh = this.fmtFecha(p?.createdAt);
     const L: string[] = [];
-    L.push(`*${empresa}*`);
+    L.push("*MICROCAPITAL - IXTEPEC*");
     L.push("COMPROBANTE DE PAGO");
     L.push("--------------------------------");
     L.push(`Folio: ${folio}`);
     L.push(`Cliente: ${cliente}`);
-    if (p?.loan) {
-      if (p.loan.principalAmount != null)
-        L.push(`Monto del crédito: ${money(p.loan.principalAmount)}`);
-      if (p.loan.periodicPayment != null)
-        L.push(`Cuota: ${money(p.loan.periodicPayment)}`);
-    }
     L.push("--------------------------------");
-    // Detalle aplicado (en el monitor viene directo en el pago)
-    if (Number(p?.lateInterestApplied || 0) > 0) {
+    /*if (p?.capitalApplied != null)
+      L.push(`Capital: ${money(p.capitalApplied)}`);
+    if (p?.interestApplied != null)
+      L.push(`Interés: ${money(p.interestApplied)}`);*/
+    if (Number(p?.lateInterestApplied || 0) > 0)
       L.push(`Moratorio: ${money(p.lateInterestApplied)}`);
-    }
-    L.push("--------------------------------");
+    try {
+      const cuotas =
+        typeof p?.cuotasPagadas === "string"
+          ? JSON.parse(p.cuotasPagadas)
+          : p?.cuotasPagadas || [];
+
+      if (cuotas.length > 0) {
+        L.push("Cuotas pagadas:");
+
+        cuotas
+          .sort((a: any, b: any) => a.periodo - b.periodo)
+          .forEach((c: any) => {
+            L.push(`• #${c.periodo} (${c.fecha})`);
+          });
+
+      }
+    } catch {}
     L.push(`*TOTAL RECIBIDO: ${money(p?.amountPaid)}*`);
+    if (Number(p?.saldoFavor || 0) > 0) {
+      L.push(`Saldo a favor: ${money(p.saldoFavor)}`);
+    }
     if (p?.method) L.push(`Forma de pago: ${p.method}`);
-    L.push(`Fecha y hora: ${fechaHora}`);
+    L.push(`Fecha y hora: ${fh}`);
     L.push("--------------------------------");
     L.push("Gracias por su pago.");
-    L.push("Conserve este comprobante.");
-
     return L.join("\n");
+  }
+
+  fmtFecha(iso: string): string {
+    try {
+      return new Intl.DateTimeFormat("es-MX", {
+        timeZone: "America/Mexico_City",
+        day: "2-digit",
+        month: "2-digit",
+        year: "numeric",
+        hour: "2-digit",
+        minute: "2-digit",
+        hour12: false,
+      })
+        .format(new Date(iso))
+        .replace(",", "");
+    } catch {
+      return iso;
+    }
   }
 
   /** Abre WhatsApp con el comprobante prellenado al número del cliente. */
   compartirWhatsApp(p: any) {
     const numero = this.waNumero(p);
     if (!numero) {
-      this.snackbar.open(
-        "El cliente no tiene un teléfono válido registrado",
-        "Cerrar",
-        { duration: 4000 },
-      );
+      this.snackbar.open("El cliente no tiene teléfono válido", "Cerrar", {
+        duration: 4000,
+      });
       return;
     }
-    const texto = this.construirTextoTicket(p);
-    const url = `https://wa.me/${numero}?text=${encodeURIComponent(texto)}`;
-    window.open(url, "_blank");
+    const url = `https://wa.me/${numero}?text=${encodeURIComponent(this.textoTicket(p))}`;
+    const ventana = window.open(url, "_blank");
+
+    // Detectar si el navegador bloqueó la ventana emergente.
+    if (!ventana || ventana.closed || typeof ventana.closed === "undefined") {
+      // Bloqueado: ofrecer reintento con un clic (acción directa del usuario,
+      // que el navegador sí permite).
+      const ref = this.snackbar.open(
+        "El navegador bloqueó WhatsApp. Toca para abrirlo.",
+        "Abrir WhatsApp",
+        { duration: 8000 },
+      );
+      ref.onAction().subscribe(() => window.open(url, "_blank"));
+    }
   }
 
   // ── Reimpresión / comprobante (mismo patrón del monitor) ──

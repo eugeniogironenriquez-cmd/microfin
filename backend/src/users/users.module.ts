@@ -91,6 +91,11 @@ export class UsersService {
       const role = await this.roleRepo.findOne({ where: { id: dto.roleId } });
       if (!role) throw new BadRequestException('Rol no válido');
       (u as any).roleId = dto.roleId;
+      // IMPORTANTE: la columna rol_id está mapeada como @Column (roleId) Y como
+      // @JoinColumn de la relación roleEntity (eager). Si solo cambiamos roleId,
+      // TypeORM usa la relación roleEntity (con el valor viejo cargado por eager)
+      // al guardar y sobrescribe el cambio. Por eso sincronizamos la relación.
+      (u as any).roleEntity = role;
       // Mantener enum legacy sincronizado
       if (['ADMIN','CAJERO','AUTORIZADOR','COBRADOR'].includes(role.name)) {
         (u as any).role = role.name;
