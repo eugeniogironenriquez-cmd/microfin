@@ -717,7 +717,7 @@ const liquidado = nuevoEstado === LoanStatus.LIQUIDADO;
       },
       excedente: this.calculator.round(remaining),
       saldoFavor: saldoFavorFinal,
-      liquidado: pendingCount === 0,
+      liquidado: liquidado,
     };
   }
 
