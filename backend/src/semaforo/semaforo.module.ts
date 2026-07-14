@@ -75,6 +75,37 @@ export class SemaforoService implements OnModuleInit {
     return count;
   }
 
+  /**
+   * Calcula en una sola pasada: cuotas vencidas y saldo pendiente del crédito.
+   * (Evita consultar dos veces el calendario.)
+   */
+  async getOverdueAndBalance(loanId: string): Promise<{ overdueCount: number; saldoPendiente: number }> {
+    const schedules = await this.scheduleRepo.find({ where: { loanId } });
+    const MX = 6 * 60 * 60 * 1000;
+    const now = new Date();
+    const nowDay = new Date(now.getTime() - MX);
+    const todayUTC = Date.UTC(nowDay.getUTCFullYear(), nowDay.getUTCMonth(), nowDay.getUTCDate());
+
+    let overdueCount = 0;
+    let saldoPendiente = 0;
+
+    for (const s of schedules) {
+      if (s.status === ScheduleStatus.PAGADO) continue;
+
+      // Saldo: lo que aún se debe de esta cuota (incluye parciales).
+      saldoPendiente += Number(s.balanceDue || 0);
+
+      const due = new Date(s.dueDate);
+      const dueUTC = Date.UTC(due.getUTCFullYear(), due.getUTCMonth(), due.getUTCDate());
+      if (dueUTC < todayUTC) overdueCount++;
+    }
+
+    return {
+      overdueCount,
+      saldoPendiente: Math.round(saldoPendiente * 100) / 100,
+    };
+  }
+
   // ── MONITOR DE CARTERA ───────────────────────────────────────
   // Devuelve todos los créditos activos/vencidos con su nivel de semáforo.
   // Si se pasa 'nivel', filtra por ese nivel (lo usa la vista del gestor).
@@ -93,23 +124,25 @@ export class SemaforoService implements OnModuleInit {
 
     const rows = [];
     for (const loan of loans) {
-      const overdueCount = await this.countOverdue(loan.id);
+      // Una sola pasada: cuotas vencidas + saldo pendiente.
+      const { overdueCount, saldoPendiente } = await this.getOverdueAndBalance(loan.id);
       const level = this.levelFor(overdueCount, cfg);
-         rows.push({
-     id: loan.id,
-     customerId: loan.customerId,
-     customerName: loan.customer?.fullName || '',
-     customerPhone: loan.customer?.phone || '',
-     customerAddress: loan.customer?.address || null,   // ← NUEVO (objeto o string)
-     customerCurp: loan.customer?.curp || null,         // ← NUEVO
-     principalAmount: Number(loan.principalAmount),
-     periodicPayment: Number(loan.periodicPayment),
-     totalAmount: Number(loan.totalAmount),
-     status: loan.status,
-     disbursedAt: loan.disbursedAt,
-     overdueCount,
-     level,
-   });
+      rows.push({
+        id: loan.id,
+        customerId: loan.customerId,
+        customerName: loan.customer?.fullName || '',
+        customerPhone: loan.customer?.phone || '',
+        customerAddress: loan.customer?.address || null,
+        customerCurp: loan.customer?.curp || null,
+        principalAmount: Number(loan.principalAmount),
+        periodicPayment: Number(loan.periodicPayment),
+        totalAmount: Number(loan.totalAmount),
+        saldoPendiente,                                   // ← saldo real por cobrar
+        status: loan.status,
+        disbursedAt: loan.disbursedAt,
+        overdueCount,
+        level,
+      });
 
       // Registrar historial si entró en amarillo o rojo
       await this.recordHistoryIfNeeded(loan.customerId, loan.id, level, overdueCount);
