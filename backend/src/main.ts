@@ -13,6 +13,7 @@ async function bootstrap() {
   origin: [
     'https://microcapital-ixtepec.com',
     'https://sitio.microcapital-ixtepec.com',   // ← el nuevo subdominio del frontend
+    'https://gestor.microcapital-ixtepec.com',
     'http://localhost:4200',                      // desarrollo local (opcional)
     'capacitor://localhost',                      // app móvil Capacitor (Android)
     'http://localhost',                           // app móvil (WebView),
