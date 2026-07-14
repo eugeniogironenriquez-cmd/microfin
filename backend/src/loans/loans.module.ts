@@ -959,6 +959,11 @@ export class LoansService {
         disbursedAt:        loan.disbursedAt,
         disbursementMethod: loan.disbursementMethod || 'EFECTIVO',
         restructureCount:   loan.restructureCount,
+        // Identifican el tipo de documento (contrato / convenio / reestructura)
+        status:             loan.status,
+        isConvenio:         (loan as any).isConvenio || false,
+        parentLoanId:       loan.parentLoanId || null,
+        restructureReason:  loan.restructureReason || null,
       },
       customer: {
         fullName: loan.customer?.fullName || '',
@@ -1047,4 +1052,4 @@ export class LoansController {
   controllers: [LoansController],
   exports: [LoansService, FinancialCalculator],
 })
-export class LoansModule {}
+export class LoansModule {}y

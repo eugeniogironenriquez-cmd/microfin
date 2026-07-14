@@ -508,17 +508,68 @@ export class PdfGeneratorService {
   private buildLoanPdf(doc: PDFKit.PDFDocument, data: any) {
     const addr = data.companyAddress
       || [data.address, data.city, data.state].filter(Boolean).join(', ');
+
+    // Determinar el TIPO de documento: contrato normal, convenio o reestructura.
+    const loan = data.loan || {};
+    const esConvenio = !!loan.isConvenio || loan.status === 'CONVENIO';
+    const esReestructura = !esConvenio
+      && (loan.status === 'REESTRUCTURADO' || !!loan.parentLoanId);
+
+    const titulo = esConvenio
+      ? 'CONVENIO DE PAGO'
+      : esReestructura
+        ? 'CONTRATO DE REESTRUCTURA'
+        : 'CONTRATO DE CRÉDITO';
+
     let y = this.drawHeader(doc, data.companyName||'Microcapital-Ixtepec',
-      'CONTRATO DE CRÉDITO', `Folio: ${data.loan.id.toUpperCase()}`, data.logoPath, addr);
+      titulo, `Folio: ${data.loan.id.toUpperCase()}`, data.logoPath, addr);
+
+    // Aviso destacado del tipo de operación (solo convenio / reestructura).
+    if (esConvenio || esReestructura) {
+      y = this.drawTipoOperacion(doc, y, esConvenio, loan);
+    }
+
     y = this.drawCustomerInfo(doc, y, data.customer);
     if (data.guarantor) y = this.drawGuarantorInfo(doc, y, data.guarantor);
-    y = this.drawLoanInfo(doc, y, data.loan, data.loanType);
+    y = this.drawLoanInfo(doc, y, data.loan, data.loanType, esConvenio, esReestructura);
     y = this.drawScheduleTable(doc, y, data.schedules.map((s:any) => ({
       period: s.periodNumber, dueDate: s.dueDate,
       payment: Number(s.totalDue), principal: Number(s.principalDue),
       interest: Number(s.interestDue), balance: Number(s.balanceDue),
     })));
     this.drawSignatureSection(doc, y, data.customer.fullName, data.guarantor?.fullName, data.legalFooter);
+  }
+
+  /**
+   * Banda de aviso que deja claro que el documento es un CONVENIO o una
+   * REESTRUCTURA (no un crédito nuevo), con el crédito de origen si lo hay.
+   */
+  private drawTipoOperacion(
+    doc: PDFKit.PDFDocument, y: number, esConvenio: boolean, loan: any,
+  ): number {
+    const H = 40;
+    // Caja con fondo suave y borde, para que destaque sin ser agresiva.
+    doc.rect(ML, y, PW - ML * 2, H).fillAndStroke('#FFFBEB', '#FDE68A');
+
+    const titulo = esConvenio
+      ? 'ESTE DOCUMENTO ES UN CONVENIO DE PAGO'
+      : 'ESTE DOCUMENTO ES UNA REESTRUCTURA DE CRÉDITO';
+
+    doc.font(BB).fontSize(9).fillColor('#92400E')
+       .text(titulo, ML + 12, y + 9, { lineBreak: false });
+
+    const detalle = esConvenio
+      ? 'Acuerdo de pago sin intereses. El crédito original queda archivado.'
+      : 'Nuevo plan de pagos que sustituye al crédito anterior.';
+
+    const origen = loan.parentLoanId
+      ? `   |   Crédito de origen: ${String(loan.parentLoanId).substring(0, 8).toUpperCase()}`
+      : '';
+
+    doc.font(RB).fontSize(7.5).fillColor('#78350F')
+       .text(detalle + origen, ML + 12, y + 24, { width: PW - ML * 2 - 24, lineBreak: false });
+
+    return y + H + 8;
   }
 
   // ── DRAW FUNCTIONS (return next Y) ───────────────────────
@@ -563,11 +614,21 @@ export class PdfGeneratorService {
     doc.rect(ML, y, PW-ML*2, H).fillAndStroke(LGRAY, BORDER);
     doc.font(BB).fontSize(8.5).fillColor(GREEN2).text('RESUMEN DEL CRÉDITO', ML+14, y+10, {lineBreak:false});
 
+    // Frecuencia real (no fija): adapta la unidad del plazo y la etiqueta de cuota.
+    const freq = (data.frequency || 'DIARIO').toUpperCase();
+    const unidad = freq2unit(freq);
+    const etiquetaCuota = {
+      DIARIO: 'Cuota diaria',
+      SEMANAL: 'Cuota semanal',
+      QUINCENAL: 'Cuota quincenal',
+      MENSUAL: 'Cuota mensual',
+    }[freq] || 'Cuota';
+
     const items = [
       ['Monto',  cur(data.principalAmount)],
-      ['Plazo',  `${data.termWeeks} días`],
-      ['Cuota diaria', cur(data.periodicPayment)],
-      ['Frecuencia', 'DIARIO'],
+      ['Plazo',  `${data.termWeeks} ${unidad}`],
+      [etiquetaCuota, cur(data.periodicPayment)],
+      ['Frecuencia', freq],
     ];
     const cw = (PW-ML*2-28)/4;
     items.forEach((item, i) => {
@@ -649,16 +710,42 @@ export class PdfGeneratorService {
     return y + H + 6;
   }
 
-  private drawLoanInfo(doc: PDFKit.PDFDocument, y: number, loan: any, loanType: any): number {
-    y = this.drawSectionTitle(doc, y, 'CONDICIONES DEL CRÉDITO');
+  private drawLoanInfo(
+    doc: PDFKit.PDFDocument, y: number, loan: any, loanType: any,
+    esConvenio = false, esReestructura = false,
+  ): number {
+    // El título de la sección refleja el tipo de operación.
+    const tituloSeccion = esConvenio
+      ? 'CONDICIONES DEL CONVENIO'
+      : esReestructura
+        ? 'CONDICIONES DE LA REESTRUCTURA'
+        : 'CONDICIONES DEL CRÉDITO';
+    y = this.drawSectionTitle(doc, y, tituloSeccion);
     const H = 70;
     doc.rect(ML, y, PW-ML*2, H).fillAndStroke(LGRAY, BORDER);
+
+    // Usar la frecuencia REAL del crédito (DIARIO, SEMANAL, QUINCENAL, MENSUAL),
+    // no un valor fijo. La etiqueta de la cuota y la unidad del plazo se adaptan.
+    const freq = (loan.frequency || 'DIARIO').toUpperCase();
+    const unidad = freq2unit(freq);                    // días / semanas / quincenas / meses
+    const etiquetaCuota = {
+      DIARIO: 'Cuota diaria',
+      SEMANAL: 'Cuota semanal',
+      QUINCENAL: 'Cuota quincenal',
+      MENSUAL: 'Cuota mensual',
+    }[freq] || 'Cuota';
+
+    // En un convenio no hay "desembolso" (no se entrega dinero nuevo).
+    const ultimoCampo: [string, string] = esConvenio
+      ? ['Inicio del convenio', fdate(loan.disbursedAt)]
+      : ['Desembolso', fdate(loan.disbursedAt)];
+
     const fields = [
       ['Monto', cur(loan.principalAmount)],
-      ['Plazo', `${loan.termWeeks} días`],
-      ['Cuota diaria', cur(loan.periodicPayment)],
-      ['Frecuencia', 'DIARIO'],
-      ['Desembolso', fdate(loan.disbursedAt)],
+      ['Plazo', `${loan.termWeeks} ${unidad}`],
+      [etiquetaCuota, cur(loan.periodicPayment)],
+      ['Frecuencia', freq],
+      ultimoCampo,
     ];
     const cw = (PW-ML*2-28)/4;
     fields.forEach((f, i) => {
