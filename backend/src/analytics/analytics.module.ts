@@ -1,11 +1,13 @@
 import {
-  Module, Controller, Injectable, Get, Query,
+  Module, Controller, Injectable, Get, Post, Query, Body, Res,
 } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { DataSource } from 'typeorm';
 import { ApiTags, ApiBearerAuth } from '@nestjs/swagger';
 import { Loan, Payment, Customer, PaymentSchedule } from '../common/entities';
 import { Auth } from '../common/guards/roles.guard';
+import { Response } from 'express';
+import * as ExcelJS from 'exceljs';
 
 /**
  * Analítica de cartera: métricas y series para el dashboard con gráficas.
@@ -256,6 +258,374 @@ export class AnalyticsController {
   @Get('cobradores')   @Auth()
   cobradores(@Query('start') s?: string, @Query('end') e?: string) {
     return this.analytics.desempenoPorCobrador(s, e);
+  }
+
+  // ══════════════════════════════════════════════════════════
+  // EXPORTACIÓN A EXCEL
+  // ══════════════════════════════════════════════════════════
+
+  /**
+   * Excel COMPLETO: una hoja por bloque de datos, más las gráficas como
+   * imágenes (que envía el frontend, ya que Chart.js dibuja en el navegador).
+   *
+   * Es POST porque las imágenes (base64) pueden ser grandes para un GET.
+   */
+  @Post('export/dashboard')
+  @Auth()
+  async exportDashboard(
+    @Body() body: { start?: string; end?: string; imagenes?: Record<string, string> },
+    @Res() res: Response,
+  ) {
+    const d = await this.analytics.dashboard(body.start, body.end);
+    const wb = new ExcelJS.Workbook();
+    wb.creator = 'Microcapital-Ixtepec';
+    wb.created = new Date();
+
+    const AZUL = 'FF2795F5';
+
+    // Helper: crea una hoja con encabezado con estilo.
+    const nuevaHoja = (nombre: string, columnas: Partial<ExcelJS.Column>[]) => {
+      const ws = wb.addWorksheet(nombre);
+      ws.columns = columnas as ExcelJS.Column[];
+      ws.getRow(1).font = { bold: true, color: { argb: 'FFFFFFFF' } };
+      ws.getRow(1).fill = {
+        type: 'pattern', pattern: 'solid', fgColor: { argb: AZUL },
+      };
+      return ws;
+    };
+
+    // ── Hoja 1: Resumen (KPIs) ──
+    const wsRes = wb.addWorksheet('Resumen');
+    wsRes.columns = [
+      { header: 'Indicador', key: 'k', width: 32 },
+      { header: 'Valor', key: 'v', width: 24 },
+    ] as ExcelJS.Column[];
+    wsRes.getRow(1).font = { bold: true, color: { argb: 'FFFFFFFF' } };
+    wsRes.getRow(1).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: AZUL } };
+
+    const m = d.morosidad;
+    wsRes.addRow({ k: 'Periodo', v: `${d.rango.startDate} a ${d.rango.endDate}` });
+    wsRes.addRow({ k: 'Cartera total', v: m.carteraTotal });
+    wsRes.addRow({ k: 'Cartera en mora', v: m.carteraEnMora });
+    wsRes.addRow({ k: 'Créditos activos', v: m.totalActivos });
+    wsRes.addRow({ k: 'Créditos en mora', v: m.enMora });
+    wsRes.addRow({ k: 'Tasa de morosidad (monto)', v: `${m.tasaMonto}%` });
+    wsRes.addRow({ k: 'Tasa de morosidad (créditos)', v: `${m.tasaCreditos}%` });
+    wsRes.getColumn('v').numFmt = '#,##0.00';
+
+    // ── Hoja 2: Solicitudes por mes ──
+    const wsSol = nuevaHoja('Solicitudes', [
+      { header: 'Mes', key: 'mes', width: 12 },
+      { header: 'Total', key: 'total', width: 10 },
+      { header: 'Aprobadas', key: 'aprobadas', width: 12 },
+      { header: 'Rechazadas', key: 'rechazadas', width: 12 },
+    ]);
+    for (const r of d.solicitudesPorMes) {
+      wsSol.addRow({
+        mes: r.mes, total: Number(r.total || 0),
+        aprobadas: Number(r.aprobadas || 0), rechazadas: Number(r.rechazadas || 0),
+      });
+    }
+
+    // ── Hoja 3: Atrasos por mes ──
+    const wsAtr = nuevaHoja('Atrasos', [
+      { header: 'Mes', key: 'mes', width: 12 },
+      { header: 'Cuotas vencidas', key: 'cuotas', width: 16 },
+      { header: 'Créditos afectados', key: 'creditos', width: 18 },
+      { header: 'Monto atrasado', key: 'monto', width: 16 },
+    ]);
+    for (const r of d.atrasosPorMes) {
+      wsAtr.addRow({
+        mes: r.mes,
+        cuotas: Number(r.cuotas_vencidas || 0),
+        creditos: Number(r.creditos_afectados || 0),
+        monto: Number(r.monto_atrasado || 0),
+      });
+    }
+    wsAtr.getColumn('monto').numFmt = '"$"#,##0.00';
+
+    // ── Hoja 4: Colocación por mes ──
+    const wsCol = nuevaHoja('Colocación', [
+      { header: 'Mes', key: 'mes', width: 12 },
+      { header: 'Créditos', key: 'num', width: 12 },
+      { header: 'Monto colocado', key: 'monto', width: 18 },
+    ]);
+    for (const r of d.colocacionPorMes) {
+      wsCol.addRow({
+        mes: r.mes,
+        num: Number(r.num_creditos || 0),
+        monto: Number(r.monto_colocado || 0),
+      });
+    }
+    wsCol.getColumn('monto').numFmt = '"$"#,##0.00';
+
+    // ── Hoja 5: Recuperación por mes ──
+    const wsRec = nuevaHoja('Recuperación', [
+      { header: 'Mes', key: 'mes', width: 12 },
+      { header: 'Pagos', key: 'pagos', width: 10 },
+      { header: 'Total cobrado', key: 'total', width: 16 },
+      { header: 'Capital', key: 'capital', width: 14 },
+      { header: 'Interés', key: 'interes', width: 14 },
+      { header: 'Moratorio', key: 'moratorio', width: 14 },
+    ]);
+    for (const r of d.recuperacionPorMes) {
+      wsRec.addRow({
+        mes: r.mes,
+        pagos: Number(r.num_pagos || 0),
+        total: Number(r.total_cobrado || 0),
+        capital: Number(r.capital || 0),
+        interes: Number(r.interes || 0),
+        moratorio: Number(r.moratorio || 0),
+      });
+    }
+    ['total', 'capital', 'interes', 'moratorio'].forEach((k) => {
+      wsRec.getColumn(k).numFmt = '"$"#,##0.00';
+    });
+
+    // ── Hoja 6: Estado de cartera ──
+    const wsEst = nuevaHoja('Estado cartera', [
+      { header: 'Estado', key: 'estado', width: 20 },
+      { header: 'Créditos', key: 'total', width: 12 },
+      { header: 'Monto', key: 'monto', width: 18 },
+    ]);
+    for (const r of d.estadoCartera) {
+      wsEst.addRow({
+        estado: r.estado,
+        total: Number(r.total || 0),
+        monto: Number(r.monto || 0),
+      });
+    }
+    wsEst.getColumn('monto').numFmt = '"$"#,##0.00';
+
+    // ── Hoja 7: Créditos por tipo ──
+    const wsTipo = nuevaHoja('Por tipo', [
+      { header: 'Tipo', key: 'tipo', width: 24 },
+      { header: 'Créditos', key: 'total', width: 12 },
+      { header: 'Monto', key: 'monto', width: 18 },
+    ]);
+    for (const r of d.creditosPorTipo) {
+      wsTipo.addRow({
+        tipo: r.tipo,
+        total: Number(r.total || 0),
+        monto: Number(r.monto || 0),
+      });
+    }
+    wsTipo.getColumn('monto').numFmt = '"$"#,##0.00';
+
+    // ── Hoja 8: Desempeño cobradores ──
+    const wsCob = nuevaHoja('Cobradores', [
+      { header: 'Cobrador', key: 'cobrador', width: 28 },
+      { header: 'Pagos', key: 'pagos', width: 10 },
+      { header: 'Créditos atendidos', key: 'creditos', width: 18 },
+      { header: 'Total cobrado', key: 'total', width: 18 },
+    ]);
+    for (const r of d.desempenoCobradores) {
+      wsCob.addRow({
+        cobrador: r.cobrador,
+        pagos: Number(r.num_pagos || 0),
+        creditos: Number(r.creditos_atendidos || 0),
+        total: Number(r.total_cobrado || 0),
+      });
+    }
+    wsCob.getColumn('total').numFmt = '"$"#,##0.00';
+
+    // ── Hoja 9: Gráficas (imágenes que envía el frontend) ──
+    const imgs = body.imagenes || {};
+    const nombres: Record<string, string> = {
+      solicitudes: 'Solicitudes por mes',
+      atrasos: 'Atrasos por mes',
+      colocacion: 'Colocación por mes',
+      recuperacion: 'Recuperación por mes',
+      estado: 'Estado de la cartera',
+      tipo: 'Créditos por tipo',
+    };
+
+    if (Object.keys(imgs).length > 0) {
+      const wsImg = wb.addWorksheet('Gráficas');
+      let fila = 1;
+      for (const [clave, dataUrl] of Object.entries(imgs)) {
+        if (!dataUrl) continue;
+        try {
+          // Título de la gráfica
+          const celda = wsImg.getCell(`A${fila}`);
+          celda.value = nombres[clave] || clave;
+          celda.font = { bold: true, size: 12, color: { argb: 'FF2D3748' } };
+          fila += 1;
+
+          // Insertar la imagen (viene como data:image/png;base64,...)
+          const base64 = dataUrl.split(',')[1];
+          const imageId = wb.addImage({
+            base64,
+            extension: 'png',
+          });
+          wsImg.addImage(imageId, {
+            tl: { col: 0, row: fila },
+            ext: { width: 600, height: 300 },
+          });
+          fila += 17;   // dejar espacio para la imagen
+        } catch {
+          // Si una imagen falla, se omite y sigue con las demás.
+        }
+      }
+    }
+
+    res.setHeader(
+      'Content-Type',
+      'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    );
+    res.setHeader(
+      'Content-Disposition',
+      `attachment; filename="analitica-cartera-${d.rango.startDate}-a-${d.rango.endDate}.xlsx"`,
+    );
+    await wb.xlsx.write(res);
+    res.end();
+  }
+
+  /**
+   * Excel de UNA sola gráfica/tabla. `tipo` indica cuál:
+   * solicitudes | atrasos | colocacion | recuperacion | estado | por-tipo | cobradores
+   */
+  @Post('export/:tipo')
+  @Auth()
+  async exportUno(
+    @Body() body: { tipo: string; start?: string; end?: string; imagen?: string },
+    @Res() res: Response,
+  ) {
+    const tipo = body.tipo;
+    const wb = new ExcelJS.Workbook();
+    const AZUL = 'FF2795F5';
+
+    let rows: any[] = [];
+    let columnas: Partial<ExcelJS.Column>[] = [];
+    let titulo = 'Datos';
+    let money: string[] = [];
+
+    switch (tipo) {
+      case 'solicitudes':
+        rows = await this.analytics.solicitudesPorMes(body.start, body.end);
+        titulo = 'Solicitudes por mes';
+        columnas = [
+          { header: 'Mes', key: 'mes', width: 12 },
+          { header: 'Total', key: 'total', width: 10 },
+          { header: 'Aprobadas', key: 'aprobadas', width: 12 },
+          { header: 'Rechazadas', key: 'rechazadas', width: 12 },
+        ];
+        break;
+
+      case 'atrasos':
+        rows = await this.analytics.atrasosPorMes(body.start, body.end);
+        titulo = 'Atrasos por mes';
+        columnas = [
+          { header: 'Mes', key: 'mes', width: 12 },
+          { header: 'Cuotas vencidas', key: 'cuotas_vencidas', width: 16 },
+          { header: 'Créditos afectados', key: 'creditos_afectados', width: 18 },
+          { header: 'Monto atrasado', key: 'monto_atrasado', width: 16 },
+        ];
+        money = ['monto_atrasado'];
+        break;
+
+      case 'colocacion':
+        rows = await this.analytics.colocacionPorMes(body.start, body.end);
+        titulo = 'Colocación por mes';
+        columnas = [
+          { header: 'Mes', key: 'mes', width: 12 },
+          { header: 'Créditos', key: 'num_creditos', width: 12 },
+          { header: 'Monto colocado', key: 'monto_colocado', width: 18 },
+        ];
+        money = ['monto_colocado'];
+        break;
+
+      case 'recuperacion':
+        rows = await this.analytics.recuperacionPorMes(body.start, body.end);
+        titulo = 'Recuperación por mes';
+        columnas = [
+          { header: 'Mes', key: 'mes', width: 12 },
+          { header: 'Pagos', key: 'num_pagos', width: 10 },
+          { header: 'Total cobrado', key: 'total_cobrado', width: 16 },
+          { header: 'Capital', key: 'capital', width: 14 },
+          { header: 'Interés', key: 'interes', width: 14 },
+          { header: 'Moratorio', key: 'moratorio', width: 14 },
+        ];
+        money = ['total_cobrado', 'capital', 'interes', 'moratorio'];
+        break;
+
+      case 'estado':
+        rows = await this.analytics.estadoCartera();
+        titulo = 'Estado de la cartera';
+        columnas = [
+          { header: 'Estado', key: 'estado', width: 20 },
+          { header: 'Créditos', key: 'total', width: 12 },
+          { header: 'Monto', key: 'monto', width: 18 },
+        ];
+        money = ['monto'];
+        break;
+
+      case 'por-tipo':
+        rows = await this.analytics.creditosPorTipo(body.start, body.end);
+        titulo = 'Créditos por tipo';
+        columnas = [
+          { header: 'Tipo', key: 'tipo', width: 24 },
+          { header: 'Créditos', key: 'total', width: 12 },
+          { header: 'Monto', key: 'monto', width: 18 },
+        ];
+        money = ['monto'];
+        break;
+
+      case 'cobradores':
+        rows = await this.analytics.desempenoPorCobrador(body.start, body.end);
+        titulo = 'Desempeño por cobrador';
+        columnas = [
+          { header: 'Cobrador', key: 'cobrador', width: 28 },
+          { header: 'Pagos', key: 'num_pagos', width: 10 },
+          { header: 'Créditos atendidos', key: 'creditos_atendidos', width: 18 },
+          { header: 'Total cobrado', key: 'total_cobrado', width: 18 },
+        ];
+        money = ['total_cobrado'];
+        break;
+
+      default:
+        rows = [];
+    }
+
+    const ws = wb.addWorksheet(titulo.substring(0, 31));
+    ws.columns = columnas as ExcelJS.Column[];
+    ws.getRow(1).font = { bold: true, color: { argb: 'FFFFFFFF' } };
+    ws.getRow(1).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: AZUL } };
+
+    for (const r of rows) {
+      const fila: any = {};
+      for (const c of columnas) {
+        const k = c.key as string;
+        const val = r[k];
+        fila[k] = isNaN(Number(val)) ? val : Number(val);
+      }
+      ws.addRow(fila);
+    }
+    money.forEach((k) => { ws.getColumn(k).numFmt = '"$"#,##0.00'; });
+
+    // Insertar la gráfica como imagen (si el frontend la envió).
+    if (body.imagen) {
+      try {
+        const base64 = body.imagen.split(',')[1];
+        const imageId = wb.addImage({ base64, extension: 'png' });
+        const filaImg = rows.length + 3;
+        ws.addImage(imageId, {
+          tl: { col: 0, row: filaImg },
+          ext: { width: 600, height: 300 },
+        });
+      } catch {
+        // Si la imagen falla, el Excel sale solo con los datos.
+      }
+    }
+
+    const slug = titulo.toLowerCase().replace(/[^a-z0-9]+/g, '-');
+    res.setHeader(
+      'Content-Type',
+      'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    );
+    res.setHeader('Content-Disposition', `attachment; filename="${slug}.xlsx"`);
+    await wb.xlsx.write(res);
+    res.end();
   }
 }
 
