@@ -1052,4 +1052,4 @@ export class LoansController {
   controllers: [LoansController],
   exports: [LoansService, FinancialCalculator],
 })
-export class LoansModule {}y
+export class LoansModule {}
