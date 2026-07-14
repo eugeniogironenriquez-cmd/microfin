@@ -36,6 +36,7 @@ import { ConfigMoraModule } from './config-mora/config-mora.module';
 import { SemaforoModule } from './semaforo/semaforo.module';
 import { ImportLoansModule } from './import-loans/import-loans.module';
 import { VisitasModule, Visita } from './visitas/visitas.module';
+import { AnalyticsModule } from './analytics/analytics.module';
 import { PrintingModule } from './printing/printing.module';
 
 
@@ -68,7 +69,8 @@ import { PrintingModule } from './printing/printing.module';
     CashModule, CollectionModule, ReportsModule, SettingsModule, RateRangesModule,
     CompanyModule, LateFeeRulesModule, LocationModule, GuarantorModule,
     DisbursementModule, ExpensesModule, OverdueJobModule, LoanDocumentsModule,
-    PlazosCreditoModule, ConfigMoraModule, SemaforoModule, ImportLoansModule,VisitasModule,PrintingModule
+    PlazosCreditoModule, ConfigMoraModule, SemaforoModule, ImportLoansModule, VisitasModule, PrintingModule,
+    AnalyticsModule
   ],
 })
 export class AppModule implements OnApplicationBootstrap, NestModule {
