@@ -216,6 +216,40 @@ export class CollectionService {
     });
   }
 
+  /**
+   * Calendario COMPLETO (todas las cuotas: pagadas, pendientes, parciales) de
+   * todos los créditos asignados al cobrador. Se usa para que la app móvil lo
+   * guarde localmente al sincronizar y pueda consultarlo sin conexión.
+   */
+  async getMySchedules(collectorId: string) {
+    const loans = await this.loanRepo
+      .createQueryBuilder("l")
+      .leftJoinAndSelect("l.paymentSchedules", "ps")
+      .where("l.collectorId = :collectorId", { collectorId })
+      .andWhere("l.status IN (:...statuses)", {
+        statuses: [LoanStatus.ACTIVO, LoanStatus.ATRASADO, LoanStatus.VENCIDO],
+      })
+      .getMany();
+
+    // Un objeto por crédito con su lista de cuotas (ordenadas por periodo).
+    return loans.map((l: any) => ({
+      loanId: l.id,
+      cuotas: (l.paymentSchedules || [])
+        .slice()
+        .sort((a: any, b: any) => a.periodNumber - b.periodNumber)
+        .map((s: any) => ({
+          periodo: s.periodNumber,
+          vence: s.dueDate,
+          monto: Number(s.totalDue || 0),
+          saldo: Number(s.balanceDue || 0),
+          estatus: s.status,
+          pagadoEn: s.paidAt || null,
+          moraGenerada: Number(s.moraGenerada || 0),
+          moraPagada: Number(s.moraPagada || 0),
+        })),
+    }));
+  }
+
   async getOverdue(filters: { page?: number; limit?: number }) {
     const { page = 1, limit = 20 } = filters;
     const qb = this.loanRepo
@@ -270,6 +304,13 @@ export class CollectionController {
   @Auth(UserRole.COBRADOR, UserRole.ADMIN)
   getMyClients(@CurrentUser("id") userId: string) {
     return this.collectionService.getMyLoans(userId);
+  }
+
+  // Calendario completo de todos los créditos asignados (para uso offline).
+  @Get("my-schedules")
+  @Auth(UserRole.COBRADOR, UserRole.ADMIN)
+  getMySchedules(@CurrentUser("id") userId: string) {
+    return this.collectionService.getMySchedules(userId);
   }
 
   @Post("visits")
