@@ -40,6 +40,17 @@ import { ApiService, AuthService } from '../../core/index';
           </div>
           <div class="kpi-dash-icon"><mat-icon>warning</mat-icon></div>
         </div>
+        <div class="kpi-dash kpi-red">
+          <div class="kpi-dash-left">
+            <div class="kpi-dash-label">Atrasados</div>
+            <div class="kpi-dash-value">{{ summary().atrasados | number }}</div>
+            <div class="kpi-dash-sub">
+              <span class="kpi-arrow down">↑</span>
+              {{ summary().active > 0 ? ((summary().atrasados / summary().active)*100).toFixed(1) : '0' }}% de activos
+            </div>
+          </div>
+          <div class="kpi-dash-icon"><mat-icon>schedule</mat-icon></div>
+        </div>
         <div class="kpi-dash kpi-dark">
           <div class="kpi-dash-left">
             <div class="kpi-dash-label">Reestructurados</div>
@@ -79,7 +90,8 @@ import { ApiService, AuthService } from '../../core/index';
     .dash-header { margin-bottom:28px; }
     .dash-title { font-family:'Inter',sans-serif; font-size:28px; font-weight:700; color:#171923; letter-spacing:-.48px; margin:0 0 4px; }
     .dash-sub   { font-family:'Inter',sans-serif; font-size:14px; color:#718096; margin:0; }
-    .kpi-row-dash { display:grid; grid-template-columns:repeat(4,1fr); gap:16px; margin-bottom:32px; }
+    .kpi-row-dash { display:grid; grid-template-columns:repeat(5,1fr); gap:16px; margin-bottom:32px; }
+    @media(max-width:1200px){ .kpi-row-dash { grid-template-columns:repeat(3,1fr); } }
     @media(max-width:900px){ .kpi-row-dash { grid-template-columns:1fr 1fr; } }
     @media(max-width:500px){ .kpi-row-dash { grid-template-columns:1fr; } }
     .kpi-dash { border-radius:16px; padding:22px 20px; display:flex; align-items:center; justify-content:space-between; gap:12px; position:relative; overflow:hidden; box-shadow:0 8px 24px rgba(0,0,0,.15); }
@@ -88,6 +100,7 @@ import { ApiService, AuthService } from '../../core/index';
     .kpi-purple { background:linear-gradient(135deg,#9B59B6,#6B5CE7); }
     .kpi-dark   { background:linear-gradient(135deg,#2C3E6B,#1a2547); }
     .kpi-amber  { background:linear-gradient(135deg,#F59E0B,#D97706); }
+    .kpi-red    { background:linear-gradient(135deg,#EF4444,#B91C1C); }
     .kpi-dash-left { flex:1; }
     .kpi-dash-label { font-family:'Inter',sans-serif; font-size:13px; font-weight:500; color:rgba(255,255,255,.75); margin-bottom:6px; }
     .kpi-dash-value { font-family:'Inter',sans-serif; font-size:32px; font-weight:700; color:#fff; letter-spacing:-.68px; line-height:1; margin-bottom:8px; }
@@ -109,7 +122,7 @@ export class DashboardComponent implements OnInit {
   readonly auth = inject(AuthService);
 
   loading = signal(true);
-  summary = signal({ active:0, overdue:0, restructured:0, settled:0, total:0, totalActiveAmount:0 });
+  summary = signal({ active:0, overdue:0, atrasados:0, restructured:0, settled:0, total:0, totalActiveAmount:0 });
 
   isCobrador = computed(() => this.auth.role() === 'COBRADOR');
 
@@ -139,11 +152,14 @@ export class DashboardComponent implements OnInit {
         next: (loans: any[]) => {
           const list = Array.isArray(loans) ? loans : (loans as any)?.data ?? [];
           const active   = list.filter((l: any) => l.status === 'ACTIVO').length;
+          const atrasados = list.filter((l: any) => l.status === 'ATRASADO').length;
+          // Ahora que hay card separada de atrasados, vencidos cuenta solo 'VENCIDO'.
           const overdue  = list.filter((l: any) => l.status === 'VENCIDO').length;
           const total    = list.reduce((s: number, l: any) => s + Number(l.principalAmount || 0), 0);
           this.summary.set({
             active,
             overdue,
+            atrasados,
             restructured: 0,
             settled:      0,
             total:        list.length,
@@ -158,7 +174,9 @@ export class DashboardComponent implements OnInit {
         next: (s) => {
           this.summary.set({
             active:            Number(s.active || 0),
+            // Vencidos cuenta solo 'VENCIDO'; los atrasados van en su propia card.
             overdue:           Number(s.overdue || 0),
+            atrasados:         Number(s.atrasados || 0),
             restructured:      Number(s.restructured || 0),
             settled:           Number(s.settled || 0),
             total:             Number(s.total || 0),

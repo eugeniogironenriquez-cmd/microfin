@@ -19,15 +19,26 @@ export class ReportsService {
         SUM(CASE WHEN estatus = 'ATRASADO' THEN 1 ELSE 0 END) AS atrasados,
         SUM(CASE WHEN estatus = 'VENCIDO' THEN 1 ELSE 0 END) AS overdue,
         SUM(CASE WHEN estatus = 'REESTRUCTURADO' THEN 1 ELSE 0 END) AS restructured,
-        SUM(CASE WHEN estatus = 'LIQUIDADO' THEN 1 ELSE 0 END) AS settled,
-        SUM(CASE WHEN estatus IN ('ACTIVO','ATRASADO') THEN monto_principal ELSE 0 END) AS totalActiveAmount
+        SUM(CASE WHEN estatus = 'LIQUIDADO' THEN 1 ELSE 0 END) AS settled
       FROM prestamos
     `);
-    if (result) {
-      // Vencidos "para KPI" = atrasados + vencidos, sin perder el detalle individual.
-      result.overdueTotal = Number(result.atrasados || 0) + Number(result.overdue || 0);
-    }
-    return result || {};
+
+    // Saldo pendiente por recuperar: suma de saldo_adeudado de las cuotas
+    // NO liquidadas (capital + interés, sin mora), para créditos vigentes,
+    // atrasados y vencidos.
+    const [saldo] = await this.dataSource.query(`
+      SELECT COALESCE(SUM(cp.saldo_adeudado), 0) AS totalActiveAmount
+      FROM calendario_pagos cp
+      JOIN prestamos p ON p.id = cp.prestamo_id
+      WHERE p.estatus IN ('ACTIVO','ATRASADO','VENCIDO')
+        AND cp.estatus <> 'PAGADO'
+    `);
+
+    const out = result || {};
+    // Vencidos "para KPI" = atrasados + vencidos, sin perder el detalle individual.
+    out.overdueTotal = Number(out.atrasados || 0) + Number(out.overdue || 0);
+    out.totalActiveAmount = Number(saldo?.totalActiveAmount || 0);
+    return out;
   }
 
   async getLoansReport(filters: {
