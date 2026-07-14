@@ -9,10 +9,11 @@ import {
   IonModal, IonDatetime, IonNote, ToastController,
 } from '@ionic/angular/standalone';
 import { addIcons } from 'ionicons';
-import { documentTextOutline, checkmarkCircle, calendarOutline, cloudOfflineOutline } from 'ionicons/icons';
+import { documentTextOutline, checkmarkCircle, calendarOutline, cloudOfflineOutline, shareOutline } from 'ionicons/icons';
 
 import { CollectionService } from '../../core/collection.service';
 import { NetworkService } from '../../core/network.service';
+import { DocumentsService } from '../../core/documents.service';
 import { AssignedClient } from '../../core/models';
 
 @Component({
@@ -110,12 +111,42 @@ import { AssignedClient } from '../../core/models';
           <h2>Convenio registrado</h2>
           <p>{{ syncedNow() ? 'Aplicado en el servidor' : 'Se aplicará al recuperar conexión' }}</p>
         </div>
+
+        @if (syncedNow() && nuevoLoanId()) {
+          <div class="docs">
+            <p class="docs-title">Documentos del convenio</p>
+
+            <ion-button expand="block" fill="outline" (click)="verCalendario()"
+                        [disabled]="docs.descargando()">
+              @if (docs.descargando()) { <ion-spinner name="crescent"></ion-spinner> }
+              @else { <ion-icon slot="start" name="calendar-outline"></ion-icon> }
+              Calendario de pagos
+            </ion-button>
+
+            <ion-button expand="block" fill="outline" (click)="verContrato()"
+                        [disabled]="docs.descargando()">
+              @if (docs.descargando()) { <ion-spinner name="crescent"></ion-spinner> }
+              @else { <ion-icon slot="start" name="document-text-outline"></ion-icon> }
+              Contrato
+            </ion-button>
+
+            <ion-button expand="block" fill="outline" color="success"
+                        (click)="enviarWhatsApp()" [disabled]="docs.descargando()">
+              <ion-icon slot="start" name="share-outline"></ion-icon>
+              Enviar por WhatsApp
+            </ion-button>
+          </div>
+        }
+
         <ion-button expand="block" (click)="finish()">Listo</ion-button>
       }
     </ion-content>
   `,
   styles: [`
     .cli { margin:0 0 4px; font-size:18px; font-weight:700; color:#1C4532; }
+    .docs { margin: 16px 0; padding-top: 12px; border-top: 1px solid #e2e8f0; }
+    .docs-title { font-size:13px; font-weight:600; color:#718096; text-transform:uppercase;
+                  letter-spacing:.4px; margin:0 0 10px; text-align:center; }
     .muted { color:#718096; font-size:13px; margin:0 0 8px; }
     .hint { font-size:13px; display:flex; align-items:center; gap:6px; }
     .sim-box { background:#F7FAFC; border-radius:10px; padding:12px 14px; margin:12px 0; }
@@ -130,6 +161,7 @@ import { AssignedClient } from '../../core/models';
 export class ConvenioPage implements OnInit {
   readonly collection = inject(CollectionService);
   readonly network = inject(NetworkService);
+  readonly docs = inject(DocumentsService);
   private route = inject(ActivatedRoute);
   private router = inject(Router);
   private toast = inject(ToastController);
@@ -145,6 +177,9 @@ export class ConvenioPage implements OnInit {
   saving = signal(false);
   done = signal(false);
   syncedNow = signal(false);
+  // Id del crédito nuevo (convenio) creado en el servidor: permite descargar
+  // sus documentos. Null si la acción quedó pendiente de sincronizar.
+  nuevoLoanId = signal<string | null>(null);
 
   cuotaEstimada = computed(() => {
     const m = Number(this.montoConvenio); const n = Number(this.numeroPagos);
@@ -153,7 +188,7 @@ export class ConvenioPage implements OnInit {
   });
 
   constructor() {
-    addIcons({ documentTextOutline, checkmarkCircle, calendarOutline, cloudOfflineOutline });
+    addIcons({ documentTextOutline, checkmarkCircle, calendarOutline, cloudOfflineOutline, shareOutline });
   }
 
   ngOnInit() {
@@ -187,11 +222,50 @@ export class ConvenioPage implements OnInit {
         notes: this.notes || undefined,
       });
       this.syncedNow.set(accion.synced);
+      // Guardar el id del crédito nuevo (convenio) para poder descargar sus
+      // documentos. Solo existe si la acción se aplicó en el servidor.
+      this.nuevoLoanId.set(accion.serverId || null);
       this.done.set(true);
     } catch (e: any) {
       this.notify(e?.error?.message || 'Error al generar el convenio');
     } finally {
       this.saving.set(false);
+    }
+  }
+
+  // ── Documentos del convenio ────────────────────────────────
+  async verCalendario() {
+    const id = this.nuevoLoanId();
+    if (!id) return;
+    try {
+      await this.docs.abrirCalendario(id);
+    } catch {
+      this.notify('No se pudo abrir el calendario de pagos');
+    }
+  }
+
+  async verContrato() {
+    const id = this.nuevoLoanId();
+    if (!id) return;
+    try {
+      await this.docs.abrirContrato(id);
+    } catch {
+      this.notify('No se pudo abrir el contrato');
+    }
+  }
+
+  async enviarWhatsApp() {
+    const id = this.nuevoLoanId();
+    if (!id) return;
+    try {
+      await this.docs.compartirWhatsApp(
+        id,
+        'calendario',
+        this.client()?.phone,
+        this.client()?.customerName,
+      );
+    } catch {
+      this.notify('No se pudo compartir el documento');
     }
   }
 

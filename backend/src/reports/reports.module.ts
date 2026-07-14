@@ -23,6 +23,10 @@ export class ReportsService {
         SUM(CASE WHEN estatus IN ('ACTIVO','ATRASADO') THEN monto_principal ELSE 0 END) AS totalActiveAmount
       FROM prestamos
     `);
+    if (result) {
+      // Vencidos "para KPI" = atrasados + vencidos, sin perder el detalle individual.
+      result.overdueTotal = Number(result.atrasados || 0) + Number(result.overdue || 0);
+    }
     return result || {};
   }
 

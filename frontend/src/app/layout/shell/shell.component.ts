@@ -153,6 +153,7 @@ export class ShellComponent {
   private readonly entries: NavEntry[] = [
     { label: 'Dashboard',  icon: 'dashboard',              route: '/dashboard',  perm: 'dashboard.ver' },
     { label: 'Cartera',    icon: 'account_balance_wallet', route: '/portfolio',  perm: 'cartera.ver' },
+    { label: 'Analítica',  icon: 'insights',               route: '/analytics',  perm: 'cartera.ver' },
     { label: 'Clientes',   icon: 'people',                 route: '/customers',  perm: 'clientes.ver' },
     {
       label: 'Créditos', icon: 'attach_money',

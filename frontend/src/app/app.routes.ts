@@ -35,6 +35,7 @@ export const routes: Routes = [
       { path: 'roles', loadChildren: () => import('./features/roles/roles.routes').then((m) => m.ROLES_ROUTES), canActivate: [permissionGuard(['roles.ver'])] },
       // Nuevas rutas — DENTRO del shell para conservar el sidebar
       { path: 'portfolio', loadComponent: () => import('./features/portfolio/portfolio.component').then(m => m.PortfolioComponent), canActivate: [permissionGuard(['cartera.ver'])] },
+      { path: 'analytics', loadComponent: () => import('./features/analytics/analytics-dashboard.component').then(m => m.AnalyticsDashboardComponent), canActivate: [permissionGuard(['cartera.ver'])] },
       { path: 'company', loadComponent: () => import('./features/settings/company-settings.component').then(m => m.CompanySettingsComponent), canActivate: [permissionGuard(['empresa.editar'])] },
       { path: 'late-fee-rules', loadComponent: () => import('./features/settings/late-fee-rules.component').then(m => m.LateFeeRulesComponent), canActivate: [permissionGuard(['moratorios.editar'])] },
       { path: 'disbursements', loadComponent: () => import('./features/disbursements/disbursements.component').then(m => m.DisbursementsComponent), canActivate: [permissionGuard(['prestamos.desembolsar'])] },

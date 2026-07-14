@@ -38,6 +38,7 @@ import {
 
 import { AuthService } from "../../core/auth.service";
 import { CollectionService } from "../../core/collection.service";
+import { StorageService } from "../../core/storage.service";
 import { NetworkService } from "../../core/network.service";
 import { MobilePermissionsService } from "../../services/mobile-permissions.service";
 import { AssignedClient } from "../../core/models";
@@ -233,21 +234,28 @@ export class ClientsPage implements OnInit {
   private auth = inject(AuthService);
   private router = inject(Router);
   private toast = inject(ToastController);
+  private storage = inject(StorageService);
 
   loading = signal(true);
   search = signal("");
 
   filtered = computed(() => {
     const term = this.search().toLowerCase().trim();
-    const hoy = this.obtenerFechaLocalActual();
+    const pagadosLocal = this.pagadosHoyLocal();
 
-    const list = this.collection.clients().filter((cliente) => {
-      return (
-        cliente.tieneCuotaHoy === true ||
-        cliente.estado === "atrasado" ||
-        cliente.estado === "vencido"
-      );
-    });
+    // Regla: solo se muestran los créditos con la cuota de HOY pendiente.
+    // Si el cliente ya pagó lo de hoy, se oculta aunque siga atrasado
+    // (el cobrador ya cobró ahí, no necesita volver).
+    //
+    // Dos fuentes de "ya pagó hoy":
+    //  1. `tieneCuotaHoy` del backend: false si la cuota de hoy está pagada.
+    //  2. Pagos locales aún sin sincronizar (cobros hechos sin conexión):
+    //     el backend no los conoce todavía, así que se filtran aquí.
+    const list = this.collection.clients().filter(
+      (cliente) =>
+        cliente.tieneCuotaHoy === true &&
+        !pagadosLocal.has(cliente.loanId),
+    );
 
     if (!term) {
       return list;
@@ -260,6 +268,31 @@ export class ClientsPage implements OnInit {
         (cliente.addressLine || "").toLowerCase().includes(term),
     );
   });
+
+  /** Créditos con un pago registrado HOY que aún no se sincroniza. */
+  pagadosHoyLocal = signal<Set<string>>(new Set());
+
+  /**
+   * Relee los pagos locales pendientes y marca los créditos cobrados hoy.
+   * Así, un cobro hecho sin conexión también oculta al cliente de la lista.
+   */
+  private async actualizarPagadosLocal() {
+    try {
+      const pendientes = await this.storage.getPendingPayments();
+      const hoy = this.obtenerFechaLocalActual();
+      const set = new Set<string>();
+      for (const p of pendientes) {
+        // capturedAt es ISO; comparamos solo la parte de fecha local.
+        const fechaPago = p.capturedAt
+          ? new Date(p.capturedAt).toLocaleDateString('en-CA')  // YYYY-MM-DD local
+          : '';
+        if (fechaPago === hoy) set.add(p.loanId);
+      }
+      this.pagadosHoyLocal.set(set);
+    } catch {
+      // Si falla, no se filtra por pagos locales (mejor mostrar de más que de menos).
+    }
+  }
 
   private obtenerFechaLocalActual(): string {
     const hoy = new Date();
@@ -327,11 +360,36 @@ export class ClientsPage implements OnInit {
   async ngOnInit() {
     // Mostrar cache primero (offline-first), luego intentar refrescar
     await this.collection.loadFromCache();
+    await this.actualizarPagadosLocal();
     this.loading.set(false);
     if (this.network.online()) {
       await this.download(true);
     }
   }
+
+  /**
+   * Ionic dispara esto CADA VEZ que se entra a la pantalla (a diferencia de
+   * ngOnInit, que solo corre al crearla). Es lo que hace que, al volver de
+   * registrar un pago, la lista se refresque y el cliente ya cobrado
+   * desaparezca (porque el backend ya no lo marca con cuota de hoy pendiente).
+   */
+  async ionViewWillEnter() {
+    // Siempre releer los pagos locales (cubre los cobros offline).
+    await this.actualizarPagadosLocal();
+
+    // Evitar descargar en la primera entrada: ngOnInit ya lo hizo.
+    if (this.primeraEntrada) {
+      this.primeraEntrada = false;
+      return;
+    }
+    if (this.network.online()) {
+      await this.download(true);   // silencioso: sin toast
+    } else {
+      await this.collection.loadFromCache();
+    }
+  }
+
+  private primeraEntrada = true;
 
   async download(silent = false) {
     if (!this.network.online()) {
@@ -354,6 +412,7 @@ export class ClientsPage implements OnInit {
 
   async doRefresh(ev: any) {
     await this.download();
+    await this.actualizarPagadosLocal();
     ev.target.complete();
   }
 
@@ -367,6 +426,9 @@ export class ClientsPage implements OnInit {
       `Sincronizados: ${r.ok}` + (r.fail ? ` · Fallidos: ${r.fail}` : ""),
     );
     await this.download(true);
+    // Tras sincronizar, los pagos ya no son "locales pendientes":
+    // el backend ya los conoce y actualiza tieneCuotaHoy.
+    await this.actualizarPagadosLocal();
   }
 
   onSearch(ev: any) {

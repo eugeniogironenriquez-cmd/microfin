@@ -8,10 +8,14 @@ import {
   IonButton, IonIcon, IonSpinner, IonText, IonNote, ToastController,
 } from '@ionic/angular/standalone';
 import { addIcons } from 'ionicons';
-import { refreshOutline, checkmarkCircle, calculatorOutline, cloudOfflineOutline } from 'ionicons/icons';
+import {
+  refreshOutline, checkmarkCircle, calculatorOutline, cloudOfflineOutline,
+  calendarOutline, documentTextOutline, shareOutline,
+} from 'ionicons/icons';
 
 import { CollectionService } from '../../core/collection.service';
 import { NetworkService } from '../../core/network.service';
+import { DocumentsService } from '../../core/documents.service';
 import { AssignedClient } from '../../core/models';
 
 @Component({
@@ -92,12 +96,42 @@ import { AssignedClient } from '../../core/models';
           <h2>Reestructura registrada</h2>
           <p>{{ syncedNow() ? 'Aplicada en el servidor' : 'Se aplicará al recuperar conexión' }}</p>
         </div>
+
+        @if (syncedNow() && nuevoLoanId()) {
+          <div class="docs">
+            <p class="docs-title">Documentos de la reestructura</p>
+
+            <ion-button expand="block" fill="outline" (click)="verCalendario()"
+                        [disabled]="docs.descargando()">
+              @if (docs.descargando()) { <ion-spinner name="crescent"></ion-spinner> }
+              @else { <ion-icon slot="start" name="calendar-outline"></ion-icon> }
+              Calendario de pagos
+            </ion-button>
+
+            <ion-button expand="block" fill="outline" (click)="verContrato()"
+                        [disabled]="docs.descargando()">
+              @if (docs.descargando()) { <ion-spinner name="crescent"></ion-spinner> }
+              @else { <ion-icon slot="start" name="document-text-outline"></ion-icon> }
+              Contrato
+            </ion-button>
+
+            <ion-button expand="block" fill="outline" color="success"
+                        (click)="enviarWhatsApp()" [disabled]="docs.descargando()">
+              <ion-icon slot="start" name="share-outline"></ion-icon>
+              Enviar por WhatsApp
+            </ion-button>
+          </div>
+        }
+
         <ion-button expand="block" (click)="finish()">Listo</ion-button>
       }
     </ion-content>
   `,
   styles: [`
     .cli { margin:0 0 4px; font-size:18px; font-weight:700; color:#1C4532; }
+    .docs { margin: 16px 0; padding-top: 12px; border-top: 1px solid #e2e8f0; }
+    .docs-title { font-size:13px; font-weight:600; color:#718096; text-transform:uppercase;
+                  letter-spacing:.4px; margin:0 0 10px; text-align:center; }
     .muted { color:#718096; font-size:13px; margin:0 0 8px; }
     .hint { font-size:13px; display:flex; align-items:center; gap:6px; }
     .sim { display:flex; align-items:center; gap:8px; color:#718096; margin:12px 0; }
@@ -112,6 +146,7 @@ import { AssignedClient } from '../../core/models';
 })
 export class RestructurePage implements OnInit {
   readonly collection = inject(CollectionService);
+  readonly docs = inject(DocumentsService);
   readonly network = inject(NetworkService);
   private route = inject(ActivatedRoute);
   private router = inject(Router);
@@ -128,9 +163,12 @@ export class RestructurePage implements OnInit {
   saving = signal(false);
   done = signal(false);
   syncedNow = signal(false);
+  // Id del crédito nuevo (reestructura) creado en el servidor.
+  nuevoLoanId = signal<string | null>(null);
 
   constructor() {
-    addIcons({ refreshOutline, checkmarkCircle, calculatorOutline, cloudOfflineOutline });
+    addIcons({ refreshOutline, checkmarkCircle, calculatorOutline, cloudOfflineOutline,
+               calendarOutline, documentTextOutline, shareOutline });
   }
 
   ngOnInit() {
@@ -170,12 +208,37 @@ export class RestructurePage implements OnInit {
         restructureReason: this.restructureReason.trim(),
       });
       this.syncedNow.set(accion.synced);
+      this.nuevoLoanId.set(accion.serverId || null);
       this.done.set(true);
     } catch (e: any) {
       this.notify(e?.error?.message || 'Error al reestructurar');
     } finally {
       this.saving.set(false);
     }
+  }
+
+  // ── Documentos de la reestructura ──────────────────────────
+  async verCalendario() {
+    const id = this.nuevoLoanId();
+    if (!id) return;
+    try { await this.docs.abrirCalendario(id); }
+    catch { this.notify('No se pudo abrir el calendario de pagos'); }
+  }
+
+  async verContrato() {
+    const id = this.nuevoLoanId();
+    if (!id) return;
+    try { await this.docs.abrirContrato(id); }
+    catch { this.notify('No se pudo abrir el contrato'); }
+  }
+
+  async enviarWhatsApp() {
+    const id = this.nuevoLoanId();
+    if (!id) return;
+    try {
+      await this.docs.compartirWhatsApp(id, 'calendario',
+        this.client()?.phone, this.client()?.customerName);
+    } catch { this.notify('No se pudo compartir el documento'); }
   }
 
   finish() { this.router.navigate(['/clients'], { replaceUrl: true }); }

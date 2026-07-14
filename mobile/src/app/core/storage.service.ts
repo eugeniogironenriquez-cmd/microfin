@@ -17,6 +17,7 @@ const K_CLIENTS = "assigned_clients";
 const K_PAYMENTS = "local_payments";
 const K_VISITS = "local_visits";
 const K_GESTOR = "local_gestor_acciones";
+const K_SCHEDULES = "loan_schedules";   // calendario completo por crédito (offline)
 
 /**
  * Servicio de almacenamiento local (offline-first).
@@ -71,6 +72,29 @@ export class StorageService {
     } catch {
       return [];
     }
+  }
+
+  // ── Calendario de cuotas por crédito (cache offline) ───────
+  // Guarda TODAS las cuotas (pagadas, pendientes, parciales) de los créditos
+  // asignados, para poder consultarlas sin conexión.
+  async setSchedules(schedules: any[]) {
+    await Preferences.set({ key: K_SCHEDULES, value: JSON.stringify(schedules) });
+  }
+
+  async getSchedules(): Promise<any[]> {
+    const raw = (await Preferences.get({ key: K_SCHEDULES })).value;
+    try {
+      return raw ? JSON.parse(raw) : [];
+    } catch {
+      return [];
+    }
+  }
+
+  // Cuotas de un crédito específico desde el cache local.
+  async getSchedulesByLoan(loanId: string): Promise<any[]> {
+    const all = await this.getSchedules();
+    const found = all.find((x: any) => x.loanId === loanId);
+    return found?.cuotas || [];
   }
 
   // ── Pagos locales (cola de sincronización) ─────────────────

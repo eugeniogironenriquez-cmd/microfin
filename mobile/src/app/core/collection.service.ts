@@ -60,6 +60,14 @@ export class CollectionService {
     );
     this.clients.set(list);
     await this.storage.setClients(list);
+
+    // Descargar también el calendario completo de cuotas (para uso offline).
+    try {
+      await this.downloadSchedules();
+    } catch {
+      // Si falla, se conserva el calendario previo en cache.
+    }
+
     return list;
   }
 
@@ -122,6 +130,18 @@ export class CollectionService {
             monto: Number(l.proximaCuota.monto || 0),
           }
         : null,
+
+      // Cuota que vence HOY y sigue pendiente (la app la usa para mostrar solo
+      // a los clientes que aún deben cobrarse hoy). El backend ya la calcula
+      // excluyendo las cuotas pagadas.
+      cuotaHoy: l.cuotaHoy
+        ? {
+            periodo: Number(l.cuotaHoy.periodo || 0),
+            vence: l.cuotaHoy.vence,
+            monto: Number(l.cuotaHoy.monto || 0),
+          }
+        : null,
+      tieneCuotaHoy: l.tieneCuotaHoy === true,
 
       cuotasVencidas: Number(l.cuotasVencidas || 0),
       nivel: l.nivel || undefined,
@@ -250,14 +270,67 @@ export class CollectionService {
   }
 
   /** Lista de cuotas pendientes (para el modo selectivo). Requiere conexión. */
-  async getCuotasPendientes(loanId: string): Promise<CuotaPendiente[]> {
+  /**
+   * Descarga el calendario COMPLETO (todas las cuotas) de todos los créditos
+   * asignados y lo guarda localmente. Se llama al sincronizar, para que el
+   * cobrador pueda consultar las cuotas sin conexión.
+   */
+  async downloadSchedules(): Promise<any[]> {
     const res = await firstValueFrom(
-      this.http.get<ApiEnvelope<CuotaPendiente[]> | CuotaPendiente[]>(
-        `${this.base}/payments/cuotas/${loanId}`,
+      this.http.get<ApiEnvelope<any> | any>(
+        `${this.base}/collection/my-schedules`,
       ),
     );
-    const data = this.unwrap(res);
-    return Array.isArray(data) ? data : [];
+    const raw = this.unwrap(res);
+    const list = Array.isArray(raw) ? raw : [];
+    await this.storage.setSchedules(list);
+    return list;
+  }
+
+  /**
+   * Cuotas pendientes de un crédito. Si hay red consulta al servidor; si no,
+   * usa el calendario guardado localmente (filtrando las no pagadas).
+   */
+  async getCuotasPendientes(loanId: string): Promise<CuotaPendiente[]> {
+    try {
+      const res = await firstValueFrom(
+        this.http.get<ApiEnvelope<CuotaPendiente[]> | CuotaPendiente[]>(
+          `${this.base}/payments/cuotas/${loanId}`,
+        ),
+      );
+      const data = this.unwrap(res);
+      if (Array.isArray(data)) return data;
+    } catch {
+      // Sin red: caer al cache local.
+    }
+    // Offline: leer del calendario guardado y devolver las no pagadas.
+    const cuotas = await this.storage.getSchedulesByLoan(loanId);
+    return (cuotas || [])
+      .filter((c: any) => c.estatus !== 'PAGADO')
+      .map((c: any) => ({
+        periodo: c.periodo,
+        vence: c.vence,
+        monto: Number(c.saldo || 0),
+        estatus: c.estatus,
+        vencida: false,
+        mora: Math.max(0, Number(c.moraGenerada || 0) - Number(c.moraPagada || 0)),
+      })) as CuotaPendiente[];
+  }
+
+  /**
+   * Historial de cuotas PAGADAS de un crédito (desde el cache local).
+   * Disponible sin conexión tras sincronizar.
+   */
+  async getCuotasPagadas(loanId: string): Promise<any[]> {
+    const cuotas = await this.storage.getSchedulesByLoan(loanId);
+    return (cuotas || []).filter((c: any) => c.estatus === 'PAGADO');
+  }
+
+  /**
+   * Todas las cuotas de un crédito (pagadas y pendientes) desde el cache.
+   */
+  async getCuotasLocal(loanId: string): Promise<any[]> {
+    return this.storage.getSchedulesByLoan(loanId);
   }
 
   // ── Registro de pago (offline-first) ───────────────────────
@@ -315,6 +388,15 @@ export class CollectionService {
       const pendingGestor = await this.storage.getPendingGestorAcciones();
       for (const g of pendingGestor) {
         (await this.syncOneGestor(g)) ? ok++ : fail++;
+      }
+
+      // Tras subir lo pendiente, descargar el calendario COMPLETO de cuotas
+      // de todos los créditos asignados, para tenerlo disponible sin conexión.
+      try {
+        await this.downloadSchedules();
+      } catch {
+        // Si falla la descarga, no se marca como error de sincronización:
+        // los pagos ya se subieron correctamente.
       }
     } finally {
       this.syncing.set(false);
@@ -446,7 +528,14 @@ export class CollectionService {
     await this.storage.addGestorAccion(accion);
     await this.refreshPendingCount();
     if (await this.network.isOnline()) {
-      await this.syncOneGestor(accion);
+      const ok = await this.syncOneGestor(accion);
+      if (ok) {
+        // Releer la acción del storage para devolverla con el serverId
+        // (el id del crédito nuevo), necesario para descargar sus documentos.
+        const todas = await this.storage.getGestorAcciones();
+        const actualizada = todas.find((a) => a.localId === accion.localId);
+        if (actualizada) return actualizada;
+      }
     }
     return accion;
   }

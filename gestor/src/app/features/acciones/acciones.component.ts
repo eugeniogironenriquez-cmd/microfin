@@ -13,9 +13,11 @@ import { MatDatepickerModule } from '@angular/material/datepicker';
 import { MatNativeDateModule } from '@angular/material/core';
 import { MatProgressSpinnerModule } from '@angular/material/progress-spinner';
 import { MatExpansionModule } from '@angular/material/expansion';
+import { MatCheckboxModule } from '@angular/material/checkbox';
 import { MatSnackBar } from '@angular/material/snack-bar';
 
 import { GestorService } from '../../core/gestor.service';
+import { ApiService } from '../../core/api.service';
 import {
   CreditoSemaforo, HistorialResponse, SimulacionResponse,
   ClienteDetalle, Aval, DireccionCliente,
@@ -33,6 +35,7 @@ interface Seguimiento {
   standalone: true,
   imports: [
     CommonModule, ReactiveFormsModule,
+    MatCheckboxModule,
     MatCardModule, MatIconModule, MatButtonModule, MatFormFieldModule,
     MatInputModule, MatSelectModule, MatTabsModule, MatDatepickerModule,
     MatNativeDateModule, MatProgressSpinnerModule, MatExpansionModule,
@@ -46,6 +49,36 @@ interface Seguimiento {
         </h1>
       </div>
 
+      @if (hecho()) {
+        <!-- Pantalla de éxito: documentos del crédito generado -->
+        <mat-card class="docs-card">
+          <div class="docs-ok">
+            <mat-icon color="primary">check_circle</mat-icon>
+            <h2>Operación aplicada</h2>
+            <p>Se generó el nuevo crédito. Descarga sus documentos:</p>
+          </div>
+
+          <div class="docs-actions">
+            <button mat-raised-button color="primary"
+                    (click)="descargarCalendario()" [disabled]="descargando()">
+              @if (descargando()) { <mat-spinner diameter="20"></mat-spinner> }
+              @else { <mat-icon>event_note</mat-icon> }
+              Calendario de pagos
+            </button>
+
+            <button mat-raised-button color="primary"
+                    (click)="descargarContrato()" [disabled]="descargando()">
+              @if (descargando()) { <mat-spinner diameter="20"></mat-spinner> }
+              @else { <mat-icon>description</mat-icon> }
+              Contrato
+            </button>
+          </div>
+
+          <button mat-stroked-button class="docs-back" (click)="volverAlListado()">
+            Volver al listado
+          </button>
+        </mat-card>
+      } @else {
       <div class="layout">
         <!-- ══ COLUMNA PRINCIPAL ══ -->
         <div class="main-col">
@@ -147,6 +180,25 @@ interface Seguimiento {
                       <mat-label>Notas (opcional)</mat-label>
                       <textarea matInput rows="2" formControlName="notas"></textarea>
                     </mat-form-field>
+
+                    <!-- Abono de buena fe: el cliente entrega un monto ahora.
+                         Se registra como pago aplicado al crédito. -->
+                    <div class="abono-box">
+                      <mat-checkbox formControlName="conAbono" color="primary"
+                                    (change)="onAbonoChange($event)">
+                        Recibe un abono ahora (buena fe)
+                      </mat-checkbox>
+
+                      @if (promesaForm.value.conAbono) {
+                        <mat-form-field appearance="outline" class="full" style="margin-top:12px">
+                          <mat-label>Monto recibido</mat-label>
+                          <span matPrefix>$&nbsp;</span>
+                          <input matInput type="number" formControlName="montoAbono">
+                          <mat-hint>Se registrará como pago aplicado al crédito</mat-hint>
+                        </mat-form-field>
+                      }
+                    </div>
+
                     <button mat-raised-button color="primary" type="submit" [disabled]="saving() || promesaForm.invalid">
                       @if (saving()) { <mat-spinner diameter="20"></mat-spinner> }
                       @else { <ng-container><mat-icon>event_available</mat-icon> Registrar promesa</ng-container> }
@@ -303,12 +355,25 @@ interface Seguimiento {
           </mat-card>
         </aside>
       </div>
+      }
     </div>
   `,
   styles: [`
     .layout { display: grid; grid-template-columns: 1fr 340px; gap: 16px; align-items: start; }
     .main-col { min-width: 0; }
     .side-col { position: sticky; top: 80px; }
+
+    /* Panel de documentos tras generar convenio/reestructura */
+    .docs-card { max-width: 520px; margin: 24px auto; padding: 28px 24px; text-align: center; }
+    .docs-ok mat-icon { font-size: 56px; width: 56px; height: 56px; }
+    .docs-ok h2 { margin: 12px 0 6px; font-size: 20px; color: #1C4532; }
+    .docs-ok p { color: #718096; font-size: 14px; margin: 0 0 20px; }
+    .docs-actions { display: flex; flex-direction: column; gap: 12px; margin-bottom: 16px; }
+    .docs-back { width: 100%; }
+
+    /* Abono de buena fe en la promesa de pago */
+    .abono-box { background:#F0FFF4; border:1px solid #C6F6D5; border-radius:10px;
+                 padding:14px; margin:8px 0 16px; }
 
     .resumen {
       display: flex; justify-content: space-between; align-items: center;
@@ -401,6 +466,7 @@ export class AccionesComponent implements OnInit {
   private route = inject(ActivatedRoute);
   private router = inject(Router);
   private snack = inject(MatSnackBar);
+  private api = inject(ApiService);
 
   loanId = '';
   credito = signal<CreditoSemaforo | null>(null);
@@ -412,6 +478,11 @@ export class AccionesComponent implements OnInit {
   saving = signal(false);
   simulando = signal(false);
 
+  // Pantalla de éxito con documentos del crédito generado.
+  hecho = signal(false);
+  nuevoLoanId = signal<string | null>(null);
+  descargando = signal(false);
+
   seguimientos = signal<Seguimiento[]>([]);
   loadingSeg = signal(true);
   savingSeg = signal(false);
@@ -420,6 +491,9 @@ export class AccionesComponent implements OnInit {
     fecha: [null as Date | null, Validators.required],
     monto: [null as number | null, [Validators.required, Validators.min(1)]],
     notas: [''],
+    // Abono de buena fe (opcional): el cliente entrega dinero al momento.
+    conAbono: [false],
+    montoAbono: [null as number | null],
   });
 
   convenioForm = this.fb.group({
@@ -506,12 +580,60 @@ export class AccionesComponent implements OnInit {
   }
 
   // ── Promesa ──
+  // Al desmarcar el abono, limpiar el monto para no enviarlo por error.
+  onAbonoChange(ev: any) {
+    if (!ev?.checked) {
+      this.promesaForm.get('montoAbono')?.setValue(null);
+    }
+  }
+
   guardarPromesa() {
     if (this.promesaForm.invalid) return;
-    this.saving.set(true);
     const v = this.promesaForm.value;
+
+    // Validar el abono si está marcado.
+    const conAbono = !!this.promesaForm.get('conAbono')?.value;
+    const montoAbono = Number(this.promesaForm.get('montoAbono')?.value || 0);
+    if (conAbono && montoAbono <= 0) {
+      this.snack.open('Ingresa el monto del abono, o desmarca la opción', 'Cerrar', { duration: 4000 });
+      return;
+    }
+
+    this.saving.set(true);
     this.gestor.promesaPago(this.loanId, this.toISODate(v.fecha!), Number(v.monto), v.notas || undefined).subscribe({
-      next: () => this.ok('Promesa de pago registrada'),
+      next: () => {
+        // Si el cliente entregó un abono de buena fe, se registra como pago
+        // normal aplicado al crédito (queda ligado al acuerdo por la nota).
+        if (conAbono && montoAbono > 0) {
+          const nota = [
+            'Abono de buena fe (promesa de pago)',
+            `Promete pagar ${v.monto} el ${this.toISODate(v.fecha!)}`,
+            v.notas || '',
+          ].filter(Boolean).join('. ');
+
+          this.api.post('/payments', {
+            loanId: this.loanId,
+            amountPaid: montoAbono,
+            paymentType: 'TOTAL',
+            method: 'EFECTIVO',
+            notes: nota,
+          }).subscribe({
+            next: () => this.ok(`Promesa registrada y abono de $${montoAbono} aplicado`),
+            error: () => {
+              // La promesa sí se registró; solo falló el pago.
+              this.saving.set(false);
+              this.snack.open(
+                'Promesa registrada, pero no se pudo aplicar el abono. Regístralo desde Pagos.',
+                'Cerrar',
+                { duration: 6000 },
+              );
+              this.router.navigate(['/gestor']);
+            },
+          });
+        } else {
+          this.ok('Promesa de pago registrada');
+        }
+      },
       error: (e) => this.fail(e),
     });
   }
@@ -528,7 +650,7 @@ export class AccionesComponent implements OnInit {
       fechaPrimerPago: this.toISODate(v.fechaPrimerPago!),
       notes: v.notes || undefined,
     }).subscribe({
-      next: () => this.ok('Convenio generado'),
+      next: (res: any) => this.okConDocumentos('Convenio generado', res?.loan?.id),
       error: (e) => this.fail(e),
     });
   }
@@ -557,7 +679,7 @@ export class AccionesComponent implements OnInit {
       customPayment: v.customPayment ? Number(v.customPayment) : undefined,
       restructureReason: v.restructureReason,
     }).subscribe({
-      next: () => this.ok('Reestructura aplicada'),
+      next: (res: any) => this.okConDocumentos('Reestructura aplicada', res?.loan?.id),
       error: (e) => this.fail(e),
     });
   }
@@ -599,6 +721,64 @@ export class AccionesComponent implements OnInit {
   private ok(msg: string) {
     this.saving.set(false);
     this.snack.open(msg, 'OK', { duration: 3000 });
+    this.router.navigate(['/gestor']);
+  }
+
+  /**
+   * Éxito de convenio/reestructura: en vez de navegar de inmediato, muestra la
+   * pantalla de documentos para que el gestor pueda descargar el contrato y el
+   * calendario de pagos del crédito recién generado.
+   */
+  private okConDocumentos(msg: string, nuevoLoanId?: string) {
+    this.saving.set(false);
+    this.snack.open(msg, 'OK', { duration: 3000 });
+    if (nuevoLoanId) {
+      this.nuevoLoanId.set(nuevoLoanId);
+      this.hecho.set(true);
+    } else {
+      // Si el servidor no devolvió el id, volver al listado como antes.
+      this.router.navigate(['/gestor']);
+    }
+  }
+
+  // ── Documentos del crédito generado ────────────────────────
+  descargarCalendario() {
+    const id = this.nuevoLoanId();
+    if (!id) return;
+    this.descargando.set(true);
+    this.api.getBlob(`/loans/${id}/plan-pdf`).subscribe({
+      next: (blob) => this.abrirPdf(blob, `plan-pagos-${id.substring(0, 8)}.pdf`),
+      error: () => {
+        this.descargando.set(false);
+        this.snack.open('No se pudo descargar el calendario', 'Cerrar', { duration: 4000 });
+      },
+    });
+  }
+
+  descargarContrato() {
+    const id = this.nuevoLoanId();
+    if (!id) return;
+    this.descargando.set(true);
+    this.api.getBlob(`/loans/${id}/pdf`).subscribe({
+      next: (blob) => this.abrirPdf(blob, `contrato-${id.substring(0, 8)}.pdf`),
+      error: () => {
+        this.descargando.set(false);
+        this.snack.open('No se pudo descargar el contrato', 'Cerrar', { duration: 4000 });
+      },
+    });
+  }
+
+  private abrirPdf(blob: Blob, filename: string) {
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = filename;
+    a.click();
+    URL.revokeObjectURL(url);
+    this.descargando.set(false);
+  }
+
+  volverAlListado() {
     this.router.navigate(['/gestor']);
   }
 
