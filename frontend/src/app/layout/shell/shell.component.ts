@@ -194,6 +194,7 @@ export class ShellComponent {
       children: [
         { label: 'Reportes',         icon: 'bar_chart', route: '/reports',          perm: 'reportes.ver' },
         { label: 'Reporte ubicación', icon: 'map',      route: '/reports/location', perm: 'reportes.ubicacion' },
+        { label: 'Corte por cobrador', icon: 'account_balance',      route: '/reports/collector-cash', perm: 'reportes.ver' },
       ],
     },
     {

@@ -40,6 +40,7 @@ export const routes: Routes = [
       { path: 'late-fee-rules', loadComponent: () => import('./features/settings/late-fee-rules.component').then(m => m.LateFeeRulesComponent), canActivate: [permissionGuard(['moratorios.editar'])] },
       { path: 'disbursements', loadComponent: () => import('./features/disbursements/disbursements.component').then(m => m.DisbursementsComponent), canActivate: [permissionGuard(['prestamos.desembolsar'])] },
       { path: 'reports/location', loadComponent: () => import('./features/reports/location-report.component').then(m => m.LocationReportComponent), canActivate: [permissionGuard(['reportes.ubicacion'])] },
+      { path: 'reports/collector-cash', loadComponent: () => import('./features/reports/collector-cash.component').then((m) => m.CollectorCashComponent),canActivate: [permissionGuard(['reportes.ubicacion'])] },
       { path: 'expenses', loadComponent: () => import('./features/expenses/expenses.component').then(m => m.ExpensesComponent), canActivate: [permissionGuard(['gastos.ver'])] },
       { path: '**', redirectTo: 'dashboard' },
     ],
