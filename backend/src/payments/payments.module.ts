@@ -859,7 +859,7 @@ const liquidado = nuevoEstado === LoanStatus.LIQUIDADO;
       collectorId: p.collectorId,
       collectorName: p.collectorId ? collectorMap[p.collectorId] || null : null,
       customerName: p.loan?.customer?.fullName,
-      paymentDate: p.paymentDate,
+      paymentDate: p.createdAt,
       receiptNumber: p.receiptNumber,
     }));
   }
