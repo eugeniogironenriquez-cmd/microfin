@@ -267,7 +267,6 @@ export class PaymentsService {
     const mora = await this.getMoraInfo(loanId);
     const saldoPendiente = await this.getSaldoPendiente(loanId);
     const saldoFavor = await this.getSaldoFavorActual(loanId);
-    const saldoFavor = await this.getSaldoFavorActual(loanId);
 
     const estadosPendientes = [
       ScheduleStatus.PENDIENTE,
