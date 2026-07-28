@@ -55,6 +55,7 @@ export interface AssignedClient {
   estado: 'corriente' | 'atrasado' | 'vencido';   // 3 estados (incluye atrasado)
   saldoPendiente?: number;
   moraPendiente?: number;
+  saldoFavor?: number;         // saldo a favor del cliente (cacheado para offline)
 
  proximaCuota?: {
     periodo: number;
@@ -102,6 +103,11 @@ export interface LocalPayment {
   paymentType: PaymentType;
   method: PaymentMethod;
   applyExcedenteToMora?: boolean;
+  // Si el excedente NO se aplica a mora, se guarda como saldo a favor del cliente.
+  guardarExcedenteSaldoFavor?: boolean;
+  // Uso de saldo a favor existente del cliente para cubrir parte del pago.
+  usarSaldoFavor?: boolean;
+  montoSaldoFavor?: number;    // monto a usar; si se omite, el backend usa todo
   periodos?: number[];       // cuotas específicas marcadas (modo selectivo)
   notes?: string;
   // Geolocalización capturada al registrar
@@ -120,6 +126,7 @@ export interface LocalPayment {
 export interface PaymentInfo {
   cuotaDiaria: number;
   saldoPendiente: number;
+  saldoFavor?: number;
   moraPendiente: number;
   moraPorDia: number;
   totalDiasMora: number;

@@ -36,6 +36,7 @@ export interface CreditoSemaforo {
   nivel: NivelSemaforo;
   cuotasVencidas: number;
   saldoPendiente?: number;
+  moraPendiente?: number;
   periodicPayment?: number;
   principalAmount?: number;
   status?: string;

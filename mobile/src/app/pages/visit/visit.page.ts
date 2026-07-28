@@ -262,6 +262,8 @@ export class VisitPage implements OnInit {
           amountPaid: Number(this.montoAbono),
           paymentType: 'TOTAL',   // aplica a las cuotas pendientes en orden
           method: 'EFECTIVO',
+          // Si el abono supera lo pendiente, el excedente queda como saldo a favor.
+          guardarExcedenteSaldoFavor: true,
           notes: nota,
           lat: this.geo()?.lat,
           lng: this.geo()?.lng,

@@ -454,6 +454,8 @@ export class CollectionService {
           periodos: hasPeriodos ? p.periodos : undefined,
           method: p.method,
           applyExcedenteToMora: p.applyExcedenteToMora,
+          // Si no se aplica a mora, el backend guarda el excedente como saldo a favor.
+          guardarExcedenteSaldoFavor: p.guardarExcedenteSaldoFavor,
           notes: p.notes,
           localId: p.localId, // idempotencia: el backend puede deduplicar
           lat: p.lat,

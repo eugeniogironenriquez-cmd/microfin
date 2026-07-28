@@ -79,7 +79,7 @@ export class SemaforoService implements OnModuleInit {
    * Calcula en una sola pasada: cuotas vencidas y saldo pendiente del crédito.
    * (Evita consultar dos veces el calendario.)
    */
-  async getOverdueAndBalance(loanId: string): Promise<{ overdueCount: number; saldoPendiente: number }> {
+  async getOverdueAndBalance(loanId: string): Promise<{ overdueCount: number; saldoPendiente: number; moraPendiente: number }> {
     const schedules = await this.scheduleRepo.find({ where: { loanId } });
     const MX = 6 * 60 * 60 * 1000;
     const now = new Date();
@@ -88,8 +88,14 @@ export class SemaforoService implements OnModuleInit {
 
     let overdueCount = 0;
     let saldoPendiente = 0;
+    let moraPendiente = 0;
 
     for (const s of schedules) {
+      // La mora pendiente (generada − pagada) se acumula aunque la cuota ya esté
+      // PAGADA en capital/interés: puede quedar mora sin saldar en una cuota
+      // marcada como pagada. Por eso se suma ANTES del filtro de PAGADO.
+      moraPendiente += Math.max(0, Number(s.moraGenerada || 0) - Number(s.moraPagada || 0));
+
       if (s.status === ScheduleStatus.PAGADO) continue;
 
       // Saldo: lo que aún se debe de esta cuota (incluye parciales).
@@ -103,6 +109,7 @@ export class SemaforoService implements OnModuleInit {
     return {
       overdueCount,
       saldoPendiente: Math.round(saldoPendiente * 100) / 100,
+      moraPendiente: Math.round(moraPendiente * 100) / 100,
     };
   }
 
@@ -124,8 +131,8 @@ export class SemaforoService implements OnModuleInit {
 
     const rows = [];
     for (const loan of loans) {
-      // Una sola pasada: cuotas vencidas + saldo pendiente.
-      const { overdueCount, saldoPendiente } = await this.getOverdueAndBalance(loan.id);
+      // Una sola pasada: cuotas vencidas + saldo pendiente + mora pendiente.
+      const { overdueCount, saldoPendiente, moraPendiente } = await this.getOverdueAndBalance(loan.id);
       const level = this.levelFor(overdueCount, cfg);
       rows.push({
         id: loan.id,
@@ -137,7 +144,8 @@ export class SemaforoService implements OnModuleInit {
         principalAmount: Number(loan.principalAmount),
         periodicPayment: Number(loan.periodicPayment),
         totalAmount: Number(loan.totalAmount),
-        saldoPendiente,                                   // ← saldo real por cobrar
+        saldoPendiente,                                   // ← saldo real por cobrar (capital+interés)
+        moraPendiente,                                    // ← mora pendiente (generada − pagada)
         status: loan.status,
         disbursedAt: loan.disbursedAt,
         overdueCount,

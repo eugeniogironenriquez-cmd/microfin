@@ -35,6 +35,7 @@ export const PERMISOS_CATALOGO: PermisoDef[] = [
   { key: 'pagos.ver',      module: 'Pagos', action: 'Ver',      description: 'Ver pagos' },
   { key: 'pagos.registrar',module: 'Pagos', action: 'Registrar',description: 'Registrar pagos de créditos' },
   { key: 'pagos.monitor',  module: 'Pagos', action: 'Monitor',  description: 'Ver el monitor de pagos del día' },
+  { key: 'pagos.eliminar', module: 'Pagos', action: 'Eliminar', description: 'Eliminar un pago registrado por error' },
 
   // ── COBRANZA ──
   { key: 'cobranza.ver',     module: 'Cobranza', action: 'Ver',     description: 'Ver cartera de cobranza' },

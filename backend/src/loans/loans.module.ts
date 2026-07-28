@@ -1,24 +1,52 @@
-import 'dotenv/config';
+import "dotenv/config";
 import {
-  Module, Controller, Injectable, Get, Post, Put, Patch,
-  Body, Param, Query, Res, NotFoundException, BadRequestException,
-} from '@nestjs/common';
-import { TypeOrmModule, InjectRepository } from '@nestjs/typeorm';
-import { Repository, DataSource } from 'typeorm';
-import { ApiTags, ApiBearerAuth } from '@nestjs/swagger';
-import { Response } from 'express';
+  Module,
+  Controller,
+  Injectable,
+  Get,
+  Post,
+  Put,
+  Patch,
+  Body,
+  Param,
+  Query,
+  Res,
+  NotFoundException,
+  BadRequestException,
+} from "@nestjs/common";
+import { TypeOrmModule, InjectRepository } from "@nestjs/typeorm";
+import { Repository, DataSource } from "typeorm";
+import { ApiTags, ApiBearerAuth } from "@nestjs/swagger";
+import { Response } from "express";
 import {
-  Loan, LoanType, PaymentSchedule, Customer, PlazoCredito,
-  LoanStatus, ScheduleStatus, UserRole,
-} from '../common/entities';
-import { Auth, AuthPermission, CurrentUser } from '../common/guards/roles.guard';
-import { PdfGeneratorService } from '../pdf-generator/pdf-generator.service';
-import { PdfGeneratorModule } from '../pdf-generator/pdf-generator.module';
-import { GuarantorModule } from '../guarantor/guarantor.module';
-import { GuarantorService } from '../guarantor/guarantor.module';
-import { CompanyModule } from '../company/company.module';
-import { CompanyService } from '../company/company.module';
-import { PlazosCreditoModule, PlazosCreditoService } from '../plazos-credito/plazos-credito.module';
+  Loan,
+  LoanType,
+  PaymentSchedule,
+  Customer,
+  PlazoCredito,
+  LoanStatus,
+  ScheduleStatus,
+  UserRole,
+} from "../common/entities";
+import {
+  Auth,
+  AuthPermission,
+  CurrentUser,
+} from "../common/guards/roles.guard";
+import { PdfGeneratorService } from "../pdf-generator/pdf-generator.service";
+import { PdfGeneratorModule } from "../pdf-generator/pdf-generator.module";
+import { GuarantorModule } from "../guarantor/guarantor.module";
+import { GuarantorService } from "../guarantor/guarantor.module";
+import { CompanyModule } from "../company/company.module";
+import { CompanyService } from "../company/company.module";
+import {
+  PlazosCreditoModule,
+  PlazosCreditoService,
+} from "../plazos-credito/plazos-credito.module";
+import {
+  ConfigMoraModule,
+  ConfigMoraService,
+} from "../config-mora/config-mora.module";
 
 // ── FINANCIAL CALCULATOR ──────────────────────────────────────
 // Modelo Microcapital: total = monto * porcentaje * 4 + monto
@@ -27,15 +55,16 @@ import { PlazosCreditoModule, PlazosCreditoService } from '../plazos-credito/pla
 // empezando el día hábil siguiente al desembolso.
 @Injectable()
 export class FinancialCalculator {
-
   // Multiplicador fijo de la fórmula
   static readonly FACTOR = 4;
 
   // ── CÁLCULO PRINCIPAL ────────────────────────────────────────
   // total = principal * percentage * 4 + principal
   calculate(principal: number, percentage: number, days: number) {
-    const totalInterest = this.round(principal * percentage * FinancialCalculator.FACTOR);
-    const totalAmount   = this.round(principal + totalInterest);
+    const totalInterest = this.round(
+      principal * percentage * FinancialCalculator.FACTOR,
+    );
+    const totalAmount = this.round(principal + totalInterest);
     const periodicPayment = this.round(totalAmount / days);
     return { totalAmount, totalInterest, periodicPayment };
   }
@@ -43,7 +72,12 @@ export class FinancialCalculator {
   // Cálculo con cuota personalizada (Opción A: la cuota manda).
   // La cuota no puede ser menor a la calculada por la fórmula.
   // El total pasa a ser cuota * días.
-  calculateWithPayment(principal: number, percentage: number, days: number, customPayment?: number) {
+  calculateWithPayment(
+    principal: number,
+    percentage: number,
+    days: number,
+    customPayment?: number,
+  ) {
     const base = this.calculate(principal, percentage, days);
     if (customPayment == null || Number(customPayment) <= 0) {
       return base; // sin cuota personalizada, usa el cálculo normal
@@ -51,7 +85,10 @@ export class FinancialCalculator {
     const cuota = this.round(Number(customPayment));
     if (cuota < base.periodicPayment) {
       // No permitir cuota menor a la calculada
-      return { ...base, error: `La cuota no puede ser menor a ${base.periodicPayment}` };
+      return {
+        ...base,
+        error: `La cuota no puede ser menor a ${base.periodicPayment}`,
+      };
     }
     const totalAmount = this.round(cuota * days);
     const totalInterest = this.round(totalAmount - principal);
@@ -70,9 +107,17 @@ export class FinancialCalculator {
     const MX_OFFSET_MS = 6 * 60 * 60 * 1000; // UTC-6
     const mxTime = new Date(date.getTime() - MX_OFFSET_MS);
     // Tomar el día-calendario en México y fijarlo a medianoche UTC
-    const d = new Date(Date.UTC(
-      mxTime.getUTCFullYear(), mxTime.getUTCMonth(), mxTime.getUTCDate(), 0, 0, 0, 0,
-    ));
+    const d = new Date(
+      Date.UTC(
+        mxTime.getUTCFullYear(),
+        mxTime.getUTCMonth(),
+        mxTime.getUTCDate(),
+        0,
+        0,
+        0,
+        0,
+      ),
+    );
     return d;
   }
 
@@ -109,11 +154,13 @@ export class FinancialCalculator {
   // se espacian según la periodicidad. Todo anclado a medianoche UTC.
   generateConvenioDates(
     fechaPrimerPago: string,
-    periodicidad: 'DIARIO' | 'SEMANAL' | 'QUINCENAL' | 'MENSUAL',
+    periodicidad: "DIARIO" | "SEMANAL" | "QUINCENAL" | "MENSUAL",
     count: number,
   ): Date[] {
     // Anclar la fecha del primer pago a medianoche UTC del día elegido
-    const base = new Date(`${fechaPrimerPago}T00:00:00Z`);
+    const [year, month, day] = fechaPrimerPago.split("-").map(Number);
+
+    const base = new Date(Date.UTC(year, month - 1, day, 12, 0, 0, 0));
     const dates: Date[] = [];
     let cursor = new Date(base);
 
@@ -121,21 +168,25 @@ export class FinancialCalculator {
       if (i === 0) {
         // El primer pago es la fecha elegida; si es DIARIO y cae en fin de
         // semana, lo movemos al siguiente día hábil
-        if (periodicidad === 'DIARIO' && this.isWeekend(cursor)) {
+        if (periodicidad === "DIARIO" && this.isWeekend(cursor)) {
           cursor = this.nextBusinessDay(cursor);
         }
         dates.push(new Date(cursor));
         continue;
       }
 
-      if (periodicidad === 'DIARIO') {
+      if (periodicidad === "DIARIO") {
         cursor = this.nextBusinessDay(cursor); // siguiente L-V
-      } else if (periodicidad === 'SEMANAL') {
-        cursor = new Date(cursor); cursor.setUTCDate(cursor.getUTCDate() + 7);
-      } else if (periodicidad === 'QUINCENAL') {
-        cursor = new Date(cursor); cursor.setUTCDate(cursor.getUTCDate() + 15);
-      } else { // MENSUAL
-        cursor = new Date(cursor); cursor.setUTCMonth(cursor.getUTCMonth() + 1);
+      } else if (periodicidad === "SEMANAL") {
+        cursor = new Date(cursor);
+        cursor.setUTCDate(cursor.getUTCDate() + 7);
+      } else if (periodicidad === "QUINCENAL") {
+        cursor = new Date(cursor);
+        cursor.setUTCDate(cursor.getUTCDate() + 15);
+      } else {
+        // MENSUAL
+        cursor = new Date(cursor);
+        cursor.setUTCMonth(cursor.getUTCMonth() + 1);
       }
       dates.push(new Date(cursor));
     }
@@ -145,15 +196,23 @@ export class FinancialCalculator {
   // ── TABLA DE AMORTIZACIÓN (calendario L-V) ───────────────────
   // days = número de pagos (un pago por día hábil)
   generateScheduleTable(
-    principal: number, percentage: number, days: number, startDate: Date,
+    principal: number,
+    percentage: number,
+    days: number,
+    startDate: Date,
     customPayment?: number,
   ) {
-    const calc = this.calculateWithPayment(principal, percentage, days, customPayment);
+    const calc = this.calculateWithPayment(
+      principal,
+      percentage,
+      days,
+      customPayment,
+    );
     const totalAmount = calc.totalAmount;
     const periodicPayment = calc.periodicPayment;
-    const interestTotal     = this.round(totalAmount - principal);
+    const interestTotal = this.round(totalAmount - principal);
     const interestPerPeriod = this.round(interestTotal / days);
-    const capitalPerPeriod  = this.round(principal / days);
+    const capitalPerPeriod = this.round(principal / days);
 
     const dates = this.generateBusinessDates(startDate, days);
     const table = [];
@@ -174,40 +233,53 @@ export class FinancialCalculator {
     return table;
   }
 
-  round(n: number): number { return Math.round(n * 100) / 100; }
+  round(n: number): number {
+    return Math.round(n * 100) / 100;
+  }
 }
 
 // ── LOANS SERVICE ─────────────────────────────────────────────
 @Injectable()
 export class LoansService {
   constructor(
-    @InjectRepository(Loan)            private loanRepo: Repository<Loan>,
-    @InjectRepository(LoanType)        private loanTypeRepo: Repository<LoanType>,
-    @InjectRepository(PaymentSchedule) private scheduleRepo: Repository<PaymentSchedule>,
-    @InjectRepository(Customer)        private customerRepo: Repository<Customer>,
-    private calculator:       FinancialCalculator,
-    private dataSource:       DataSource,
-    private pdfService:       PdfGeneratorService,
+    @InjectRepository(Loan) private loanRepo: Repository<Loan>,
+    @InjectRepository(LoanType) private loanTypeRepo: Repository<LoanType>,
+    @InjectRepository(PaymentSchedule)
+    private scheduleRepo: Repository<PaymentSchedule>,
+    @InjectRepository(Customer) private customerRepo: Repository<Customer>,
+    private calculator: FinancialCalculator,
+    private dataSource: DataSource,
+    private pdfService: PdfGeneratorService,
     private guarantorService: GuarantorService,
-    private companyService:   CompanyService,
-    private plazosService:    PlazosCreditoService,
+    private companyService: CompanyService,
+    private plazosService: PlazosCreditoService,
+    private configMoraService: ConfigMoraService,
   ) {}
 
   async findAll(filters: {
-    page?: number; limit?: number; status?: string;
-    customerId?: string; search?: string;
+    page?: number;
+    limit?: number;
+    status?: string;
+    customerId?: string;
+    search?: string;
   }) {
     const { page = 1, limit = 20 } = filters;
-    const qb = this.loanRepo.createQueryBuilder('l')
-      .leftJoinAndSelect('l.customer', 'c')
-      .leftJoinAndSelect('l.loanType', 'lt')
-      .orderBy('l.createdAt', 'DESC')
-      .skip((page - 1) * limit).take(limit);
+    const qb = this.loanRepo
+      .createQueryBuilder("l")
+      .leftJoinAndSelect("l.customer", "c")
+      .leftJoinAndSelect("l.loanType", "lt")
+      .orderBy("l.createdAt", "DESC")
+      .skip((page - 1) * limit)
+      .take(limit);
 
-    if (filters.status)     qb.andWhere('l.status = :status', { status: filters.status });
-    if (filters.customerId) qb.andWhere('l.customerId = :cid', { cid: filters.customerId });
+    if (filters.status)
+      qb.andWhere("l.status = :status", { status: filters.status });
+    if (filters.customerId)
+      qb.andWhere("l.customerId = :cid", { cid: filters.customerId });
     if (filters.search) {
-      qb.andWhere('(c.fullName LIKE :s OR c.phone LIKE :s)', { s: `%${filters.search}%` });
+      qb.andWhere("(c.fullName LIKE :s OR c.phone LIKE :s)", {
+        s: `%${filters.search}%`,
+      });
     }
     const [data, total] = await qb.getManyAndCount();
     return { data, total, page, limit, pages: Math.ceil(total / limit) };
@@ -216,42 +288,93 @@ export class LoansService {
   async findOne(id: string): Promise<Loan> {
     const loan = await this.loanRepo.findOne({
       where: { id },
-      relations: ['customer', 'loanType', 'paymentSchedules', 'payments'],
+      relations: ["customer", "loanType", "paymentSchedules", "payments"],
     });
-    if (!loan) throw new NotFoundException('Préstamo no encontrado');
+    if (!loan) throw new NotFoundException("Préstamo no encontrado");
     return loan;
+  }
+
+  // ── CORREGIR MONTO (carga manual errónea) ────────────────────
+  // Corrige SOLO principalAmount y totalAmount. NO regenera el calendario,
+  // NO recalcula pago_periodico ni cuotas. Uso: enmendar montos capturados
+  // mal en cargas manuales. Devuelve el préstamo con relaciones para refrescar
+  // la vista de detalle.
+  async updateMonto(
+    id: string,
+    dto: { principalAmount: number; totalAmount: number },
+  ) {
+    const principal = Number(dto.principalAmount);
+    const total = Number(dto.totalAmount);
+
+    if (!principal || principal <= 0)
+      throw new BadRequestException("Monto principal inválido");
+    if (!total || total <= 0)
+      throw new BadRequestException("Total a pagar inválido");
+    if (total < principal)
+      throw new BadRequestException(
+        "El total a pagar no puede ser menor al monto principal",
+      );
+
+    const loan = await this.loanRepo.findOne({ where: { id } });
+    if (!loan) throw new NotFoundException("Préstamo no encontrado");
+
+    // Corrección directa. Intencionalmente NO se toca el calendario ni la cuota.
+    loan.principalAmount = principal;
+    loan.totalAmount = total;
+    await this.loanRepo.save(loan);
+
+    // Devolver con relaciones para que el front repinte igual que findOne.
+    return this.findOne(id);
   }
 
   // ── SIMULAR ──────────────────────────────────────────────────
   // days = plazo en días (determina el % automáticamente)
   async simulate(dto: {
-    principalAmount: number; termWeeks: number; frequency?: string;
-    days?: number; percentage?: number; customPayment?: number;
+    principalAmount: number;
+    termWeeks: number;
+    frequency?: string;
+    days?: number;
+    percentage?: number;
+    customPayment?: number;
   }) {
     const principal = Number(dto.principalAmount);
     const days = Number(dto.days ?? dto.termWeeks);
-    const percentage = dto.percentage != null
-      ? Number(dto.percentage)
-      : await this.plazosService.getPercentageForDays(days);
+    const percentage =
+      dto.percentage != null
+        ? Number(dto.percentage)
+        : await this.plazosService.getPercentageForDays(days);
 
-    const calc = this.calculator.calculateWithPayment(principal, percentage, days, dto.customPayment);
+    const calc = this.calculator.calculateWithPayment(
+      principal,
+      percentage,
+      days,
+      dto.customPayment,
+    );
     if ((calc as any).error) throw new BadRequestException((calc as any).error);
 
     const table = this.calculator.generateScheduleTable(
-      principal, percentage, days, new Date(), dto.customPayment,
+      principal,
+      percentage,
+      days,
+      new Date(),
+      dto.customPayment,
     );
     return {
       periodicPayment: calc.periodicPayment,
       totalPayment: calc.totalAmount,
       totalInterest: calc.totalInterest,
-      minPayment: this.calculator.calculate(principal, percentage, days).periodicPayment,
+      minPayment: this.calculator.calculate(principal, percentage, days)
+        .periodicPayment,
       percentage,
       days,
       schedule: table,
     };
   }
 
-  async create(dto: any & { customerId: string }, userId: string): Promise<Loan> {
+  async create(
+    dto: any & { customerId: string },
+    userId: string,
+  ): Promise<Loan> {
     // VALIDACIÓN: un cliente solo puede tener un crédito vigente a la vez.
     // Bloquean los estados "vivos": SOLICITUD, AUTORIZADO, ACTIVO, VENCIDO.
     // No bloquean LIQUIDADO/RECHAZADO (terminados) ni REESTRUCTURADO/CONVENIO
@@ -264,12 +387,15 @@ export class LoansService {
       LoanStatus.VENCIDO,
     ];
     const existente = await this.loanRepo.findOne({
-      where: estadosBloqueantes.map((status) => ({ customerId: dto.customerId, status })),
+      where: estadosBloqueantes.map((status) => ({
+        customerId: dto.customerId,
+        status,
+      })),
     });
     if (existente) {
       throw new BadRequestException(
         `El cliente ya tiene un crédito vigente (estado: ${existente.status}). ` +
-        `No se puede crear uno nuevo hasta que el actual sea liquidado.`,
+          `No se puede crear uno nuevo hasta que el actual sea liquidado.`,
       );
     }
 
@@ -278,18 +404,23 @@ export class LoansService {
     // Resolver % por el plazo configurado
     const percentage = await this.plazosService.getPercentageForDays(days);
 
-    const calc = this.calculator.calculateWithPayment(principal, percentage, days, dto.customPayment);
+    const calc = this.calculator.calculateWithPayment(
+      principal,
+      percentage,
+      days,
+      dto.customPayment,
+    );
     if ((calc as any).error) throw new BadRequestException((calc as any).error);
 
     const loan = this.loanRepo.create({
       ...dto,
-      termWeeks:       days,
-      frequency:       'DIARIO',
-      interestRate:    percentage,
-      totalRate:       percentage,
+      termWeeks: days,
+      frequency: "DIARIO",
+      interestRate: percentage,
+      totalRate: percentage,
       periodicPayment: this.calculator.round(calc.periodicPayment),
-      totalAmount:     this.calculator.round(calc.totalAmount),
-      createdBy:       userId,
+      totalAmount: this.calculator.round(calc.totalAmount),
+      createdBy: userId,
     } as any);
     return this.loanRepo.save(loan as any);
   }
@@ -300,52 +431,74 @@ export class LoansService {
   // días), estampa la mora inicial en cuotas vencidas y crea el aval.
   // El frontend calcula las fechas del calendario y las envía aquí (cada cuota
   // con su fecha), para que coincidan exactamente con lo que el usuario vio.
-  async cargaManual(dto: {
-    customerId: string;
-    principalAmount: number;
-    days: number;
-    periodicPayment: number;        // cuota editable
-    disbursedAt?: string;           // yyyy-mm-dd
-    firstPaymentDate: string;       // yyyy-mm-dd
-    // Calendario calculado en el frontend: una entrada por cuota
-    schedule: Array<{ period: number; dueDate: string }>;
-    periodosPagados: number[];      // qué cuotas ya pagó (pueden saltar días)
-    fechaUltimoPago?: string;       // yyyy-mm-dd (paidAt de la última pagada)
-    totalMoratorio?: number;        // mora que arrastra del sistema anterior
-    aval?: {                        // datos del aval (opcional)
-      fullName?: string; curp?: string; rfc?: string; phone?: string;
-      relationship?: string; address?: string;
-    };
-    notes?: string;
-  }, userId: string) {
+  async cargaManual(
+    dto: {
+      customerId: string;
+      principalAmount: number;
+      days: number;
+      periodicPayment: number; // cuota editable
+      disbursedAt?: string; // yyyy-mm-dd
+      firstPaymentDate: string; // yyyy-mm-dd
+      // Calendario calculado en el frontend: una entrada por cuota
+      schedule: Array<{ period: number; dueDate: string }>;
+      periodosPagados: number[]; // qué cuotas ya pagó (pueden saltar días)
+      fechaUltimoPago?: string; // yyyy-mm-dd (paidAt de la última pagada)
+      totalMoratorio?: number; // mora que arrastra del sistema anterior
+      aval?: {
+        // datos del aval (opcional)
+        fullName?: string;
+        curp?: string;
+        rfc?: string;
+        phone?: string;
+        relationship?: string;
+        address?: string;
+      };
+      notes?: string;
+    },
+    userId: string,
+  ) {
     // VALIDACIÓN: un crédito vigente por cliente (igual que create)
     const estadosBloqueantes = [
-      LoanStatus.SOLICITUD, LoanStatus.AUTORIZADO, LoanStatus.ACTIVO, LoanStatus.ATRASADO, LoanStatus.VENCIDO,
+      LoanStatus.SOLICITUD,
+      LoanStatus.AUTORIZADO,
+      LoanStatus.ACTIVO,
+      LoanStatus.ATRASADO,
+      LoanStatus.VENCIDO,
     ];
     const existente = await this.loanRepo.findOne({
-      where: estadosBloqueantes.map((status) => ({ customerId: dto.customerId, status })),
+      where: estadosBloqueantes.map((status) => ({
+        customerId: dto.customerId,
+        status,
+      })),
     });
     if (existente) {
       throw new BadRequestException(
         `El cliente ya tiene un crédito vigente (estado: ${existente.status}). ` +
-        `No se puede cargar otro hasta que el actual sea liquidado.`,
+          `No se puede cargar otro hasta que el actual sea liquidado.`,
       );
     }
 
     const principal = Number(dto.principalAmount);
     const days = Math.round(Number(dto.days));
     const cuota = this.calculator.round(Number(dto.periodicPayment));
-    const pagados = Array.isArray(dto.periodosPagados) ? dto.periodosPagados.map(Number) : [];
+    const pagados = Array.isArray(dto.periodosPagados)
+      ? dto.periodosPagados.map(Number)
+      : [];
     const totalMoratorio = Number(dto.totalMoratorio) || 0;
 
-    if (!principal || principal <= 0) throw new BadRequestException('Monto inválido');
-    if (!days || days <= 0) throw new BadRequestException('Plazo inválido');
-    if (!cuota || cuota <= 0) throw new BadRequestException('Cuota inválida');
+    if (!principal || principal <= 0)
+      throw new BadRequestException("Monto inválido");
+    if (!days || days <= 0) throw new BadRequestException("Plazo inválido");
+    if (!cuota || cuota <= 0) throw new BadRequestException("Cuota inválida");
     if (!Array.isArray(dto.schedule) || dto.schedule.length !== days)
-      throw new BadRequestException('El calendario no coincide con el número de días');
+      throw new BadRequestException(
+        "El calendario no coincide con el número de días",
+      );
 
-    const customer = await this.customerRepo.findOne({ where: { id: dto.customerId } });
-    if (!customer) throw new NotFoundException('Cliente no encontrado');
+    const customer = await this.customerRepo.findOne({
+      where: { id: dto.customerId },
+    });
+    if (!customer) throw new NotFoundException("Cliente no encontrado");
 
     const total = this.calculator.round(cuota * days);
     const capitalPorCuota = this.calculator.round(principal / days);
@@ -353,33 +506,38 @@ export class LoansService {
     const hoy = this.calculator.anchorToMexicoDay(new Date());
 
     const qr = this.dataSource.createQueryRunner();
-    await qr.connect(); await qr.startTransaction();
-    let savedLoanId = '';
+    await qr.connect();
+    await qr.startTransaction();
+    let savedLoanId = "";
 
     try {
       // Crear el crédito (nace ACTIVO; si tiene vencidas, lo ajustamos a VENCIDO al final)
       const loan = this.loanRepo.create({
-        customerId:      dto.customerId,
+        customerId: dto.customerId,
         principalAmount: principal,
-        interestRate:    0,
-        totalRate:       0,
-        termWeeks:       days,
-        frequency:       'DIARIO',
-        status:          LoanStatus.ACTIVO,
-        disbursedAt:     dto.disbursedAt ? new Date(`${dto.disbursedAt}T00:00:00Z`) : new Date(`${dto.firstPaymentDate}T00:00:00Z`),
-        disbursedBy:     userId,
-        disbursementMethod: 'CARGA_MANUAL',
+        interestRate: 0,
+        totalRate: 0,
+        termWeeks: days,
+        frequency: "DIARIO",
+        status: LoanStatus.ACTIVO,
+        disbursedAt: dto.disbursedAt
+          ? new Date(`${dto.disbursedAt}T00:00:00Z`)
+          : new Date(`${dto.firstPaymentDate}T00:00:00Z`),
+        disbursedBy: userId,
+        disbursementMethod: "CARGA_MANUAL",
         periodicPayment: cuota,
-        totalAmount:     total,
-        notes:           dto.notes || 'Crédito cargado manualmente (sistema anterior)',
-        createdBy:       userId,
+        totalAmount: total,
+        notes: dto.notes || "Crédito cargado manualmente (sistema anterior)",
+        createdBy: userId,
       } as any);
       const saved: Loan = await qr.manager.save(loan as any);
       savedLoanId = saved.id;
 
       // Generar el calendario con las fechas que envió el frontend
       const pagadosSet = new Set(pagados);
-      const fUltimo = dto.fechaUltimoPago ? new Date(`${dto.fechaUltimoPago}T00:00:00Z`) : null;
+      const fUltimo = dto.fechaUltimoPago
+        ? new Date(`${dto.fechaUltimoPago}T00:00:00Z`)
+        : null;
       // El número de cuota pagada más alto (para asignarle la fecha de último pago)
       const ultimoPeriodoPagado = pagados.length > 0 ? Math.max(...pagados) : 0;
 
@@ -392,22 +550,26 @@ export class LoansService {
         const fechaCuota = new Date(`${dto.schedule[i - 1].dueDate}T00:00:00Z`);
         // paidAt: si es la última pagada y hay fecha de último pago, úsala; si no, su fecha
         const paidAt = pagada
-          ? (i === ultimoPeriodoPagado && fUltimo ? fUltimo : fechaCuota)
+          ? i === ultimoPeriodoPagado && fUltimo
+            ? fUltimo
+            : fechaCuota
           : null;
-        schedules.push(this.scheduleRepo.create({
-          loanId: saved.id,
-          periodNumber: i,
-          dueDate: fechaCuota,
-          principalDue: capitalPorCuota,
-          interestDue: 0,
-          totalDue: pmt,
-          balanceDue: pagada ? 0 : pmt,
-          lateInterest: 0,
-          moraGenerada: 0,
-          moraPagada: 0,
-          status: pagada ? ScheduleStatus.PAGADO : ScheduleStatus.PENDIENTE,
-          paidAt,
-        }) as PaymentSchedule);
+        schedules.push(
+          this.scheduleRepo.create({
+            loanId: saved.id,
+            periodNumber: i,
+            dueDate: fechaCuota,
+            principalDue: capitalPorCuota,
+            interestDue: 0,
+            totalDue: pmt,
+            balanceDue: pagada ? 0 : pmt,
+            lateInterest: 0,
+            moraGenerada: 0,
+            moraPagada: 0,
+            status: pagada ? ScheduleStatus.PAGADO : ScheduleStatus.PENDIENTE,
+            paidAt,
+          }) as PaymentSchedule,
+        );
       }
 
       // Estampar la mora inicial distribuida en cuotas pendientes ya vencidas
@@ -417,18 +579,25 @@ export class LoansService {
         );
         if (vencidasPendientes.length > 0) {
           // Repartir el total entre las vencidas; la última absorbe el resto
-          const base = this.calculator.round(totalMoratorio / vencidasPendientes.length);
+          const base = this.calculator.round(
+            totalMoratorio / vencidasPendientes.length,
+          );
           let acum = 0;
           vencidasPendientes.forEach((s, k) => {
             const esUltima = k === vencidasPendientes.length - 1;
-            const m = esUltima ? this.calculator.round(totalMoratorio - acum) : base;
+            const m = esUltima
+              ? this.calculator.round(totalMoratorio - acum)
+              : base;
             s.moraGenerada = m;
             acum = this.calculator.round(acum + m);
           });
         } else {
           // Sin vencidas: estampar todo en la primera pendiente
-          const primera = schedules.find((s) => s.status !== ScheduleStatus.PAGADO);
-          if (primera) primera.moraGenerada = this.calculator.round(totalMoratorio);
+          const primera = schedules.find(
+            (s) => s.status !== ScheduleStatus.PAGADO,
+          );
+          if (primera)
+            primera.moraGenerada = this.calculator.round(totalMoratorio);
         }
       }
 
@@ -438,11 +607,15 @@ export class LoansService {
       //  - VENCIDO  si hay cuotas vencidas y NO quedan cuotas futuras (plazo terminado)
       //  - ATRASADO si hay cuotas vencidas pero aún quedan futuras (plazo vigente)
       //  - ACTIVO   si no hay vencidas
-      const pendientes = schedules.filter((s) => s.status !== ScheduleStatus.PAGADO);
+      const pendientes = schedules.filter(
+        (s) => s.status !== ScheduleStatus.PAGADO,
+      );
       const tieneVencidas = pendientes.some((s) => s.dueDate < hoy);
-      const tieneFuturas  = pendientes.some((s) => s.dueDate >= hoy);
+      const tieneFuturas = pendientes.some((s) => s.dueDate >= hoy);
       if (tieneVencidas) {
-        const nuevoEstado = tieneFuturas ? LoanStatus.ATRASADO : LoanStatus.VENCIDO;
+        const nuevoEstado = tieneFuturas
+          ? LoanStatus.ATRASADO
+          : LoanStatus.VENCIDO;
         await qr.manager.update(Loan, saved.id, { status: nuevoEstado });
       }
 
@@ -458,28 +631,40 @@ export class LoansService {
     const aval = dto.aval;
     if (savedLoanId && aval && aval.fullName && aval.curp) {
       try {
-        await this.guarantorService.upsert(savedLoanId, {
-          fullName: aval.fullName,
-          curp: (aval.curp || '').toUpperCase(),
-          rfc: (aval.rfc || '').toUpperCase() || undefined,
-          phone: aval.phone || undefined,
-          relationship: aval.relationship || undefined,
-          address: aval.address || undefined,
-        } as any, userId);
+        await this.guarantorService.upsert(
+          savedLoanId,
+          {
+            fullName: aval.fullName,
+            curp: (aval.curp || "").toUpperCase(),
+            rfc: (aval.rfc || "").toUpperCase() || undefined,
+            phone: aval.phone || undefined,
+            relationship: aval.relationship || undefined,
+            address: aval.address || undefined,
+          } as any,
+          userId,
+        );
       } catch {
         // No abortar el crédito por un fallo de aval; el crédito ya se creó
       }
     }
 
     const result = await this.loanRepo.findOne({ where: { id: savedLoanId } });
-    return { loan: result, message: 'Crédito cargado correctamente.' };
+    return { loan: result, message: "Crédito cargado correctamente." };
   }
 
-  async authorize(id: string, decision: 'APPROVE' | 'REJECT', userId: string, rejectionReason?: string): Promise<Loan> {
+  async authorize(
+    id: string,
+    decision: "APPROVE" | "REJECT",
+    userId: string,
+    rejectionReason?: string,
+  ): Promise<Loan> {
     const loan = await this.findOne(id);
     if (loan.status !== LoanStatus.SOLICITUD)
-      throw new BadRequestException('Solo se pueden autorizar préstamos en estatus SOLICITUD');
-    loan.status      = decision === 'APPROVE' ? LoanStatus.AUTORIZADO : LoanStatus.RECHAZADO;
+      throw new BadRequestException(
+        "Solo se pueden autorizar préstamos en estatus SOLICITUD",
+      );
+    loan.status =
+      decision === "APPROVE" ? LoanStatus.AUTORIZADO : LoanStatus.RECHAZADO;
     loan.authorizedBy = userId;
     loan.authorizedAt = new Date();
     if (rejectionReason) loan.rejectionReason = rejectionReason;
@@ -487,37 +672,52 @@ export class LoansService {
   }
 
   // ── DESEMBOLSAR (genera calendario L-V) ──────────────────────
-  async disburse(id: string, dto: { disbursementMethod: string; notes?: string }, userId: string) {
+  async disburse(
+    id: string,
+    dto: { disbursementMethod: string; notes?: string },
+    userId: string,
+  ) {
     const loan = await this.findOne(id);
     if (loan.status !== LoanStatus.AUTORIZADO)
-      throw new BadRequestException('El préstamo no está autorizado para desembolso');
+      throw new BadRequestException(
+        "El préstamo no está autorizado para desembolso",
+      );
 
     const qr = this.dataSource.createQueryRunner();
-    await qr.connect(); await qr.startTransaction();
+    await qr.connect();
+    await qr.startTransaction();
 
     try {
-      loan.status             = LoanStatus.ACTIVO;
-      loan.disbursedAt        = new Date();
+      loan.status = LoanStatus.ACTIVO;
+      loan.disbursedAt = new Date();
       loan.disbursementMethod = dto.disbursementMethod;
-      loan.disbursedBy        = userId;
+      loan.disbursedBy = userId;
       if (dto.notes) loan.notes = dto.notes;
       await qr.manager.save(loan);
 
-      const days       = Math.round(loan.termWeeks);
+      const days = Math.round(loan.termWeeks);
       const percentage = Number((loan as any).totalRate || loan.interestRate);
       // Usamos la cuota guardada del crédito (puede venir ajustada por el usuario)
       const cuotaGuardada = Number(loan.periodicPayment);
 
       // Calendario L-V empezando el día hábil siguiente al desembolso
       const table = this.calculator.generateScheduleTable(
-        Number(loan.principalAmount), percentage, days, loan.disbursedAt, cuotaGuardada,
+        Number(loan.principalAmount),
+        percentage,
+        days,
+        loan.disbursedAt,
+        cuotaGuardada,
       );
 
       const schedules = table.map((row) =>
         this.scheduleRepo.create({
-          loanId: loan.id, periodNumber: row.period, dueDate: row.dueDate,
-          principalDue: row.principal, interestDue: row.interest,
-          totalDue: row.payment, balanceDue: row.payment,
+          loanId: loan.id,
+          periodNumber: row.period,
+          dueDate: row.dueDate,
+          principalDue: row.principal,
+          interestDue: row.interest,
+          totalDue: row.payment,
+          balanceDue: row.payment,
           status: ScheduleStatus.PENDIENTE,
         }),
       );
@@ -525,7 +725,8 @@ export class LoansService {
       await qr.commitTransaction();
       return { loan, schedulesGenerated: schedules.length };
     } catch (err) {
-      await qr.rollbackTransaction(); throw err;
+      await qr.rollbackTransaction();
+      throw err;
     } finally {
       await qr.release();
     }
@@ -534,11 +735,16 @@ export class LoansService {
   // ── REESTRUCTURAR ────────────────────────────────────────────
   async restructure(id: string, dto: any, userId: string) {
     const loan = await this.findOne(id);
-    if (!['ACTIVO', 'ATRASADO', 'VENCIDO', 'REESTRUCTURADO'].includes(loan.status))
-      throw new BadRequestException('Solo se pueden reestructurar créditos ACTIVO, ATRASADO o VENCIDO');
+    if (
+      !["ACTIVO", "ATRASADO", "VENCIDO", "REESTRUCTURADO"].includes(loan.status)
+    )
+      throw new BadRequestException(
+        "Solo se pueden reestructurar créditos ACTIVO, ATRASADO o VENCIDO",
+      );
 
     const qr = this.dataSource.createQueryRunner();
-    await qr.connect(); await qr.startTransaction();
+    await qr.connect();
+    await qr.startTransaction();
 
     try {
       loan.status = LoanStatus.REESTRUCTURADO;
@@ -546,42 +752,57 @@ export class LoansService {
 
       const principal = Number(dto.principalAmount);
       const days = Number(dto.days ?? dto.termWeeks);
-      const percentage = dto.percentage != null
-        ? Number(dto.percentage)
-        : await this.plazosService.getPercentageForDays(days);
+      const percentage =
+        dto.percentage != null
+          ? Number(dto.percentage)
+          : await this.plazosService.getPercentageForDays(days);
 
-      const calc = this.calculator.calculateWithPayment(principal, percentage, days, dto.customPayment);
-      if ((calc as any).error) throw new BadRequestException((calc as any).error);
+      const calc = this.calculator.calculateWithPayment(
+        principal,
+        percentage,
+        days,
+        dto.customPayment,
+      );
+      if ((calc as any).error)
+        throw new BadRequestException((calc as any).error);
 
       const newLoan = this.loanRepo.create({
-        customerId:         loan.customerId,
-        loanTypeId:         dto.loanTypeId || loan.loanTypeId,
-        parentLoanId:       loan.id,
-        principalAmount:    principal,
-        interestRate:       percentage,
-        totalRate:          percentage,
-        termWeeks:          days,
-        frequency:          'DIARIO',
-        status:             LoanStatus.ACTIVO,
-        disbursedAt:        new Date(),
-        disbursedBy:        userId,
-        disbursementMethod: 'REESTRUCTURA',
-        periodicPayment:    this.calculator.round(calc.periodicPayment),
-        totalAmount:        this.calculator.round(calc.totalAmount),
-        restructureCount:   (loan.restructureCount || 0) + 1,
-        restructureReason:  dto.restructureReason,
-        createdBy:          userId,
+        customerId: loan.customerId,
+        loanTypeId: dto.loanTypeId || loan.loanTypeId,
+        parentLoanId: loan.id,
+        principalAmount: principal,
+        interestRate: percentage,
+        totalRate: percentage,
+        termWeeks: days,
+        frequency: "DIARIO",
+        status: LoanStatus.ACTIVO,
+        disbursedAt: new Date(),
+        disbursedBy: userId,
+        disbursementMethod: "REESTRUCTURA",
+        periodicPayment: this.calculator.round(calc.periodicPayment),
+        totalAmount: this.calculator.round(calc.totalAmount),
+        restructureCount: (loan.restructureCount || 0) + 1,
+        restructureReason: dto.restructureReason,
+        createdBy: userId,
       } as any);
       const saved = await qr.manager.save(newLoan as any);
 
       const table = this.calculator.generateScheduleTable(
-        principal, percentage, days, new Date(), dto.customPayment,
+        principal,
+        percentage,
+        days,
+        new Date(),
+        dto.customPayment,
       );
       const schedules = table.map((row: any) =>
         this.scheduleRepo.create({
-          loanId: saved.id, periodNumber: row.period, dueDate: row.dueDate,
-          principalDue: row.principal, interestDue: row.interest,
-          totalDue: row.payment, balanceDue: row.payment,
+          loanId: saved.id,
+          periodNumber: row.period,
+          dueDate: row.dueDate,
+          principalDue: row.principal,
+          interestDue: row.interest,
+          totalDue: row.payment,
+          balanceDue: row.payment,
           status: ScheduleStatus.PENDIENTE,
         }),
       );
@@ -589,14 +810,18 @@ export class LoansService {
       await qr.commitTransaction();
       return { loan: saved, schedulesGenerated: schedules.length };
     } catch (err) {
-      await qr.rollbackTransaction(); throw err;
+      await qr.rollbackTransaction();
+      throw err;
     } finally {
       await qr.release();
     }
   }
 
   async getSchedule(loanId: string): Promise<PaymentSchedule[]> {
-    return this.scheduleRepo.find({ where: { loanId }, order: { periodNumber: 'ASC' } });
+    return this.scheduleRepo.find({
+      where: { loanId },
+      order: { periodNumber: "ASC" },
+    });
   }
 
   // ── PRÓXIMOS A LIQUIDAR (feature 11) ─────────────────────────
@@ -609,7 +834,7 @@ export class LoansService {
         { status: LoanStatus.ATRASADO },
         { status: LoanStatus.VENCIDO },
       ],
-      relations: ['customer'],
+      relations: ["customer"],
     });
 
     const rows = [];
@@ -624,8 +849,8 @@ export class LoansService {
         rows.push({
           id: loan.id,
           customerId: loan.customerId,
-          customerName: loan.customer?.fullName || '',
-          customerPhone: loan.customer?.phone || '',
+          customerName: loan.customer?.fullName || "",
+          customerPhone: loan.customer?.phone || "",
           principalAmount: Number(loan.principalAmount),
           periodicPayment: Number(loan.periodicPayment),
           totalAmount: Number(loan.totalAmount),
@@ -645,63 +870,88 @@ export class LoansService {
   // ── RENOVACIÓN (feature 7) ───────────────────────────────────
   // Crea un nuevo crédito que NACE AUTORIZADO a partir de un crédito liquidado.
   // Aval: opcional. avalMode = 'NINGUNO' | 'REUSAR' | 'NUEVO'.
-  async renovar(prevLoanId: string, dto: {
-    principalAmount: number; days: number; loanTypeId?: string;
-    avalMode?: 'NINGUNO' | 'REUSAR' | 'NUEVO';
-    aval?: any;  // datos del aval nuevo si avalMode === 'NUEVO'
-    notes?: string;
-  }, userId: string) {
+  async renovar(
+    prevLoanId: string,
+    dto: {
+      principalAmount: number;
+      days: number;
+      loanTypeId?: string;
+      avalMode?: "NINGUNO" | "REUSAR" | "NUEVO";
+      aval?: any; // datos del aval nuevo si avalMode === 'NUEVO'
+      notes?: string;
+    },
+    userId: string,
+  ) {
     const prev = await this.loanRepo.findOne({ where: { id: prevLoanId } });
-    if (!prev) throw new NotFoundException('Crédito de origen no encontrado');
+    if (!prev) throw new NotFoundException("Crédito de origen no encontrado");
     if (prev.status !== LoanStatus.LIQUIDADO)
-      throw new BadRequestException('Solo se puede renovar un crédito ya liquidado');
+      throw new BadRequestException(
+        "Solo se puede renovar un crédito ya liquidado",
+      );
 
     const principal = Number(dto.principalAmount);
     const days = Number(dto.days);
     const percentage = await this.plazosService.getPercentageForDays(days);
-    const { totalAmount, periodicPayment } = this.calculator.calculate(principal, percentage, days);
+    const { totalAmount, periodicPayment } = this.calculator.calculate(
+      principal,
+      percentage,
+      days,
+    );
 
     const qr = this.dataSource.createQueryRunner();
-    await qr.connect(); await qr.startTransaction();
+    await qr.connect();
+    await qr.startTransaction();
     try {
       // Crédito nuevo NACE AUTORIZADO (listo para desembolsar)
       const newLoan = this.loanRepo.create({
-        customerId:    prev.customerId,
-        loanTypeId:    dto.loanTypeId || prev.loanTypeId,
-        parentLoanId:  prev.id,
+        customerId: prev.customerId,
+        loanTypeId: dto.loanTypeId || prev.loanTypeId,
+        parentLoanId: prev.id,
         principalAmount: principal,
-        interestRate:  percentage,
-        totalRate:     percentage,
-        termWeeks:     days,
-        frequency:     'DIARIO',
-        status:        LoanStatus.AUTORIZADO,
-        authorizedBy:  userId,
-        authorizedAt:  new Date(),
+        interestRate: percentage,
+        totalRate: percentage,
+        termWeeks: days,
+        frequency: "DIARIO",
+        status: LoanStatus.AUTORIZADO,
+        authorizedBy: userId,
+        authorizedAt: new Date(),
         periodicPayment: this.calculator.round(periodicPayment),
-        totalAmount:     this.calculator.round(totalAmount),
-        notes:         dto.notes,
-        createdBy:     userId,
+        totalAmount: this.calculator.round(totalAmount),
+        notes: dto.notes,
+        createdBy: userId,
       } as any);
       const saved: Loan = await qr.manager.save(newLoan as any);
 
       await qr.commitTransaction();
 
       // Aval (fuera de la transacción del préstamo, usa el servicio con su validación)
-      const avalMode = dto.avalMode || 'NINGUNO';
-      if (avalMode === 'REUSAR') {
+      const avalMode = dto.avalMode || "NINGUNO";
+      if (avalMode === "REUSAR") {
         const prevAval = await this.guarantorService.findByLoan(prev.id);
         if (prevAval) {
-          await this.guarantorService.upsert(saved.id, {
-            fullName: prevAval.fullName, curp: prevAval.curp, rfc: prevAval.rfc,
-            phone: prevAval.phone, email: prevAval.email, address: prevAval.address,
-            relationship: prevAval.relationship, occupation: prevAval.occupation,
-          } as any, userId);
+          await this.guarantorService.upsert(
+            saved.id,
+            {
+              fullName: prevAval.fullName,
+              curp: prevAval.curp,
+              rfc: prevAval.rfc,
+              phone: prevAval.phone,
+              email: prevAval.email,
+              address: prevAval.address,
+              relationship: prevAval.relationship,
+              occupation: prevAval.occupation,
+            } as any,
+            userId,
+          );
         }
-      } else if (avalMode === 'NUEVO' && dto.aval) {
+      } else if (avalMode === "NUEVO" && dto.aval) {
         await this.guarantorService.upsert(saved.id, dto.aval, userId);
       }
 
-      return { loan: saved, message: 'Renovación creada y autorizada. Lista para desembolsar.' };
+      return {
+        loan: saved,
+        message: "Renovación creada y autorizada. Lista para desembolsar.",
+      };
     } catch (err) {
       await qr.rollbackTransaction();
       throw err;
@@ -714,13 +964,17 @@ export class LoansService {
   async getRenovacionInfo(prevLoanId: string) {
     const prev = await this.loanRepo.findOne({
       where: { id: prevLoanId },
-      relations: ['customer'],
+      relations: ["customer"],
     });
-    if (!prev) throw new NotFoundException('Crédito no encontrado');
+    if (!prev) throw new NotFoundException("Crédito no encontrado");
 
-    const payments = await this.scheduleRepo.find({ where: { loanId: prevLoanId } });
+    const payments = await this.scheduleRepo.find({
+      where: { loanId: prevLoanId },
+    });
     const totalCuotas = payments.length;
-    const pagadas = payments.filter(s => s.status === ScheduleStatus.PAGADO).length;
+    const pagadas = payments.filter(
+      (s) => s.status === ScheduleStatus.PAGADO,
+    ).length;
     const prevAval = await this.guarantorService.findByLoan(prevLoanId);
 
     return {
@@ -739,10 +993,14 @@ export class LoansService {
         curp: prev.customer?.curp,
       },
       historialPago: { totalCuotas, pagadas },
-      avalAnterior: prevAval ? {
-        fullName: prevAval.fullName, curp: prevAval.curp, phone: prevAval.phone,
-        relationship: prevAval.relationship,
-      } : null,
+      avalAnterior: prevAval
+        ? {
+            fullName: prevAval.fullName,
+            curp: prevAval.curp,
+            phone: prevAval.phone,
+            relationship: prevAval.relationship,
+          }
+        : null,
     };
   }
 
@@ -750,28 +1008,62 @@ export class LoansService {
   // Reestructura un crédito existente con un plan ESPECIAL SIN INTERESES.
   // El gestor define monto total y número de pagos; se reparte en partes
   // iguales en días hábiles consecutivos. El crédito anterior pasa a CONVENIO.
-  async convenio(loanId: string, dto: {
-    montoConvenio: number; numeroPagos: number;
-    periodicidad?: 'DIARIO' | 'SEMANAL' | 'QUINCENAL' | 'MENSUAL';
-    fechaPrimerPago?: string;  // ISO yyyy-mm-dd
-    notes?: string;
-  }, userId: string) {
+  async convenio(
+    loanId: string,
+    dto: {
+      montoConvenio: number;
+      numeroPagos: number;
+      periodicidad?: "DIARIO" | "SEMANAL" | "QUINCENAL" | "MENSUAL";
+      fechaPrimerPago?: string; // ISO yyyy-mm-dd
+      customPayment?: number; // cuota fija opcional; el último pago absorbe el resto
+      notes?: string;
+    },
+    userId: string,
+  ) {
     const prev = await this.loanRepo.findOne({ where: { id: loanId } });
-    if (!prev) throw new NotFoundException('Crédito no encontrado');
-    if (![LoanStatus.ACTIVO, LoanStatus.ATRASADO, LoanStatus.VENCIDO].includes(prev.status as LoanStatus))
-      throw new BadRequestException('Solo se puede hacer convenio de un crédito activo, atrasado o vencido');
+    if (!prev) throw new NotFoundException("Crédito no encontrado");
+    if (
+      ![LoanStatus.ACTIVO, LoanStatus.ATRASADO, LoanStatus.VENCIDO].includes(
+        prev.status as LoanStatus,
+      )
+    )
+      throw new BadRequestException(
+        "Solo se puede hacer convenio de un crédito activo, atrasado o vencido",
+      );
 
     const monto = Number(dto.montoConvenio);
     const numPagos = Math.round(Number(dto.numeroPagos));
-    const periodicidad = dto.periodicidad || 'SEMANAL';
-    if (monto <= 0) throw new BadRequestException('El monto del convenio debe ser mayor a 0');
-    if (numPagos <= 0) throw new BadRequestException('El número de pagos debe ser mayor a 0');
-    if (!dto.fechaPrimerPago) throw new BadRequestException('Debe indicar la fecha del primer pago');
+    const periodicidad = dto.periodicidad || "SEMANAL";
+    if (monto <= 0)
+      throw new BadRequestException("El monto del convenio debe ser mayor a 0");
+    if (numPagos <= 0)
+      throw new BadRequestException("El número de pagos debe ser mayor a 0");
+    if (!dto.fechaPrimerPago)
+      throw new BadRequestException("Debe indicar la fecha del primer pago");
 
-    const cuota = this.calculator.round(monto / numPagos);
+    // Cuota: si el gestor fija una cuota (customPayment), esa se usa en todos
+    // los pagos salvo el último, que absorbe la diferencia (puede quedar menor
+    // o mayor). Si no la fija, se reparte parejo (monto / numPagos).
+    const customPayment =
+      dto.customPayment != null ? Number(dto.customPayment) : 0;
+    let cuota: number;
+    if (customPayment > 0) {
+      cuota = this.calculator.round(customPayment);
+      // La cuota fija no puede ser tan baja que ni en (numPagos) pagos cubra el
+      // monto dejando el último en negativo o cero antes del final.
+      if (cuota * (numPagos - 1) >= monto && numPagos > 1) {
+        throw new BadRequestException(
+          `Con una cuota de $${cuota} y ${numPagos} pagos, la deuda se cubre antes del último pago. ` +
+            `Reduce la cuota o el número de pagos.`,
+        );
+      }
+    } else {
+      cuota = this.calculator.round(monto / numPagos);
+    }
 
     const qr = this.dataSource.createQueryRunner();
-    await qr.connect(); await qr.startTransaction();
+    await qr.connect();
+    await qr.startTransaction();
     try {
       // El crédito anterior pasa a CONVENIO (se archiva como historial)
       prev.status = LoanStatus.CONVENIO;
@@ -779,46 +1071,53 @@ export class LoansService {
 
       // Nuevo crédito tipo convenio: sin intereses, nace ACTIVO
       const convenioLoan = this.loanRepo.create({
-        customerId:    prev.customerId,
-        loanTypeId:    prev.loanTypeId,
-        parentLoanId:  prev.id,
+        customerId: prev.customerId,
+        loanTypeId: prev.loanTypeId,
+        parentLoanId: prev.id,
         principalAmount: monto,
-        interestRate:  0,
-        totalRate:     0,
-        termWeeks:     numPagos,
-        frequency:     'DIARIO',
-        status:        LoanStatus.ACTIVO,
-        disbursedAt:   new Date(),
-        disbursedBy:   userId,
-        disbursementMethod: 'CONVENIO',
+        interestRate: 0,
+        totalRate: 0,
+        termWeeks: numPagos,
+        // Guardar la periodicidad REAL elegida (antes se fijaba 'DIARIO'),
+        // para que el documento de convenio muestre "semanales/quincenales/...".
+        frequency: periodicidad,
+        status: LoanStatus.ACTIVO,
+        disbursedAt: new Date(),
+        disbursedBy: userId,
+        disbursementMethod: "CONVENIO",
         periodicPayment: cuota,
-        totalAmount:   this.calculator.round(monto),
-        restructureReason: dto.notes || 'Convenio de pago',
-        isConvenio:    true,
-        createdBy:     userId,
+        totalAmount: this.calculator.round(monto),
+        restructureReason: dto.notes || "Convenio de pago",
+        isConvenio: true,
+        createdBy: userId,
       } as any);
       const saved: Loan = await qr.manager.save(convenioLoan as any);
 
       // Calendario del convenio: fechas según periodicidad y primer pago elegidos
       const dates = this.calculator.generateConvenioDates(
-        dto.fechaPrimerPago!, periodicidad, numPagos,
+        dto.fechaPrimerPago!,
+        periodicidad,
+        numPagos,
       );
-      const capitalPorPago = this.calculator.round(monto / numPagos);
       let balance = monto;
       const schedules = [];
       for (let i = 1; i <= numPagos; i++) {
+        // Cuota fija en todos los pagos salvo el último, que absorbe el balance.
         const pmt = i < numPagos ? cuota : this.calculator.round(balance);
         balance = this.calculator.round(Math.max(0, balance - pmt));
-        schedules.push(this.scheduleRepo.create({
-          loanId: saved.id,
-          periodNumber: i,
-          dueDate: dates[i - 1],
-          principalDue: capitalPorPago,
-          interestDue: 0,
-          totalDue: pmt,
-          balanceDue: pmt,
-          status: ScheduleStatus.PENDIENTE,
-        }));
+        schedules.push(
+          this.scheduleRepo.create({
+            loanId: saved.id,
+            periodNumber: i,
+            dueDate: dates[i - 1],
+            // Convenio sin intereses: el capital de cada cuota ES el pago completo.
+            principalDue: pmt,
+            interestDue: 0,
+            totalDue: pmt,
+            balanceDue: pmt,
+            status: ScheduleStatus.PENDIENTE,
+          }),
+        );
       }
       await qr.manager.save(schedules);
 
@@ -827,7 +1126,7 @@ export class LoansService {
         loan: saved,
         schedulesGenerated: schedules.length,
         cuota,
-        message: 'Convenio generado. El crédito anterior quedó archivado.',
+        message: "Convenio generado. El crédito anterior quedó archivado.",
       };
     } catch (err) {
       await qr.rollbackTransaction();
@@ -837,61 +1136,230 @@ export class LoansService {
     }
   }
 
+  // ── PDF DEL CONVENIO ─────────────────────────────────────────
+  // Genera el documento legal del convenio a partir del crédito de convenio.
+  // Deudor = cliente; Acreedor = config de empresa; penalización = ConfigMora.
+  async getConvenioPdf(loanId: string, res: Response): Promise<void> {
+    const loan = await this.loanRepo.findOne({
+      where: { id: loanId },
+      relations: ["customer", "paymentSchedules"],
+    });
+    if (!loan) throw new NotFoundException("Convenio no encontrado");
+    if (!loan.isConvenio)
+      throw new BadRequestException("Este crédito no es un convenio");
+
+    const company = await this.companyService.get().catch(() => null);
+    const penalizacionDia = await this.configMoraService
+      .getMoraPorDia()
+      .catch(() => 0);
+
+    // Domicilio del cliente (JSON: street, colonia, municipality, state, zip)
+    const dir = (loan.customer as any)?.address;
+    const deudorDomicilio = dir
+      ? [dir.street, dir.colonia, dir.municipality, dir.state, dir.zip]
+          .filter(Boolean)
+          .join(", ")
+      : "domicilio conocido";
+
+    // Domicilio del acreedor (config de empresa)
+    const acreedorDomicilio =
+      [company?.address, company?.city, company?.state]
+        .filter(Boolean)
+        .join(", ") || "domicilio conocido";
+
+    const schedules = (loan.paymentSchedules || []).sort(
+      (a, b) => a.periodNumber - b.periodNumber,
+    );
+    const primera = schedules[0];
+    const ultima = schedules[schedules.length - 1];
+
+    const lugar = company?.city
+      ? `${company.city}${company?.state ? ", " + company.state : ""}, México`
+      : "Ciudad Ixtepec, Oaxaca, México";
+
+    return this.pdfService.generateConvenioPdf(
+      {
+        // Encabezado azul (mismo estilo que el contrato).
+        companyName: company?.name || "Microcapital-Ixtepec",
+        companyAddress: company
+          ? [company.address, company.city, company.state]
+              .filter(Boolean)
+              .join(", ")
+          : "",
+        folio: (loan.id || "").toUpperCase(),
+        lugarFecha: `${lugar}. A ${this.fechaLargaMx(new Date())}.`,
+        deudorNombre: loan.customer?.fullName || "",
+        deudorDomicilio,
+        acreedorNombre: company?.name || "Micro Capital",
+        acreedorDomicilio,
+        montoDeuda: this.moneyMx(Number(loan.principalAmount)),
+        numPagosTexto: this.numeroEnPalabras(loan.termWeeks),
+        periodicidadTexto: this.periodicidadTexto(loan.frequency),
+        cuota: this.moneyMx(Number(loan.periodicPayment)),
+        fechaInicio: primera ? this.fechaLargaMx(primera.dueDate) : "",
+        fechaFin: ultima ? this.fechaLargaMx(ultima.dueDate) : "",
+        penalizacionDia: this.moneyMx(penalizacionDia),
+        penalizacionDiaTexto: `${this.numeroEnPalabras(Math.round(penalizacionDia))} pesos 00/100 M.N.`,
+        logoPath: company?.logoPath,
+        // Calendario de pagos para incluir la tabla en el documento.
+        schedule: schedules.map((s) => ({
+          period: s.periodNumber,
+          dueDate: s.dueDate,
+          payment: Number(s.totalDue),
+        })),
+      },
+      res,
+    );
+  }
+
+  // Helpers de formato para el convenio (fechas en zona de México).
+  private readonly MESES_MX = [
+    "enero",
+    "febrero",
+    "marzo",
+    "abril",
+    "mayo",
+    "junio",
+    "julio",
+    "agosto",
+    "septiembre",
+    "octubre",
+    "noviembre",
+    "diciembre",
+  ];
+  private fechaLargaMx(fecha: Date | string): string {
+    const d = typeof fecha === "string" ? new Date(fecha) : fecha;
+    // Las fechas de vencimiento/creación se guardan ancladas a medianoche UTC
+    // (día-calendario de México), así que se leen en UTC para no correr el día.
+    const day = String(d.getUTCDate()).padStart(2, "0");
+    const m = d.getUTCMonth();
+    const y = d.getUTCFullYear();
+    return `${day} de ${this.MESES_MX[m]} del ${y}`;
+  }
+  private readonly NUMS_MX = [
+    "cero",
+    "un",
+    "dos",
+    "tres",
+    "cuatro",
+    "cinco",
+    "seis",
+    "siete",
+    "ocho",
+    "nueve",
+    "diez",
+    "once",
+    "doce",
+    "trece",
+    "catorce",
+    "quince",
+    "dieciséis",
+    "diecisiete",
+    "dieciocho",
+    "diecinueve",
+    "veinte",
+    "veintiún",
+    "veintidós",
+    "veintitrés",
+    "veinticuatro",
+    "veinticinco",
+    "veintiséis",
+    "veintisiete",
+    "veintiocho",
+    "veintinueve",
+    "treinta",
+  ];
+  private numeroEnPalabras(n: number): string {
+    return this.NUMS_MX[n] ?? String(n);
+  }
+  private periodicidadTexto(p: string): string {
+    switch ((p || "").toUpperCase()) {
+      case "DIARIO":
+        return "diarios";
+      case "SEMANAL":
+        return "semanales";
+      case "QUINCENAL":
+        return "quincenales";
+      case "MENSUAL":
+        return "mensuales";
+      default:
+        return "periódicos";
+    }
+  }
+  private moneyMx(n: number): string {
+    return Number(n || 0).toLocaleString("es-MX", {
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2,
+    });
+  }
+
   async generateControlCard(id: string, res: Response): Promise<void> {
     const loan = await this.loanRepo.findOne({
-      where: { id }, relations: ['customer', 'loanType'],
+      where: { id },
+      relations: ["customer", "loanType"],
     });
-    if (!loan) throw new NotFoundException('Préstamo no encontrado');
-    if (!loan.disbursedAt) throw new BadRequestException('El préstamo no ha sido desembolsado');
+    if (!loan) throw new NotFoundException("Préstamo no encontrado");
+    if (!loan.disbursedAt)
+      throw new BadRequestException("El préstamo no ha sido desembolsado");
 
     const guarantor = await this.guarantorService.findByLoan(id);
-    const company   = await this.companyService.get().catch(() => null);
-    const loanCount = await this.loanRepo.count({ where: { customerId: loan.customerId } });
+    const company = await this.companyService.get().catch(() => null);
+    const loanCount = await this.loanRepo.count({
+      where: { customerId: loan.customerId },
+    });
 
-    return this.pdfService.generateControlCard({
-      loan: {
-        id:             loan.id,
-        principalAmount: Number(loan.principalAmount),
-        interestRate:   Number(loan.interestRate),
-        totalRate:      Number((loan as any).totalRate || 0),
-        termWeeks:      loan.termWeeks,
-        frequency:      loan.frequency,
-        periodicPayment: Number(loan.periodicPayment),
-        totalAmount:    Number(loan.totalAmount),
-        disbursedAt:    loan.disbursedAt,
+    return this.pdfService.generateControlCard(
+      {
+        loan: {
+          id: loan.id,
+          principalAmount: Number(loan.principalAmount),
+          interestRate: Number(loan.interestRate),
+          totalRate: Number((loan as any).totalRate || 0),
+          termWeeks: loan.termWeeks,
+          frequency: loan.frequency,
+          periodicPayment: Number(loan.periodicPayment),
+          totalAmount: Number(loan.totalAmount),
+          disbursedAt: loan.disbursedAt,
+        },
+        customer: {
+          fullName: loan.customer?.fullName || "",
+          phone: loan.customer?.phone || "",
+          curp: loan.customer?.curp || "",
+        },
+        guarantor: guarantor
+          ? {
+              fullName: guarantor.fullName,
+              phone: guarantor.phone,
+            }
+          : undefined,
+        companyName: company?.name,
+        loanNumber: loanCount,
       },
-      customer: {
-        fullName: loan.customer?.fullName || '',
-        phone:    loan.customer?.phone    || '',
-        curp:     loan.customer?.curp     || '',
-      },
-      guarantor: guarantor ? {
-        fullName: guarantor.fullName,
-        phone:    guarantor.phone,
-      } : undefined,
-      companyName: company?.name,
-      loanNumber:  loanCount,
-    }, res);
+      res,
+    );
   }
 
   async generateSimulationPdf(dto: any, res: Response): Promise<void> {
-    const sim     = await this.simulate(dto);
+    const sim = await this.simulate(dto);
     const company = await this.companyService.get().catch(() => null);
-    return this.pdfService.generateSimulationPdf({
-      principalAmount: dto.principalAmount,
-      interestRate:    sim.percentage,
-      termWeeks:       sim.days,
-      frequency:       'DIARIO',
-      totalRate:       sim.percentage,
-      periodicPayment: sim.periodicPayment,
-      totalPayment:    sim.totalPayment,
-      totalInterest:   sim.totalInterest,
-      schedule:        sim.schedule,
-      customerName:    dto.customerName,
-      generatedAt:     new Date(),
-      companyName:     company?.name,
-      legalFooter:     company?.legalFooter,
-    }, res);
+    return this.pdfService.generateSimulationPdf(
+      {
+        principalAmount: dto.principalAmount,
+        interestRate: sim.percentage,
+        termWeeks: sim.days,
+        frequency: "DIARIO",
+        totalRate: sim.percentage,
+        periodicPayment: sim.periodicPayment,
+        totalPayment: sim.totalPayment,
+        totalInterest: sim.totalInterest,
+        schedule: sim.schedule,
+        customerName: dto.customerName,
+        generatedAt: new Date(),
+        companyName: company?.name,
+        legalFooter: company?.legalFooter,
+      },
+      res,
+    );
   }
 
   /**
@@ -901,143 +1369,243 @@ export class LoansService {
   async generateSchedulePdf(id: string, res: Response): Promise<void> {
     const loan = await this.loanRepo.findOne({
       where: { id },
-      relations: ['customer', 'loanType', 'paymentSchedules'],
+      relations: ["customer", "loanType", "paymentSchedules"],
     });
-    if (!loan) throw new NotFoundException('Préstamo no encontrado');
+    if (!loan) throw new NotFoundException("Préstamo no encontrado");
 
     const company = await this.companyService.get().catch(() => null);
     const schedules = (loan.paymentSchedules || []).sort(
       (a, b) => a.periodNumber - b.periodNumber,
     );
 
-    return this.pdfService.generateSimulationPdf({
-      principalAmount: Number(loan.principalAmount),
-      interestRate:    Number(loan.interestRate),
-      termWeeks:       loan.termWeeks,
-      frequency:       loan.frequency,
-      totalRate:       Number((loan as any).totalRate || 0),
-      periodicPayment: Number(loan.periodicPayment || 0),
-      totalPayment:    Number(loan.totalAmount || 0),
-      totalInterest:   Number(loan.totalAmount || 0) - Number(loan.principalAmount),
-      schedule: schedules.map((s) => ({
-        period:    s.periodNumber,
-        dueDate:   s.dueDate,
-        payment:   Number(s.totalDue),
-        principal: Number(s.principalDue),
-        interest:  Number(s.interestDue),
-        balance:   Number(s.balanceDue),
-      })),
-      customerName: loan.customer?.fullName,
-      generatedAt:  new Date(),
-      companyName:  company?.name,
-      legalFooter:  company?.legalFooter,
-      logoPath:     (company as any)?.logoPath,
-    }, res);
+    return this.pdfService.generateSimulationPdf(
+      {
+        principalAmount: Number(loan.principalAmount),
+        interestRate: Number(loan.interestRate),
+        termWeeks: loan.termWeeks,
+        frequency: loan.frequency,
+        totalRate: Number((loan as any).totalRate || 0),
+        periodicPayment: Number(loan.periodicPayment || 0),
+        totalPayment: Number(loan.totalAmount || 0),
+        totalInterest:
+          Number(loan.totalAmount || 0) - Number(loan.principalAmount),
+        schedule: schedules.map((s) => ({
+          period: s.periodNumber,
+          dueDate: s.dueDate,
+          payment: Number(s.totalDue),
+          principal: Number(s.principalDue),
+          interest: Number(s.interestDue),
+          balance: Number(s.balanceDue),
+        })),
+        customerName: loan.customer?.fullName,
+        generatedAt: new Date(),
+        companyName: company?.name,
+        legalFooter: company?.legalFooter,
+        logoPath: (company as any)?.logoPath,
+      },
+      res,
+    );
   }
 
   async generateLoanPdf(id: string, res: Response): Promise<void> {
     const loan = await this.loanRepo.findOne({
-      where: { id }, relations: ['customer', 'loanType', 'paymentSchedules'],
+      where: { id },
+      relations: ["customer", "loanType", "paymentSchedules"],
     });
-    if (!loan) throw new NotFoundException('Préstamo no encontrado');
-    if (!loan.disbursedAt) throw new BadRequestException('El préstamo no ha sido desembolsado');
+    if (!loan) throw new NotFoundException("Préstamo no encontrado");
+    if (!loan.disbursedAt)
+      throw new BadRequestException("El préstamo no ha sido desembolsado");
 
     const guarantor = await this.guarantorService.findByLoan(id);
-    const company   = await this.companyService.get().catch(() => null);
-    const schedules = (loan.paymentSchedules || []).sort((a, b) => a.periodNumber - b.periodNumber);
+    const company = await this.companyService.get().catch(() => null);
+    const schedules = (loan.paymentSchedules || []).sort(
+      (a, b) => a.periodNumber - b.periodNumber,
+    );
 
-    return this.pdfService.generateLoanPdf({
-      loan: {
-        id: loan.id,
-        principalAmount:    Number(loan.principalAmount),
-        interestRate:       Number(loan.interestRate),
-        totalRate:          Number((loan as any).totalRate || 0),
-        termWeeks:          loan.termWeeks,
-        frequency:          loan.frequency,
-        periodicPayment:    Number(loan.periodicPayment),
-        totalAmount:        Number(loan.totalAmount),
-        disbursedAt:        loan.disbursedAt,
-        disbursementMethod: loan.disbursementMethod || 'EFECTIVO',
-        restructureCount:   loan.restructureCount,
-        // Identifican el tipo de documento (contrato / convenio / reestructura)
-        status:             loan.status,
-        isConvenio:         (loan as any).isConvenio || false,
-        parentLoanId:       loan.parentLoanId || null,
-        restructureReason:  loan.restructureReason || null,
+    return this.pdfService.generateLoanPdf(
+      {
+        loan: {
+          id: loan.id,
+          principalAmount: Number(loan.principalAmount),
+          interestRate: Number(loan.interestRate),
+          totalRate: Number((loan as any).totalRate || 0),
+          termWeeks: loan.termWeeks,
+          frequency: loan.frequency,
+          periodicPayment: Number(loan.periodicPayment),
+          totalAmount: Number(loan.totalAmount),
+          disbursedAt: loan.disbursedAt,
+          disbursementMethod: loan.disbursementMethod || "EFECTIVO",
+          restructureCount: loan.restructureCount,
+          // Identifican el tipo de documento (contrato / convenio / reestructura)
+          status: loan.status,
+          isConvenio: (loan as any).isConvenio || false,
+          parentLoanId: loan.parentLoanId || null,
+          restructureReason: loan.restructureReason || null,
+        },
+        customer: {
+          fullName: loan.customer?.fullName || "",
+          curp: loan.customer?.curp || "",
+          rfc: loan.customer?.rfc,
+          phone: loan.customer?.phone || "",
+          email: loan.customer?.email,
+          address: loan.customer?.address,
+        },
+        loanType: { name: loan.loanType?.name || "" },
+        schedules,
+        guarantor: guarantor
+          ? {
+              fullName: guarantor.fullName,
+              curp: guarantor.curp,
+              rfc: guarantor.rfc,
+              phone: guarantor.phone,
+              address: guarantor.address,
+              relationship: guarantor.relationship,
+            }
+          : undefined,
+        companyName: company?.name,
+        legalFooter: company?.legalFooter,
+        logoPath: company?.logoPath,
+        companyAddress: [company.address, company.city, company.state]
+          .filter(Boolean)
+          .join(", "),
       },
-      customer: {
-        fullName: loan.customer?.fullName || '',
-        curp:     loan.customer?.curp     || '',
-        rfc:      loan.customer?.rfc,
-        phone:    loan.customer?.phone    || '',
-        email:    loan.customer?.email,
-        address:  loan.customer?.address,
-      },
-      loanType:    { name: loan.loanType?.name || '' },
-      schedules,
-      guarantor: guarantor ? {
-        fullName: guarantor.fullName, curp: guarantor.curp, rfc: guarantor.rfc,
-        phone: guarantor.phone, address: guarantor.address, relationship: guarantor.relationship,
-      } : undefined,
-      companyName: company?.name,
-      legalFooter: company?.legalFooter,
-      logoPath: company?.logoPath,
-      companyAddress: [company.address, company.city, company.state].filter(Boolean).join(', '),
-    }, res);
+      res,
+    );
   }
 }
 
 // ── LOANS CONTROLLER ──────────────────────────────────────────
-@ApiTags('loans')
+@ApiTags("loans")
 @ApiBearerAuth()
-@Controller('loans')
+@Controller("loans")
 export class LoansController {
   constructor(private loansService: LoansService) {}
 
-  @Get()      @Auth() findAll(@Query() q: any) { return this.loansService.findAll(q); }
-  @Get('reportes/proximos-liquidar') @AuthPermission('prestamos.proximos') proximosLiquidar(@Query('max') max?: string) {
+  @Get() @Auth() findAll(@Query() q: any) {
+    return this.loansService.findAll(q);
+  }
+  @Get("reportes/proximos-liquidar")
+  @AuthPermission("prestamos.proximos")
+  proximosLiquidar(@Query("max") max?: string) {
     return this.loansService.getProximosLiquidar(max ? Number(max) : 3);
   }
-  @Get(':id/renovacion-info') @Auth() renovacionInfo(@Param('id') id: string) {
+  @Get(":id/renovacion-info") @Auth() renovacionInfo(@Param("id") id: string) {
     return this.loansService.getRenovacionInfo(id);
   }
-  @Post(':id/renovar') @AuthPermission('prestamos.reestructurar')
-  renovar(@Param('id') id: string, @Body() dto: any, @CurrentUser('id') uid: string) {
+  @Post(":id/renovar")
+  @AuthPermission("prestamos.reestructurar")
+  renovar(
+    @Param("id") id: string,
+    @Body() dto: any,
+    @CurrentUser("id") uid: string,
+  ) {
     return this.loansService.renovar(id, dto, uid);
   }
 
-  @Post(':id/convenio') @AuthPermission('prestamos.reestructurar')
-  convenio(@Param('id') id: string, @Body() dto: any, @CurrentUser('id') uid: string) {
+  @Post(":id/convenio")
+  @AuthPermission("prestamos.reestructurar")
+  convenio(
+    @Param("id") id: string,
+    @Body() dto: any,
+    @CurrentUser("id") uid: string,
+  ) {
     return this.loansService.convenio(id, dto, uid);
   }
-  @Get(':id') @Auth() findOne(@Param('id') id: string) { return this.loansService.findOne(id); }
-  @Post()     @Auth() create(@Body() dto: any, @CurrentUser('id') uid: string) { return this.loansService.create(dto, uid); }
 
-  @Post('carga-manual') @Auth() cargaManual(@Body() dto: any, @CurrentUser('id') uid: string) {
+  // PDF del convenio de pago (documento legal para firma).
+  @Get(":id/convenio-pdf")
+  @Auth()
+  convenioPdf(@Param("id") id: string, @Res() res: Response) {
+    return this.loansService.getConvenioPdf(id, res);
+  }
+
+  // Corregir monto de un crédito (carga manual errónea). NO regenera calendario.
+  @Patch(":id/monto")
+  @AuthPermission("prestamos.editar-monto")
+  updateMonto(
+    @Param("id") id: string,
+    @Body() dto: { principalAmount: number; totalAmount: number },
+  ) {
+    return this.loansService.updateMonto(id, dto);
+  }
+
+  @Get(":id") @Auth() findOne(@Param("id") id: string) {
+    return this.loansService.findOne(id);
+  }
+  @Post() @Auth() create(@Body() dto: any, @CurrentUser("id") uid: string) {
+    return this.loansService.create(dto, uid);
+  }
+
+  @Post("carga-manual") @Auth() cargaManual(
+    @Body() dto: any,
+    @CurrentUser("id") uid: string,
+  ) {
     return this.loansService.cargaManual(dto, uid);
   }
 
-  @Post('simulate')     @Auth() simulate(@Body() dto: any) { return this.loansService.simulate(dto); }
-  @Post('simulate/pdf') @Auth() simulatePdf(@Body() dto: any, @Res() res: Response) { return this.loansService.generateSimulationPdf(dto, res); }
-  @Get(':id/pdf')       @Auth() loanPdf(@Param('id') id: string, @Res() res: Response) { return this.loansService.generateLoanPdf(id, res); }
-  @Get(':id/plan-pdf')  @Auth() planPdf(@Param('id') id: string, @Res() res: Response) { return this.loansService.generateSchedulePdf(id, res); }
-  @Get(':id/schedule')  @Auth() getSchedule(@Param('id') id: string) { return this.loansService.getSchedule(id); }
-  @Get(':id/control-card') @Auth() controlCard(@Param('id') id: string, @Res() res: Response) { return this.loansService.generateControlCard(id, res); }
+  @Post("simulate") @Auth() simulate(@Body() dto: any) {
+    return this.loansService.simulate(dto);
+  }
+  @Post("simulate/pdf") @Auth() simulatePdf(
+    @Body() dto: any,
+    @Res() res: Response,
+  ) {
+    return this.loansService.generateSimulationPdf(dto, res);
+  }
+  @Get(":id/pdf") @Auth() loanPdf(
+    @Param("id") id: string,
+    @Res() res: Response,
+  ) {
+    return this.loansService.generateLoanPdf(id, res);
+  }
+  @Get(":id/plan-pdf") @Auth() planPdf(
+    @Param("id") id: string,
+    @Res() res: Response,
+  ) {
+    return this.loansService.generateSchedulePdf(id, res);
+  }
+  @Get(":id/schedule") @Auth() getSchedule(@Param("id") id: string) {
+    return this.loansService.getSchedule(id);
+  }
+  @Get(":id/control-card") @Auth() controlCard(
+    @Param("id") id: string,
+    @Res() res: Response,
+  ) {
+    return this.loansService.generateControlCard(id, res);
+  }
 
-  @Post(':id/authorize') @Auth(UserRole.AUTORIZADOR, UserRole.ADMIN)
+  @Post(":id/authorize")
+  @Auth(UserRole.AUTORIZADOR, UserRole.ADMIN)
   authorize(
-    @Param('id') id: string,
-    @Body() body: { decision: 'APPROVE' | 'REJECT'; rejectionReason?: string },
-    @CurrentUser('id') uid: string,
-  ) { return this.loansService.authorize(id, body.decision, uid, body.rejectionReason); }
+    @Param("id") id: string,
+    @Body() body: { decision: "APPROVE" | "REJECT"; rejectionReason?: string },
+    @CurrentUser("id") uid: string,
+  ) {
+    return this.loansService.authorize(
+      id,
+      body.decision,
+      uid,
+      body.rejectionReason,
+    );
+  }
 
-  @Post(':id/disburse') @Auth(UserRole.ADMIN, UserRole.CAJERO)
-  disburse(@Param('id') id: string, @Body() dto: any, @CurrentUser('id') uid: string) {
+  @Post(":id/disburse")
+  @Auth(UserRole.ADMIN, UserRole.CAJERO)
+  disburse(
+    @Param("id") id: string,
+    @Body() dto: any,
+    @CurrentUser("id") uid: string,
+  ) {
     return this.loansService.disburse(id, dto, uid);
   }
 
-  @Post(':id/restructure') @AuthPermission('prestamos.reestructurar')
-  restructure(@Param('id') id: string, @Body() dto: any, @CurrentUser('id') uid: string) {
+  @Post(":id/restructure")
+  @AuthPermission("prestamos.reestructurar")
+  restructure(
+    @Param("id") id: string,
+    @Body() dto: any,
+    @CurrentUser("id") uid: string,
+  ) {
     return this.loansService.restructure(id, dto, uid);
   }
 }
@@ -1045,8 +1613,18 @@ export class LoansController {
 // ── MODULE ───────────────────────────────────────────────────
 @Module({
   imports: [
-    TypeOrmModule.forFeature([Loan, LoanType, PaymentSchedule, Customer, PlazoCredito]),
-    PdfGeneratorModule, GuarantorModule, CompanyModule, PlazosCreditoModule,
+    TypeOrmModule.forFeature([
+      Loan,
+      LoanType,
+      PaymentSchedule,
+      Customer,
+      PlazoCredito,
+    ]),
+    PdfGeneratorModule,
+    GuarantorModule,
+    CompanyModule,
+    PlazosCreditoModule,
+    ConfigMoraModule,
   ],
   providers: [LoansService, FinancialCalculator],
   controllers: [LoansController],

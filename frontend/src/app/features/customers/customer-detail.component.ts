@@ -34,6 +34,12 @@ import { ApiService, AuthService, Customer, Loan } from '../../core/index';
               <mat-icon>edit</mat-icon> Editar
             </a>
           }
+          <button mat-stroked-button (click)="imprimirHistorialPdf()">
+            <mat-icon>picture_as_pdf</mat-icon> Historial PDF
+          </button>
+          <button mat-stroked-button (click)="imprimirHistorialExcel()">
+            <mat-icon>table_view</mat-icon> Historial Excel
+          </button>
           @if (auth.can('prestamos.crear')) {
             <a mat-raised-button color="primary" routerLink="/loans/new">
               <mat-icon>add</mat-icon> Nueva solicitud
@@ -166,5 +172,22 @@ export class CustomerDetailComponent implements OnInit {
     this.api.get<Loan[]>(`/customers/${id}/loans`).subscribe({
       next: (l) => this.loans.set(l),
     });
+  }
+
+  // Historial del cliente (todos sus créditos con atrasos y moratorios) en PDF.
+  imprimirHistorialPdf() {
+    const id = this.customer()?.id;
+    if (!id) return;
+    this.pdfSvc.open(`/reports/client-history/${id}/pdf`);
+  }
+
+  // Mismo historial en Excel.
+  imprimirHistorialExcel() {
+    const id = this.customer()?.id;
+    if (!id) return;
+    this.pdfSvc.download(
+      `/reports/client-history/${id}/excel`,
+      `historial-${(this.customer()?.fullName || 'cliente').replace(/\s+/g, '-').toLowerCase()}.xlsx`,
+    );
   }
 }

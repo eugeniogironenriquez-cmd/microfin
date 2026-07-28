@@ -2,10 +2,12 @@ import { Module, Controller, Injectable, Get, Query, Res } from '@nestjs/common'
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { DataSource } from 'typeorm';
 import { ApiTags, ApiBearerAuth } from '@nestjs/swagger';
-import { Loan, Payment, Customer } from '../common/entities';
+import { Loan, Payment, Customer, PaymentSchedule } from '../common/entities';
 import { Auth } from '../common/guards/roles.guard';
 import { Response } from 'express';
 import * as ExcelJS from 'exceljs';
+import { CompanyModule } from '../company/company.module';
+import { ClientHistoryService, ClientHistoryController } from './client-history.service';
 
 @Injectable()
 export class ReportsService {
@@ -317,7 +319,9 @@ export class CollectorCashService {
         SUM(pg.moratorio_aplicado) AS moratorio,
         SUM(pg.monto_pagado) AS total,
         SUM(CASE WHEN pg.forma_pago = 'EFECTIVO' THEN pg.monto_pagado ELSE 0 END) AS efectivo,
-        SUM(CASE WHEN pg.forma_pago <> 'EFECTIVO' THEN pg.monto_pagado ELSE 0 END) AS no_efectivo
+        SUM(CASE WHEN pg.forma_pago = 'TRANSFERENCIA' THEN pg.monto_pagado ELSE 0 END) AS transferencia,
+        SUM(CASE WHEN pg.forma_pago = 'TARJETA' THEN pg.monto_pagado ELSE 0 END) AS tarjeta,
+        SUM(CASE WHEN pg.forma_pago = 'DEPOSITO' THEN pg.monto_pagado ELSE 0 END) AS deposito
       FROM pagos pg
       LEFT JOIN usuarios u ON u.id = pg.cobrador_id
       WHERE DATE(CONVERT_TZ(pg.creado_en, '+00:00', '-06:00')) >= ?
@@ -336,7 +340,8 @@ export class CollectorCashService {
         dias[dia] = {
           dia,
           cobradores: [],
-          totalDia: 0, efectivoDia: 0, noEfectivoDia: 0,
+          totalDia: 0,
+          efectivoDia: 0, transferenciaDia: 0, tarjetaDia: 0, depositoDia: 0,
           capitalDia: 0, interesDia: 0, moratorioDia: 0,
         };
       }
@@ -350,12 +355,16 @@ export class CollectorCashService {
         moratorio: Number(r.moratorio || 0),
         total: Number(r.total || 0),
         efectivo: Number(r.efectivo || 0),
-        noEfectivo: Number(r.no_efectivo || 0),
+        transferencia: Number(r.transferencia || 0),
+        tarjeta: Number(r.tarjeta || 0),
+        deposito: Number(r.deposito || 0),
       };
       dias[dia].cobradores.push(fila);
       dias[dia].totalDia += fila.total;
       dias[dia].efectivoDia += fila.efectivo;
-      dias[dia].noEfectivoDia += fila.noEfectivo;
+      dias[dia].transferenciaDia += fila.transferencia;
+      dias[dia].tarjetaDia += fila.tarjeta;
+      dias[dia].depositoDia += fila.deposito;
       dias[dia].capitalDia += fila.capital;
       dias[dia].interesDia += fila.interes;
       dias[dia].moratorioDia += fila.moratorio;
@@ -367,12 +376,14 @@ export class CollectorCashService {
     const totales = listaDias.reduce((acc: any, d: any) => {
       acc.total += d.totalDia;
       acc.efectivo += d.efectivoDia;
-      acc.noEfectivo += d.noEfectivoDia;
+      acc.transferencia += d.transferenciaDia;
+      acc.tarjeta += d.tarjetaDia;
+      acc.deposito += d.depositoDia;
       acc.capital += d.capitalDia;
       acc.interes += d.interesDia;
       acc.moratorio += d.moratorioDia;
       return acc;
-    }, { total: 0, efectivo: 0, noEfectivo: 0, capital: 0, interes: 0, moratorio: 0 });
+    }, { total: 0, efectivo: 0, transferencia: 0, tarjeta: 0, deposito: 0, capital: 0, interes: 0, moratorio: 0 });
 
     return { start, end, dias: listaDias, totales };
   }
@@ -405,14 +416,16 @@ export class CollectorCashController {
     ws.columns = [
       { header: 'Día', key: 'dia', width: 14 },
       { header: 'Cobrador', key: 'cobrador', width: 28 },
-      { header: 'Pagos', key: 'numPagos', width: 10 },
-      { header: 'Créditos', key: 'creditos', width: 10 },
-      { header: 'Capital', key: 'capital', width: 14 },
-      { header: 'Interés', key: 'interes', width: 14 },
-      { header: 'Moratorio', key: 'moratorio', width: 14 },
-      { header: 'Efectivo', key: 'efectivo', width: 14 },
-      { header: 'No efectivo', key: 'noEfectivo', width: 14 },
-      { header: 'Total a entregar', key: 'total', width: 16 },
+      { header: 'Pagos', key: 'numPagos', width: 8 },
+      { header: 'Créditos', key: 'creditos', width: 9 },
+      { header: 'Capital', key: 'capital', width: 13 },
+      { header: 'Interés', key: 'interes', width: 13 },
+      { header: 'Moratorio', key: 'moratorio', width: 13 },
+      { header: 'Efectivo', key: 'efectivo', width: 13 },
+      { header: 'Transferencia', key: 'transferencia', width: 14 },
+      { header: 'Tarjeta', key: 'tarjeta', width: 13 },
+      { header: 'Depósito', key: 'deposito', width: 13 },
+      { header: 'Total', key: 'total', width: 14 },
     ];
 
     ws.getRow(1).font = { bold: true, color: { argb: 'FFFFFFFF' } };
@@ -431,7 +444,9 @@ export class CollectorCashController {
           interes: c.interes,
           moratorio: c.moratorio,
           efectivo: c.efectivo,
-          noEfectivo: c.noEfectivo,
+          transferencia: c.transferencia,
+          tarjeta: c.tarjeta,
+          deposito: c.deposito,
           total: c.total,
         });
       }
@@ -442,7 +457,9 @@ export class CollectorCashController {
         interes: d.interesDia,
         moratorio: d.moratorioDia,
         efectivo: d.efectivoDia,
-        noEfectivo: d.noEfectivoDia,
+        transferencia: d.transferenciaDia,
+        tarjeta: d.tarjetaDia,
+        deposito: d.depositoDia,
         total: d.totalDia,
       });
       sub.font = { bold: true };
@@ -457,7 +474,9 @@ export class CollectorCashController {
       interes: totales.interes,
       moratorio: totales.moratorio,
       efectivo: totales.efectivo,
-      noEfectivo: totales.noEfectivo,
+      transferencia: totales.transferencia,
+      tarjeta: totales.tarjeta,
+      deposito: totales.deposito,
       total: totales.total,
     });
     totalRow.font = { bold: true, size: 12 };
@@ -465,7 +484,7 @@ export class CollectorCashController {
       cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFDBEAFE' } };
     });
 
-    ['capital', 'interes', 'moratorio', 'efectivo', 'noEfectivo', 'total'].forEach((key) => {
+    ['capital', 'interes', 'moratorio', 'efectivo', 'transferencia', 'tarjeta', 'deposito', 'total'].forEach((key) => {
       ws.getColumn(key).numFmt = '"$"#,##0.00';
     });
 
@@ -483,9 +502,12 @@ export class CollectorCashController {
 }
 
 @Module({
-  imports: [TypeOrmModule.forFeature([Loan, Payment, Customer])],
-  providers: [ReportsService, CollectorCashService],
-  controllers: [ReportsController, CollectorCashController],
-  exports: [ReportsService, CollectorCashService],
+  imports: [
+    TypeOrmModule.forFeature([Loan, Payment, Customer, PaymentSchedule]),
+    CompanyModule,
+  ],
+  providers: [ReportsService, CollectorCashService, ClientHistoryService],
+  controllers: [ReportsController, CollectorCashController, ClientHistoryController],
+  exports: [ReportsService, CollectorCashService, ClientHistoryService],
 })
 export class ReportsModule {}

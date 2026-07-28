@@ -266,6 +266,8 @@ export class PaymentsService {
 
     const mora = await this.getMoraInfo(loanId);
     const saldoPendiente = await this.getSaldoPendiente(loanId);
+    const saldoFavor = await this.getSaldoFavorActual(loanId);
+    const saldoFavor = await this.getSaldoFavorActual(loanId);
 
     const estadosPendientes = [
       ScheduleStatus.PENDIENTE,
@@ -316,6 +318,7 @@ export class PaymentsService {
     return {
       cuotaDiaria: Number(loan.periodicPayment),
       saldoPendiente,
+      saldoFavor,
       moraPendiente: mora.moraPendiente,
       moraPorDia: mora.moraPorDia,
       totalDiasMora: mora.totalDiasMora,
@@ -741,6 +744,132 @@ const liquidado = nuevoEstado === LoanStatus.LIQUIDADO;
     });
   }
 
+  // ── ELIMINAR UN PAGO ERRÓNEO ─────────────────────────────────
+  // Borra un pago que se registró por error y revierte TODOS sus efectos,
+  // dejando el crédito consistente. Enfoque seguro: en vez de "deshacer" cuota
+  // por cuota (frágil), se RECONSTRUYE el calendario del crédito desde cero y
+  // se reaplican los pagos restantes en orden cronológico. Todo en una
+  // transacción; si algo falla, no se borra nada.
+  //
+  // Protegido por permiso 'pagos.eliminar' en el controller.
+  async deletePayment(paymentId: string, userId: string) {
+    const pago = await this.paymentRepo.findOne({ where: { id: paymentId } });
+    if (!pago) throw new NotFoundException("Pago no encontrado");
+
+    const loanId = pago.loanId;
+    const loan = await this.loanRepo.findOne({ where: { id: loanId } });
+    if (!loan) throw new NotFoundException("Préstamo del pago no encontrado");
+
+    const qr = this.dataSource.createQueryRunner();
+    await qr.connect();
+    await qr.startTransaction();
+    try {
+      // 1) Borrar los movimientos de saldo a favor generados por ESTE pago.
+      await qr.manager.delete(CustomerCreditBalance, { paymentId });
+
+      // 2) Borrar el pago.
+      await qr.manager.delete(Payment, { id: paymentId });
+
+      // 3) Reconstruir el calendario: reiniciar todas las cuotas a PENDIENTE
+      //    con su saldo completo y mora sin pagar, para reaplicar desde cero.
+      const schedules = await qr.manager.find(PaymentSchedule, {
+        where: { loanId },
+        order: { periodNumber: "ASC" },
+      });
+      for (const s of schedules) {
+        s.balanceDue = this.calculator.round(Number(s.totalDue));
+        s.status = ScheduleStatus.PENDIENTE;
+        s.paidAt = null as any;
+        s.moraPagada = 0;
+        await qr.manager.save(s);
+      }
+
+      // 4) Reunir los pagos restantes del crédito, en orden cronológico.
+      const pagosRestantes = await qr.manager.find(Payment, {
+        where: { loanId },
+        order: { createdAt: "ASC" },
+      });
+
+      // 5) Reaplicar cada pago sobre el calendario reconstruido.
+      //    Se usa la info que cada pago guardó: las cuotas que cubrió
+      //    (cuotasPagadas JSON) y el moratorio aplicado. Esto reproduce el
+      //    estado sin depender del orden de "hoy".
+      for (const p of pagosRestantes) {
+        // 5a) Moratorio: reaplicar mora_pagada en orden de periodo.
+        let moraRestante = Number(p.lateInterestApplied || 0);
+        if (moraRestante > 0) {
+          for (const s of schedules) {
+            if (moraRestante <= 0) break;
+            const gen = Number(s.moraGenerada || 0);
+            const pag = Number(s.moraPagada || 0);
+            const pend = this.calculator.round(Math.max(0, gen - pag));
+            if (pend <= 0) continue;
+            const abono = this.calculator.round(Math.min(moraRestante, pend));
+            s.moraPagada = this.calculator.round(pag + abono);
+            moraRestante = this.calculator.round(moraRestante - abono);
+            await qr.manager.save(s);
+          }
+        }
+
+        // 5b) Capital+interés: reaplicar sobre las cuotas que este pago cubrió.
+        //     Si guardó cuotasPagadas (periodos), se usan esos; si no, se
+        //     aplica en orden a las pendientes hasta agotar el monto.
+        let montoCapInt = this.calculator.round(
+          Number(p.capitalApplied || 0) + Number(p.interestApplied || 0),
+        );
+        if (montoCapInt > 0) {
+          let periodos: number[] = [];
+          if (p.cuotasPagadas) {
+            try {
+              const arr = JSON.parse(p.cuotasPagadas as any);
+              if (Array.isArray(arr)) {
+                periodos = arr
+                  .map((x: any) => Number(x?.periodo ?? x))
+                  .filter((n: any) => !isNaN(n));
+              }
+            } catch { /* si no parsea, se aplica en orden */ }
+          }
+          const objetivo = periodos.length > 0
+            ? schedules.filter((s) => periodos.includes(s.periodNumber))
+            : schedules.filter((s) => s.status !== ScheduleStatus.PAGADO);
+
+          for (const s of objetivo) {
+            if (montoCapInt <= 0) break;
+            const aplica = this.calculator.round(
+              Math.min(montoCapInt, Number(s.balanceDue)),
+            );
+            s.balanceDue = this.calculator.round(Number(s.balanceDue) - aplica);
+            montoCapInt = this.calculator.round(montoCapInt - aplica);
+            s.status = s.balanceDue <= 0 ? ScheduleStatus.PAGADO : ScheduleStatus.PARCIAL;
+            if (s.status === ScheduleStatus.PAGADO) s.paidAt = p.paymentDate;
+            await qr.manager.save(s);
+          }
+        }
+      }
+
+      // 6) Reconstruir los movimientos de saldo a favor de los pagos restantes.
+      //    (Se borraron solo los del pago eliminado; los demás siguen intactos,
+      //     así que el saldo a favor de los otros pagos se conserva.)
+
+      await qr.commitTransaction();
+    } catch (err) {
+      await qr.rollbackTransaction();
+      throw err;
+    } finally {
+      await qr.release();
+    }
+
+    // 7) Recalcular el estado del préstamo (ACTIVO/ATRASADO/VENCIDO/LIQUIDADO).
+    await this.overdueJobService.refreshLoanStatus(loanId);
+
+    return {
+      deleted: true,
+      paymentId,
+      loanId,
+      message: "Pago eliminado y crédito recalculado correctamente.",
+    };
+  }
+
   async getTodayPayments() {
     // Los paymentDate se guardan en hora de México (UTC-6). Para "hoy en México",
     // tomamos la fecha-calendario de México y construimos medianoche en esa hora.
@@ -1050,6 +1179,16 @@ export class PaymentsController {
   @Auth()
   history(@Param("loanId") loanId: string) {
     return this.paymentsService.getHistory(loanId);
+  }
+
+  // Eliminar un pago erróneo (revierte efectos y recalcula el crédito).
+  @Delete(":id")
+  @AuthPermission("pagos.eliminar")
+  eliminarPago(
+    @Param("id") id: string,
+    @CurrentUser("id") userId: string,
+  ) {
+    return this.paymentsService.deletePayment(id, userId);
   }
 
   @Get(":id/receipt")

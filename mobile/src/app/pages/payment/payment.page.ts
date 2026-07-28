@@ -4,7 +4,7 @@ import { FormsModule } from "@angular/forms";
 import { ActivatedRoute, Router } from "@angular/router";
 import { ThermalPrinterService } from "../../core/thermal-printer.service";
 // en el addIcons, agrega: printOutline
-import { printOutline } from "ionicons/icons";
+import { printOutline, informationCircleOutline } from "ionicons/icons";
 import {
   IonHeader,
   IonToolbar,
@@ -197,6 +197,21 @@ type ModoPago = "DIA" | "SELECTIVO" | "TOTAL" | "MORATORIO";
               </ion-input>
             </ion-item>
 
+            <!-- Aviso de excedente: informa a dónde irá el sobrante -->
+            @if (excedenteEstimado > 0 && !usarSaldoFavor) {
+              <ion-text color="medium">
+                <p class="excedente-hint">
+                  <ion-icon name="information-circle-outline"></ion-icon>
+                  Excedente de {{ excedenteEstimado | currency: "MXN" }}:
+                  @if (cobrarMora) {
+                    se aplica primero a la mora y el resto queda como saldo a favor.
+                  } @else {
+                    se guardará como saldo a favor del cliente.
+                  }
+                </p>
+              </ion-text>
+            }
+
             <!-- Método -->
             <ion-item>
               <ion-label position="stacked">Método</ion-label>
@@ -212,6 +227,45 @@ type ModoPago = "DIA" | "SELECTIVO" | "TOTAL" | "MORATORIO";
                 <ion-select-option value="DEPOSITO">Depósito</ion-select-option>
               </ion-select>
             </ion-item>
+
+            <!-- Usar saldo a favor (si el cliente tiene disponible) -->
+            @if (saldoFavorDisponible() > 0) {
+              <ion-item lines="none" class="saldo-check">
+                <ion-checkbox
+                  slot="start"
+                  [(ngModel)]="usarSaldoFavor"
+                  (ionChange)="onToggleSaldoFavor()"
+                ></ion-checkbox>
+                <ion-label class="ion-text-wrap">
+                  Usar saldo a favor ({{
+                    saldoFavorDisponible() | currency: "MXN"
+                  }} disponible)
+                </ion-label>
+              </ion-item>
+
+              @if (usarSaldoFavor) {
+                <ion-item>
+                  <ion-label position="stacked">
+                    Monto a usar (vacío = todo el disponible)
+                  </ion-label>
+                  <ion-input
+                    type="number"
+                    [(ngModel)]="montoSaldoFavor"
+                    [placeholder]="saldoFavorDisponible().toFixed(2)"
+                  >
+                    <span slot="start">$&nbsp;</span>
+                  </ion-input>
+                </ion-item>
+                <ion-text color="medium">
+                  <p class="excedente-hint">
+                    <ion-icon name="information-circle-outline"></ion-icon>
+                    Se aplicará
+                    {{ saldoFavorAUsar() | currency: "MXN" }} del saldo a favor a
+                    este pago.
+                  </p>
+                </ion-text>
+              }
+            }
 
             <!-- Geolocalización -->
             <ion-chip [color]="geo() ? 'success' : 'medium'">
@@ -307,6 +361,19 @@ type ModoPago = "DIA" | "SELECTIVO" | "TOTAL" | "MORATORIO";
         align-items: center;
         gap: 6px;
       }
+      .excedente-hint {
+        font-size: 13px;
+        display: flex;
+        align-items: flex-start;
+        gap: 6px;
+        margin: 6px 4px 0;
+        line-height: 1.35;
+      }
+      .excedente-hint ion-icon {
+        font-size: 16px;
+        margin-top: 1px;
+        flex-shrink: 0;
+      }
       ion-segment {
         margin-bottom: 8px;
       }
@@ -337,6 +404,13 @@ type ModoPago = "DIA" | "SELECTIVO" | "TOTAL" | "MORATORIO";
       .mora-check {
         --background: #fffbeb;
         border: 1px solid #fde68a;
+        border-radius: 8px;
+        margin: 8px 0;
+        font-size: 13px;
+      }
+      .saldo-check {
+        --background: #ecfdf5;
+        border: 1px solid #a7f3d0;
         border-radius: 8px;
         margin: 8px 0;
         font-size: 13px;
@@ -381,6 +455,9 @@ export class PaymentPage implements OnInit {
   paymentType: ModoPago = "DIA";
   method: PaymentMethod = "EFECTIVO";
   cobrarMora = false;
+  // Uso de saldo a favor
+  usarSaldoFavor = false;
+  montoSaldoFavor: number | null = null;   // null = usar todo el disponible
 
   cuotas = signal<CuotaPendiente[]>([]);
   seleccionadas = signal<Set<number>>(new Set());
@@ -396,6 +473,36 @@ export class PaymentPage implements OnInit {
 
   moraPendiente = computed(() => Number(this.info()?.moraPendiente || 0));
 
+  // Saldo a favor disponible: si hay info del backend (con conexión) se usa ese;
+  // si no, se cae al valor cacheado del cliente (para funcionar offline).
+  saldoFavorDisponible = computed(() => {
+    const info = this.info();
+    if (info && info.saldoFavor != null) return Number(info.saldoFavor);
+    return Number(this.client()?.saldoFavor || 0);
+  });
+
+  // Excedente estimado: cuánto del monto recibido supera lo que se está pagando
+  // (cuotas seleccionadas o saldo/cuota según el modo). Solo informativo para
+  // el cobrador; el cálculo definitivo lo hace el backend.
+  get excedenteEstimado(): number {
+    const monto = Number(this.amount || 0);
+    if (monto <= 0) return 0;
+    let requerido = 0;
+    if (this.paymentType === "SELECTIVO") {
+      for (const c of this.cuotas()) {
+        if (this.seleccionadas().has(c.periodo)) requerido += Number(c.monto);
+      }
+      if (this.cobrarMora) requerido += this.moraPendiente();
+    } else if (this.paymentType === "DIA") {
+      requerido = Number(this.info()?.cuotaHoy?.monto ?? this.client()?.periodicPayment ?? 0);
+    } else if (this.paymentType === "TOTAL") {
+      requerido = Number(this.info()?.saldoPendiente ?? 0);
+    } else if (this.paymentType === "MORATORIO") {
+      requerido = this.moraPendiente();
+    }
+    return Math.round(Math.max(0, monto - requerido) * 100) / 100;
+  }
+
   constructor() {
     addIcons({
       locationOutline,
@@ -406,6 +513,7 @@ export class PaymentPage implements OnInit {
       cloudOfflineOutline,
       checkboxOutline,
       printOutline,
+      informationCircleOutline,
     });
   }
 
@@ -474,6 +582,21 @@ export class PaymentPage implements OnInit {
     this.amount = Math.round(total * 100) / 100;
   }
 
+  // Monto de saldo a favor que se aplicará: el capturado (si es válido) o todo
+  // el disponible. Nunca más que el disponible.
+  saldoFavorAUsar(): number {
+    if (!this.usarSaldoFavor) return 0;
+    const disp = this.saldoFavorDisponible();
+    const capturado = Number(this.montoSaldoFavor || 0);
+    if (capturado > 0) return Math.min(capturado, disp);
+    return disp;
+  }
+
+  onToggleSaldoFavor() {
+    // Al desactivar, limpiar el monto parcial para no arrastrar un valor viejo.
+    if (!this.usarSaldoFavor) this.montoSaldoFavor = null;
+  }
+
   async submit() {
     const isSelectivo = this.paymentType === "SELECTIVO";
     if (isSelectivo && this.seleccionadas().size === 0) {
@@ -516,6 +639,16 @@ export class PaymentPage implements OnInit {
         paymentType: isSelectivo ? "TOTAL" : (this.paymentType as PaymentType),
         periodos: periodosPagados,
         applyExcedenteToMora: isSelectivo ? this.cobrarMora : undefined,
+        // Uso de saldo a favor (si el cobrador lo activó).
+        usarSaldoFavor: this.usarSaldoFavor,
+        montoSaldoFavor: this.usarSaldoFavor
+          ? this.saldoFavorAUsar()
+          : undefined,
+        // El excedente se guarda como saldo a favor, EXCEPTO cuando se está
+        // usando saldo a favor en este mismo pago (el backend lo prohíbe para
+        // no anular el uso). Si se cobra mora, el backend la salda primero y
+        // guarda el resto.
+        guardarExcedenteSaldoFavor: !this.usarSaldoFavor,
         method: this.method,
         lat: this.geo()?.lat,
         lng: this.geo()?.lng,

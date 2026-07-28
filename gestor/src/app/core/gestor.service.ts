@@ -111,6 +111,7 @@ export class GestorService {
       nivel:           (c.nivel || c.level || 'VERDE') as NivelSemaforo,
       cuotasVencidas:  Number(c.cuotasVencidas ?? c.overdueCount ?? 0),
       saldoPendiente:  c.saldoPendiente != null ? Number(c.saldoPendiente) : undefined,
+      moraPendiente:   c.moraPendiente != null ? Number(c.moraPendiente) : undefined,
       periodicPayment: c.periodicPayment != null ? Number(c.periodicPayment) : undefined,
       principalAmount: c.principalAmount != null ? Number(c.principalAmount) : undefined,
       status:          c.status,

@@ -107,8 +107,16 @@ function labelDia(iso: string): string {
           <span class="kpi-val">{{ data()!.totales.efectivo | currency:'MXN':'symbol':'1.2-2' }}</span>
         </mat-card>
         <mat-card class="kpi">
-          <span class="kpi-lbl">No efectivo (transf./tarjeta)</span>
-          <span class="kpi-val">{{ data()!.totales.noEfectivo | currency:'MXN':'symbol':'1.2-2' }}</span>
+          <span class="kpi-lbl">Transferencia</span>
+          <span class="kpi-val">{{ data()!.totales.transferencia | currency:'MXN':'symbol':'1.2-2' }}</span>
+        </mat-card>
+        <mat-card class="kpi">
+          <span class="kpi-lbl">Tarjeta</span>
+          <span class="kpi-val">{{ data()!.totales.tarjeta | currency:'MXN':'symbol':'1.2-2' }}</span>
+        </mat-card>
+        <mat-card class="kpi">
+          <span class="kpi-lbl">Depósito</span>
+          <span class="kpi-val">{{ data()!.totales.deposito | currency:'MXN':'symbol':'1.2-2' }}</span>
         </mat-card>
         <mat-card class="kpi">
           <span class="kpi-lbl">Moratorio cobrado</span>
@@ -169,6 +177,21 @@ function labelDia(iso: string): string {
               <th mat-header-cell *matHeaderCellDef class="r">Efectivo</th>
               <td mat-cell *matCellDef="let r" class="r mono ok">{{ r.efectivo | currency:'MXN':'symbol':'1.2-2' }}</td>
               <td mat-footer-cell *matFooterCellDef class="r mono ok">{{ dia.efectivoDia | currency:'MXN':'symbol':'1.2-2' }}</td>
+            </ng-container>
+            <ng-container matColumnDef="transferencia">
+              <th mat-header-cell *matHeaderCellDef class="r">Transferencia</th>
+              <td mat-cell *matCellDef="let r" class="r mono">{{ r.transferencia | currency:'MXN':'symbol':'1.2-2' }}</td>
+              <td mat-footer-cell *matFooterCellDef class="r mono">{{ dia.transferenciaDia | currency:'MXN':'symbol':'1.2-2' }}</td>
+            </ng-container>
+            <ng-container matColumnDef="tarjeta">
+              <th mat-header-cell *matHeaderCellDef class="r">Tarjeta</th>
+              <td mat-cell *matCellDef="let r" class="r mono">{{ r.tarjeta | currency:'MXN':'symbol':'1.2-2' }}</td>
+              <td mat-footer-cell *matFooterCellDef class="r mono">{{ dia.tarjetaDia | currency:'MXN':'symbol':'1.2-2' }}</td>
+            </ng-container>
+            <ng-container matColumnDef="deposito">
+              <th mat-header-cell *matHeaderCellDef class="r">Depósito</th>
+              <td mat-cell *matCellDef="let r" class="r mono">{{ r.deposito | currency:'MXN':'symbol':'1.2-2' }}</td>
+              <td mat-footer-cell *matFooterCellDef class="r mono">{{ dia.depositoDia | currency:'MXN':'symbol':'1.2-2' }}</td>
             </ng-container>
             <ng-container matColumnDef="total">
               <th mat-header-cell *matHeaderCellDef class="r">Total</th>
@@ -237,7 +260,7 @@ export class CollectorCashComponent implements OnInit {
   exportando = signal(false);
   data = signal<any | null>(null);
 
-  cols = ['cobrador', 'numPagos', 'creditos', 'capital', 'interes', 'moratorio', 'efectivo', 'total'];
+  cols = ['cobrador', 'numPagos', 'creditos', 'capital', 'interes', 'moratorio', 'efectivo', 'transferencia', 'tarjeta', 'deposito', 'total'];
 
   filtroForm = this.fb.group({
     start: [new Date(`${inicioMesMexico()}T00:00:00`)],

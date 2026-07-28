@@ -18,6 +18,7 @@ import {
   LoanStatus,
   ScheduleStatus,
   UserRole,
+  CustomerCreditBalance,
 } from "../common/entities";
 import { Auth, CurrentUser } from "../common/guards/roles.guard";
 import { SemaforoService } from "../semaforo/semaforo.module";
@@ -31,6 +32,8 @@ export class CollectionService {
     @InjectRepository(CollectorAssignment)
     private assignRepo: Repository<CollectorAssignment>,
     @InjectRepository(Loan) private loanRepo: Repository<Loan>,
+    @InjectRepository(CustomerCreditBalance)
+    private saldoFavorRepo: Repository<CustomerCreditBalance>,
     private semaforoService: SemaforoService,
   ) {}
 
@@ -50,6 +53,29 @@ export class CollectionService {
 
     // Umbral configurado del semáforo (el mismo que usa la web).
     const cfg = await this.semaforoService.getConfig();
+
+    // Saldo a favor de cada crédito, en UNA sola consulta (batch), para no
+    // hacer N queries dentro del map. Es la suma de ENTRADA − SALIDA por crédito.
+    const loanIds = loans.map((l) => l.id);
+    const saldoFavorPorCredito = new Map<string, number>();
+    if (loanIds.length > 0) {
+      const filas = await this.saldoFavorRepo
+        .createQueryBuilder("s")
+        .select("s.prestamo_id", "loanId")
+        .addSelect(
+          'COALESCE(SUM(CASE WHEN s.tipo = "ENTRADA" THEN s.monto ELSE -s.monto END), 0)',
+          "saldo",
+        )
+        .where("s.prestamo_id IN (:...loanIds)", { loanIds })
+        .groupBy("s.prestamo_id")
+        .getRawMany();
+      for (const f of filas) {
+        saldoFavorPorCredito.set(
+          f.loanId,
+          Math.round(Number(f.saldo || 0) * 100) / 100,
+        );
+      }
+    }
 
     // Calcular cuotas vencidas + nivel sobre las cuotas YA cargadas (sin
     // consultas extra). Misma lógica que SemaforoService.countOverdue:
@@ -148,6 +174,8 @@ export class CollectionService {
         proximaCuota,
         cuotaHoy,
         tieneCuotaHoy: cuotaHoy !== null,
+        // Saldo a favor del cliente (para poder usarlo/mostrarlo, incl. offline).
+        saldoFavor: saldoFavorPorCredito.get(loan.id) || 0,
       };
     });
   }
@@ -354,7 +382,7 @@ export class CollectionController {
 
 @Module({
   imports: [
-    TypeOrmModule.forFeature([CollectionVisit, CollectorAssignment, Loan]),
+    TypeOrmModule.forFeature([CollectionVisit, CollectorAssignment, Loan, CustomerCreditBalance]),
     SemaforoModule,
   ],
   providers: [CollectionService],

@@ -17,7 +17,7 @@ import { MatDialog, MatDialogModule } from "@angular/material/dialog";
 import { MatSnackBar } from "@angular/material/snack-bar";
 import { firstValueFrom } from "rxjs";
 import { environment } from "../../../environments/environment";
-import { ApiService } from "../../core/index";
+import { ApiService, AuthService } from "../../core/index";
 
 @Component({
   selector: "app-payments-query",
@@ -234,6 +234,16 @@ import { ApiService } from "../../core/index";
                 >
                   <mat-icon>share</mat-icon>
                 </button>
+                @if (auth.can('pagos.eliminar')) {
+                  <button
+                    mat-icon-button
+                    color="warn"
+                    (click)="eliminarPago(p)"
+                    matTooltip="Eliminar pago (registrado por error)"
+                  >
+                    <mat-icon>delete_outline</mat-icon>
+                  </button>
+                }
               </td>
             </ng-container>
             <tr mat-header-row *matHeaderRowDef="cols"></tr>
@@ -380,6 +390,7 @@ export class PaymentsQueryComponent implements OnInit {
   pagos = signal<any[]>([]);
   printing = signal(false);
   private api = inject(ApiService);
+  readonly auth = inject(AuthService);
 
   // Filtro local por nombre de cliente (sobre lo ya consultado).
   filtroCliente = signal<string>("");
@@ -457,6 +468,39 @@ export class PaymentsQueryComponent implements OnInit {
   // ── Detalle ──
   verDetalle(p: any) {
     this.dialog.open(PaymentDetailDialog, { data: p, width: "440px" });
+  }
+
+  // Eliminar un pago registrado por error. Pide confirmación explícita porque
+  // revierte los efectos del pago y recalcula el crédito.
+  eliminarPago(p: any) {
+    const folio = p.receiptNumber || p.id?.substring(0, 8) || "";
+    const monto = Number(p.amountPaid || 0).toLocaleString("es-MX", {
+      style: "currency",
+      currency: "MXN",
+    });
+    const ok = confirm(
+      `¿Eliminar el pago ${folio} por ${monto}?\n\n` +
+        `Esta acción revierte el pago y recalcula las cuotas, atrasos y ` +
+        `moratorios del crédito. No se puede deshacer.`,
+    );
+    if (!ok) return;
+
+    this.api.delete<any>(`/payments/${p.id}`).subscribe({
+      next: () => {
+        this.snackbar.open("Pago eliminado y crédito recalculado", "OK", {
+          duration: 4000,
+        });
+        // Quitar de la lista sin re-consultar todo.
+        this.pagos.set(this.pagos().filter((x) => x.id !== p.id));
+      },
+      error: (err) => {
+        const msg =
+          err?.status === 403
+            ? "No tienes permiso para eliminar pagos"
+            : err?.error?.message || "No se pudo eliminar el pago";
+        this.snackbar.open(msg, "Cerrar", { duration: 5000 });
+      },
+    });
   }
 
   // ── Reimpresión / comprobante (mismo patrón del monitor) ──

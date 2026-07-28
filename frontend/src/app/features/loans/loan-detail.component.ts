@@ -1,5 +1,6 @@
-import { Component, OnInit, inject, signal } from '@angular/core';
+import { Component, OnInit, Inject, inject, signal } from '@angular/core';
 import { CommonModule, CurrencyPipe, DatePipe } from '@angular/common';
+import { FormsModule } from '@angular/forms';
 import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { MatCardModule } from '@angular/material/card';
 import { MatButtonModule } from '@angular/material/button';
@@ -11,10 +12,117 @@ import { MatSnackBar, MatSnackBarModule } from '@angular/material/snack-bar';
 import { MatDividerModule } from '@angular/material/divider';
 import { MatChipsModule } from '@angular/material/chips';
 import { MatTooltipModule } from '@angular/material/tooltip';
+import {
+  MatDialog, MatDialogModule, MatDialogRef, MAT_DIALOG_DATA,
+} from '@angular/material/dialog';
+import { MatFormFieldModule } from '@angular/material/form-field';
+import { MatInputModule } from '@angular/material/input';
 import { HttpClient, HttpHeaders } from '@angular/common/http';
 import { ApiService, AuthService, Loan, PaymentSchedule } from '../../core/index';
 import { PdfDownloadService } from '../../core/pdf-download.service';
 import { GuarantorFormComponent } from './guarantor-form.component';
+
+// ══════════════════════════════════════════════════════════════════
+// DIÁLOGO: Editar monto del crédito
+// Corrige monto_principal y total_amount SIN regenerar el calendario.
+// Uso previsto: corrección de cargas manuales con monto erróneo.
+// ══════════════════════════════════════════════════════════════════
+interface EditMontoData {
+  loanId: string;
+  principalAmount: number;
+  totalAmount: number;
+}
+
+@Component({
+  selector: 'app-edit-monto-dialog',
+  standalone: true,
+  imports: [
+    CommonModule, FormsModule, CurrencyPipe,
+    MatDialogModule, MatButtonModule, MatIconModule,
+    MatFormFieldModule, MatInputModule,
+  ],
+  template: `
+    <h2 mat-dialog-title>
+      <mat-icon style="vertical-align:middle;color:#C2410C">edit</mat-icon>
+      Editar monto del crédito
+    </h2>
+
+    <mat-dialog-content>
+      <div class="warn-box">
+        <mat-icon>warning_amber</mat-icon>
+        <span>
+          Esta opción corrige el monto por una carga errónea.
+          <strong>No regenera el calendario de pagos</strong> ni recalcula las cuotas.
+        </span>
+      </div>
+
+      <mat-form-field appearance="outline" class="w-full">
+        <mat-label>Monto principal</mat-label>
+        <span matTextPrefix>$&nbsp;</span>
+        <input matInput type="number" min="0" step="0.01" [(ngModel)]="principal">
+      </mat-form-field>
+
+      <mat-form-field appearance="outline" class="w-full">
+        <mat-label>Total a pagar</mat-label>
+        <span matTextPrefix>$&nbsp;</span>
+        <input matInput type="number" min="0" step="0.01" [(ngModel)]="total">
+      </mat-form-field>
+
+      <div class="prev-row">
+        <span>Antes:</span>
+        <span class="mono">{{ data.principalAmount | currency:'MXN' }} / {{ data.totalAmount | currency:'MXN' }}</span>
+      </div>
+    </mat-dialog-content>
+
+    <mat-dialog-actions align="end">
+      <button mat-stroked-button (click)="cancelar()">Cancelar</button>
+      <button mat-raised-button color="primary" (click)="guardar()"
+              [disabled]="!valido()">
+        <mat-icon>save</mat-icon> Guardar cambios
+      </button>
+    </mat-dialog-actions>
+  `,
+  styles: [`
+    .w-full { width:100%; margin-top:8px; }
+    .warn-box {
+      display:flex; align-items:flex-start; gap:10px;
+      background:#FFF7ED; border:1px solid #FED7AA; border-radius:8px;
+      padding:12px; margin-bottom:16px; font-size:13px; color:#9A3412;
+    }
+    .warn-box mat-icon { color:#EA580C; flex-shrink:0; }
+    .prev-row {
+      display:flex; justify-content:space-between; gap:12px;
+      font-size:13px; color:#718096; padding:4px 2px;
+    }
+    .mono { font-variant-numeric:tabular-nums; font-weight:600; }
+  `],
+})
+export class EditMontoDialogComponent {
+  principal: number;
+  total: number;
+
+  constructor(
+    public dialogRef: MatDialogRef<EditMontoDialogComponent>,
+    @Inject(MAT_DIALOG_DATA) public data: EditMontoData,
+  ) {
+    this.principal = Number(data.principalAmount || 0);
+    this.total = Number(data.totalAmount || 0);
+  }
+
+  valido(): boolean {
+    return this.principal > 0 && this.total > 0;
+  }
+
+  cancelar() { this.dialogRef.close(); }
+
+  guardar() {
+    if (!this.valido()) return;
+    this.dialogRef.close({
+      principalAmount: Number(this.principal),
+      totalAmount: Number(this.total),
+    });
+  }
+}
 
 @Component({
   selector: 'app-loan-detail',
@@ -23,7 +131,8 @@ import { GuarantorFormComponent } from './guarantor-form.component';
     CommonModule, CurrencyPipe, DatePipe, RouterLink,
     MatCardModule, MatButtonModule, MatIconModule, MatTabsModule,
     MatTableModule, MatProgressSpinnerModule, MatSnackBarModule,
-    MatDividerModule, MatChipsModule, MatTooltipModule, GuarantorFormComponent,
+    MatDividerModule, MatChipsModule, MatTooltipModule, MatDialogModule,
+    GuarantorFormComponent,
   ],
   template: `
     <div class="page-header">
@@ -87,7 +196,17 @@ import { GuarantorFormComponent } from './guarantor-form.component';
                     <div class="info-row"><span>Estado</span>
                       <span class="badge badge-{{ loan()!.status | lowercase }}">{{ loan()!.status }}</span>
                     </div>
-                    <div class="info-row"><span>Monto</span><strong>{{ loan()!.principalAmount | currency:'MXN' }}</strong></div>
+                    <div class="info-row"><span>Monto</span>
+                      <strong class="monto-editable">
+                        {{ loan()!.principalAmount | currency:'MXN' }}
+                        @if (auth.can('prestamos.editar-monto')) {
+                          <button mat-icon-button class="edit-monto-btn"
+                                  matTooltip="Corregir monto" (click)="editarMonto()">
+                            <mat-icon>edit</mat-icon>
+                          </button>
+                        }
+                      </strong>
+                    </div>
                     <div class="info-row"><span>Plazo</span><strong>{{ loan()!.termWeeks }} días</strong></div>
                     <div class="info-row"><span>Cuota diaria</span><strong>{{ loan()!.periodicPayment | currency:'MXN' }}</strong></div>
                     <div class="info-row"><span>Total a pagar</span><strong>{{ loan()!.totalAmount | currency:'MXN' }}</strong></div>
@@ -317,6 +436,14 @@ import { GuarantorFormComponent } from './guarantor-form.component';
     .docs-title { font-size:13px; color:#4A5568; margin:16px 0 8px; }
     .desc-block { margin:20px 0 4px; }
     .desc-label { display:block; font-size:13px; font-weight:600; color:#4A5568; margin-bottom:8px; }
+    /* Monto editable con ícono de lápiz */
+    .monto-editable { display:inline-flex; align-items:center; gap:2px; }
+    .edit-monto-btn {
+      width:28px; height:28px; line-height:28px; padding:0;
+    }
+    .edit-monto-btn mat-icon {
+      font-size:16px; width:16px; height:16px; color:#C2410C;
+    }
   `],
 })
 export class LoanDetailComponent implements OnInit {
@@ -327,6 +454,7 @@ export class LoanDetailComponent implements OnInit {
   private snackbar = inject(MatSnackBar);
   private pdfSvc   = inject(PdfDownloadService);
   private http     = inject(HttpClient);
+  private dialog   = inject(MatDialog);
 
   loan      = signal<Loan | null>(null);
   schedules = signal<PaymentSchedule[]>([]);
@@ -401,6 +529,41 @@ export class LoanDetailComponent implements OnInit {
   loadSchedule(id: string) {
     this.api.get<any>('/loans/' + id + '/schedule').subscribe({
       next: (s) => this.schedules.set(Array.isArray(s) ? s : s?.data ?? []),
+    });
+  }
+
+  // ── Editar monto (corrección de carga) ──
+  editarMonto() {
+    const l = this.loan();
+    if (!l) return;
+
+    const ref = this.dialog.open(EditMontoDialogComponent, {
+      width: '420px',
+      data: {
+        loanId: l.id,
+        principalAmount: Number(l.principalAmount || 0),
+        totalAmount: Number(l.totalAmount || 0),
+      } as EditMontoData,
+    });
+
+    ref.afterClosed().subscribe((res) => {
+      if (!res) return;  // canceló
+      this.api.patch<Loan>('/loans/' + l.id + '/monto', {
+        principalAmount: res.principalAmount,
+        totalAmount: res.totalAmount,
+      }).subscribe({
+        next: (actualizado) => {
+          // Refrescar el crédito en pantalla con lo que devuelva el backend.
+          this.loan.set(actualizado ?? { ...l, ...res });
+          this.snackbar.open('Monto actualizado', 'OK', { duration: 3000 });
+        },
+        error: (err: any) => {
+          const msg = err?.status === 403
+            ? 'No tienes permiso para editar el monto'
+            : (err.error?.message || 'No se pudo actualizar el monto');
+          this.snackbar.open(msg, 'Cerrar', { duration: 5000 });
+        },
+      });
     });
   }
 
