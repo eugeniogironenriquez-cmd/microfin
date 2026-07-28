@@ -47,6 +47,8 @@ export interface PaymentSchedule {
     balanceDue: number; lateInterest: number; status: string; paidAt?: string;
     daysOverdue?: number; estimatedLateInterest?: number;
     moraGenerada?: number; moraPagada?: number;
+    // Observaciones del cobrador (notas de la tabla pagos, cruzadas por cuota)
+    notas?: string | null;
   }
 export interface Payment {
   id: string; loanId: string; collectorId?: string; amountPaid: number;
