@@ -4,6 +4,7 @@ import { firstValueFrom } from "rxjs";
 import { environment } from "../../environments/environment";
 import { StorageService } from "./storage.service";
 import { NetworkService } from "./network.service";
+import { AuthService } from "./auth.service";
 import {
   AssignedClient,
   LocalPayment,
@@ -33,6 +34,7 @@ export class CollectionService {
   private http = inject(HttpClient);
   private storage = inject(StorageService);
   private network = inject(NetworkService);
+  private auth = inject(AuthService);
   private readonly base = environment.apiUrl;
 
   readonly clients = signal<AssignedClient[]>([]);
@@ -182,6 +184,25 @@ export class CollectionService {
     this.clients.set(clients);
     await this.storage.setClients(clients);
     return clients;
+  }
+
+  /**
+   * Refresca la lista de clientes usando el endpoint correcto según el rol:
+   * un gestor debe ver solo la cartera en rojo (>5 atrasos / vencidos), no la
+   * lista de cobrador. Se usa en los refrescos automáticos (tras sincronizar,
+   * al reconectar) para no sobreescribir la cartera del gestor con la de
+   * cobrador.
+   */
+  async refreshClients(): Promise<AssignedClient[]> {
+    // Un gestor tiene permisos de promesa/convenio/reestructura (mismos que
+    // usa esGestor en mobile-permissions.service).
+    const esGestor =
+      this.auth.can("movil.promesa_pago") ||
+      this.auth.can("movil.convenio") ||
+      this.auth.can("movil.reestructura");
+    return esGestor
+      ? this.downloadClientsGestor()
+      : this.downloadClients();
   }
 
   private mapClientGestor(r: any): AssignedClient {
@@ -357,7 +378,7 @@ export class CollectionService {
       // que los saldos y estados reflejen el pago recién aplicado.
       if (ok) {
         try {
-          await this.downloadClients();
+          await this.refreshClients();
         } catch {
           /* si falla el refresco, no bloquea el pago: se verá al próximo refresh */
         }
@@ -590,7 +611,7 @@ export class CollectionService {
       // que los saldos y estados reflejen el pago recién aplicado.
       if (ok) {
         try {
-          await this.downloadClients();
+          await this.refreshClients();
         } catch {
           /* si falla el refresco, no bloquea el pago: se verá al próximo refresh */
         }
@@ -652,7 +673,7 @@ export class CollectionService {
       this.syncPending().then((r) => {
         // Si algo se sincronizó, refrescar la lista de clientes.
         if (r.ok > 0) {
-          this.downloadClients().catch(() => {});
+          this.refreshClients().catch(() => {});
         }
       });
     });

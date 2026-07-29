@@ -817,48 +817,11 @@ export class LoansService {
     }
   }
 
-  async getSchedule(loanId: string): Promise<any[]> {
-    const schedules = await this.scheduleRepo.find({
+  async getSchedule(loanId: string): Promise<PaymentSchedule[]> {
+    return this.scheduleRepo.find({
       where: { loanId },
       order: { periodNumber: "ASC" },
     });
-
-    // Observaciones del cobrador: la tabla pagos guarda `notas` y el JSON
-    // `cuotas_pagadas` con los periodos que cubrió cada pago. Se cruzan aquí
-    // para mostrar la nota en la(s) cuota(s) correspondiente(s) del calendario.
-    const pagosConNotas = await this.dataSource.query(
-      `SELECT notas, cuotas_pagadas
-         FROM pagos
-        WHERE prestamo_id = ?
-          AND notas IS NOT NULL AND notas <> ''
-        ORDER BY creado_en ASC`,
-      [loanId],
-    );
-
-    const notasPorPeriodo = new Map<number, string[]>();
-    for (const p of pagosConNotas) {
-      if (!p.cuotas_pagadas) continue;
-      try {
-        const arr = JSON.parse(p.cuotas_pagadas);
-        if (!Array.isArray(arr)) continue;
-        for (const item of arr) {
-          const periodo = Number(item?.periodo ?? item);
-          if (isNaN(periodo)) continue;
-          if (!notasPorPeriodo.has(periodo)) notasPorPeriodo.set(periodo, []);
-          const lista = notasPorPeriodo.get(periodo)!;
-          // Evitar repetir la misma nota si el pago cubrió varias cuotas ya listadas.
-          if (!lista.includes(p.notas)) lista.push(p.notas);
-        }
-      } catch {
-        // JSON inválido en cuotas_pagadas: se ignora ese pago.
-      }
-    }
-
-    return schedules.map((s) => ({
-      ...s,
-      // Varias notas en la misma cuota se unen con " | ".
-      notas: (notasPorPeriodo.get(s.periodNumber) || []).join(" | ") || null,
-    }));
   }
 
   // ── PRÓXIMOS A LIQUIDAR (feature 11) ─────────────────────────
@@ -1540,7 +1503,7 @@ export class LoansController {
   }
 
   @Post(":id/convenio")
-  @AuthPermission("prestamos.reestructurar")
+  @AuthPermission("prestamos.reestructurar", "movil.convenio")
   convenio(
     @Param("id") id: string,
     @Body() dto: any,
@@ -1637,7 +1600,7 @@ export class LoansController {
   }
 
   @Post(":id/restructure")
-  @AuthPermission("prestamos.reestructurar")
+  @AuthPermission("prestamos.reestructurar", "movil.reestructura")
   restructure(
     @Param("id") id: string,
     @Body() dto: any,

@@ -119,7 +119,7 @@ import { AssignedClient } from "../../core/models";
           <p>
             {{
               mp.esGestor()
-                ? "No hay créditos en rojo con cuota para hoy."
+                ? "No hay créditos en rojo por gestionar."
                 : "No hay clientes con cuota pendiente para hoy."
             }}
           </p>
@@ -242,20 +242,21 @@ export class ClientsPage implements OnInit {
   filtered = computed(() => {
     const term = this.search().toLowerCase().trim();
     const pagadosLocal = this.pagadosHoyLocal();
+    const esGestor = this.mp.esGestor();
 
-    // Regla: solo se muestran los créditos con la cuota de HOY pendiente.
-    // Si el cliente ya pagó lo de hoy, se oculta aunque siga atrasado
-    // (el cobrador ya cobró ahí, no necesita volver).
-    //
-    // Dos fuentes de "ya pagó hoy":
-    //  1. `tieneCuotaHoy` del backend: false si la cuota de hoy está pagada.
-    //  2. Pagos locales aún sin sincronizar (cobros hechos sin conexión):
-    //     el backend no los conoce todavía, así que se filtran aquí.
-    const list = this.collection.clients().filter(
-      (cliente) =>
+    // Regla según el rol:
+    //  - COBRADOR: solo ve los créditos con la cuota de HOY pendiente (a quién
+    //    visitar hoy). Si ya pagó lo de hoy, se oculta aunque siga atrasado.
+    //  - GESTOR: ve TODA la cartera en rojo (>5 atrasos / vencidos), tenga o no
+    //    cuota programada para hoy, porque su labor es gestionar los críticos,
+    //    no cobrar la cuota diaria.
+    const list = this.collection.clients().filter((cliente) => {
+      if (esGestor) return true; // el gestor ve toda la cartera en rojo
+      return (
         cliente.tieneCuotaHoy === true &&
-        !pagadosLocal.has(cliente.loanId),
-    );
+        !pagadosLocal.has(cliente.loanId)
+      );
+    });
 
     if (!term) {
       return list;

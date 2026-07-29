@@ -26,6 +26,14 @@ export class DocumentsService {
     );
   }
 
+  /** Formato de convenio de pago (PDF con cláusulas). */
+  async abrirConvenio(loanId: string): Promise<void> {
+    return this.descargarYAbrir(
+      `${this.base}/loans/${loanId}/convenio-pdf`,
+      `convenio-${loanId.substring(0, 8)}.pdf`,
+    );
+  }
+
   /** Plan / calendario de pagos del crédito (PDF). */
   async abrirCalendario(loanId: string): Promise<void> {
     return this.descargarYAbrir(
