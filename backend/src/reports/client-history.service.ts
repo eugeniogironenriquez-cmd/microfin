@@ -302,9 +302,22 @@ export class ClientHistoryService {
       doc.moveDown(1);
     }
 
-    // Pie
-    doc.font('Helvetica-Oblique').fontSize(7).fillColor(GRAY)
-      .text('Documento informativo generado por el sistema. Los saldos y moras reflejan el estado a la fecha de generación.', ML, doc.page.height - 45, { width: CW, align: 'center' });
+    // Pie de página en TODAS las páginas ya generadas.
+    // Se usa el buffer de páginas (bufferPages:true). Con save/restore y un
+    // height explícito, PDFKit escribe el pie sin recalcular el flujo ni crear
+    // una hoja nueva (que era lo que empujaba el pie a una página en blanco).
+    const rango = doc.bufferedPageRange();
+    for (let i = rango.start; i < rango.start + rango.count; i++) {
+      doc.switchToPage(i);
+      doc.save();
+      doc.font('Helvetica-Oblique').fontSize(7).fillColor(GRAY)
+        .text(
+          'Documento informativo generado por el sistema. Los saldos y moras reflejan el estado a la fecha de generación.',
+          ML, doc.page.height - 35,
+          { width: CW, align: 'center', lineBreak: false, height: 12 },
+        );
+      doc.restore();
+    }
 
     doc.end();
   }
