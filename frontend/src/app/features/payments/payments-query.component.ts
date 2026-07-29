@@ -218,13 +218,6 @@ import { ApiService, AuthService } from "../../core/index";
 
                 <button
                   mat-icon-button
-                  (click)="downloadReceipt(p.id)"
-                  matTooltip="Comprobante (carta)"
-                >
-                  <mat-icon>description</mat-icon>
-                </button>
-                <button
-                  mat-icon-button
                   class="wa"
                   (click)="compartirWhatsApp(p)"
                   [disabled]="!telefonoDe(p)"

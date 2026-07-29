@@ -56,12 +56,12 @@ interface Seguimiento {
   template: `
     <div class="page-container">
       <div class="page-header">
-        <h1>
-          <button mat-icon-button (click)="volver()">
-            <mat-icon>arrow_back</mat-icon>
+        <h1><mat-icon>attach_money</mat-icon> Gestión del crédito</h1>
+        <div class="header-actions">
+          <button mat-stroked-button (click)="volver()">
+            <mat-icon>arrow_back</mat-icon> Volver al monitor
           </button>
-          Gestionar crédito
-        </h1>
+        </div>
       </div>
 
       @if (hecho()) {
@@ -148,25 +148,57 @@ interface Seguimiento {
                   </div>
                 </div>
               </div>
-              @if (credito()?.saldoPendiente != null) {
-                <div class="r-saldo">
-                  <span class="r-saldo-lbl">Saldo pendiente</span>
-                  <span class="r-saldo-val">{{
-                    credito()!.saldoPendiente
-                      | currency: "MXN" : "symbol" : "1.2-2"
-                  }}</span>
-                </div>
-              }
-              @if (credito()?.moraPendiente) {
-                <div class="r-saldo r-mora">
-                  <span class="r-saldo-lbl">Mora pendiente</span>
-                  <span class="r-saldo-val r-mora-val">{{
-                    credito()!.moraPendiente
-                      | currency: "MXN" : "symbol" : "1.2-2"
-                  }}</span>
-                </div>
-              }
+              <div class="r-montos">
+                @if (credito()?.saldoPendiente != null) {
+                  <div class="r-saldo">
+                    <span class="r-saldo-lbl">Saldo pendiente</span>
+                    <span class="r-saldo-val">{{
+                      credito()!.saldoPendiente
+                        | currency: "MXN" : "symbol" : "1.2-2"
+                    }}</span>
+                  </div>
+                }
+                @if (credito()?.moraPendiente) {
+                  <div class="r-saldo r-mora">
+                    <span class="r-saldo-lbl">Mora pendiente</span>
+                    <span class="r-saldo-val r-mora-val">{{
+                      credito()!.moraPendiente
+                        | currency: "MXN" : "symbol" : "1.2-2"
+                    }}</span>
+                  </div>
+                }
+              </div>
             </mat-card>
+
+            <!-- Datos del crédito (estilo info-rows del frontend, en 2 columnas) -->
+            @if (loan(); as l) {
+              <mat-card class="cred-card">
+                <div class="dc-title"><mat-icon>attach_money</mat-icon> Datos del crédito</div>
+                <div class="info-grid">
+                  <div class="info-row"><span>Folio</span><strong class="font-mono">{{ (l.id || '').substring(0,8).toUpperCase() }}</strong></div>
+                  @if (l.status) {
+                    <div class="info-row"><span>Estado</span>
+                      <span class="badge badge-{{ l.status | lowercase }}">{{ l.status }}</span>
+                    </div>
+                  }
+                  @if (l.principalAmount != null) {
+                    <div class="info-row"><span>Monto</span><strong>{{ l.principalAmount | currency:'MXN' }}</strong></div>
+                  }
+                  @if (l.periodicPayment != null) {
+                    <div class="info-row"><span>Cuota</span><strong>{{ l.periodicPayment | currency:'MXN' }}</strong></div>
+                  }
+                  @if (l.termWeeks != null) {
+                    <div class="info-row"><span>Plazo</span><strong>{{ l.termWeeks }} días</strong></div>
+                  }
+                  @if (l.totalAmount != null) {
+                    <div class="info-row"><span>Total a pagar</span><strong>{{ l.totalAmount | currency:'MXN' }}</strong></div>
+                  }
+                  @if (l.disbursedAt) {
+                    <div class="info-row"><span>Desembolso</span><strong>{{ l.disbursedAt | date:'dd/MM/yyyy':'UTC' }}</strong></div>
+                  }
+                </div>
+              </mat-card>
+            }
 
             <!-- Datos del cliente y aval -->
             <div class="datos-grid">
@@ -708,10 +740,15 @@ interface Seguimiento {
         display: flex;
         justify-content: space-between;
         align-items: center;
-        padding: 16px 20px;
-        margin-bottom: 14px;
+        padding: 12px 18px;
+        margin-bottom: 12px;
         flex-wrap: wrap;
         gap: 12px;
+      }
+      .r-montos {
+        display: flex;
+        align-items: center;
+        gap: 24px;
       }
       .r-main {
         display: flex;
@@ -744,13 +781,11 @@ interface Seguimiento {
         color: var(--gray-600);
       }
       .r-saldo-val {
-        font-size: 20px;
+        font-size: 19px;
         font-weight: 700;
         color: var(--blue-900);
       }
-      .r-mora {
-        margin-left: 20px;
-      }
+      .r-mora { margin-left: 0; }
       .r-mora-val {
         color: #dc2626;
       }
@@ -758,20 +793,58 @@ interface Seguimiento {
       .datos-grid {
         display: grid;
         grid-template-columns: 1fr 1fr;
-        gap: 14px;
-        margin-bottom: 14px;
+        gap: 12px;
+        margin-bottom: 12px;
       }
       .datos-card {
-        padding: 16px;
+        padding: 14px;
       }
+      /* Tarjeta de datos del crédito: filas en 2 columnas para ahorrar alto */
+      .cred-card {
+        padding: 14px;
+        margin-bottom: 12px;
+      }
+      .info-rows {
+        display: flex;
+        flex-direction: column;
+      }
+      /* Datos del crédito en 2 columnas: la mitad de alto */
+      .info-grid {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        column-gap: 24px;
+      }
+      .info-row {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        padding: 7px 0;
+        border-bottom: 1px solid var(--gray-100);
+        font-size: 14px;
+      }
+      .info-row:last-child { border-bottom: none; }
+      /* En el grid, la penúltima fila de cada columna también pierde el borde
+         cuando el total es par; se maneja de forma simple dejando el borde. */
+      .info-row span { color: var(--gray-600); }
+      .info-row strong { color: var(--gray-900); font-weight: 600; }
+      .font-mono { font-family: 'Courier New', monospace; letter-spacing: .5px; }
+      .badge {
+        display: inline-block; padding: 3px 10px; border-radius: 12px;
+        font-size: 12px; font-weight: 600; text-transform: capitalize;
+      }
+      .badge-activo    { background: #F0FFF4; color: #16A34A; }
+      .badge-atrasado  { background: #FFFBEB; color: #D97706; }
+      .badge-vencido   { background: #FEF2F2; color: #DC2626; }
+      .badge-liquidado { background: #EFF6FF; color: #2563EB; }
+      .badge-convenio  { background: #F5F3FF; color: #7C3AED; }
       .dc-title {
         display: flex;
         align-items: center;
         gap: 8px;
         font-weight: 600;
         color: var(--blue-900);
-        margin-bottom: 12px;
-        font-size: 15px;
+        margin-bottom: 8px;
+        font-size: 14px;
       }
       .dc-title mat-icon {
         color: var(--blue-500);
@@ -780,9 +853,9 @@ interface Seguimiento {
         display: flex;
         align-items: center;
         gap: 8px;
-        padding: 4px 0;
+        padding: 2px 0;
         color: var(--gray-800);
-        font-size: 14px;
+        font-size: 13px;
         text-decoration: none;
       }
       .dc-line mat-icon {
@@ -995,6 +1068,9 @@ interface Seguimiento {
         .datos-grid {
           grid-template-columns: 1fr;
         }
+        .info-grid {
+          grid-template-columns: 1fr;
+        }
         .grid-2 {
           grid-template-columns: 1fr;
         }
@@ -1012,6 +1088,7 @@ export class AccionesComponent implements OnInit {
 
   loanId = "";
   credito = signal<CreditoSemaforo | null>(null);
+  loan = signal<any | null>(null);
   cliente = signal<ClienteDetalle | null>(null);
   aval = signal<Aval | null>(null);
   avalCargado = signal(false);
@@ -1085,6 +1162,7 @@ export class AccionesComponent implements OnInit {
     // Cargar detalle del crédito (para cliente) y aval.
     this.gestor.getLoan(this.loanId).subscribe({
       next: (loan) => {
+        this.loan.set(loan);
         const c = loan?.customer;
         if (c) {
           this.cliente.set({

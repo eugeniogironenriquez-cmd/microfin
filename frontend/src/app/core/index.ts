@@ -37,6 +37,7 @@ export interface Loan {
   authorizedBy?: string; authorizedAt?: string; rejectionReason?: string;
   disbursedAt?: string; disbursementMethod?: string;
   restructureReason?: string; restructureCount: number;
+  isConvenio?: boolean;
   collectorId?: string; notes?: string;
   paymentSchedules?: PaymentSchedule[]; payments?: Payment[];
   createdAt: string;

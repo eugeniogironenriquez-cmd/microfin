@@ -207,10 +207,11 @@ export class ClientHistoryService {
       if (doc.y + 80 > doc.page.height - 60) { doc.addPage(); doc.y = 50; }
 
       // Barra de título del crédito
-      doc.rect(ML, doc.y, CW, 20).fill('#EFF6FF');
+      const barY = doc.y;
+      doc.rect(ML, barY, CW, 20).fill('#EFF6FF');
       doc.fillColor(BLUE).font('Helvetica-Bold').fontSize(9)
-        .text(`Crédito ${credito.id.substring(0, 8).toUpperCase()}  ·  ${credito.tipo}  ·  ${credito.estatus}`, ML + 6, doc.y + 6, { lineBreak: false });
-      doc.y += 26;
+        .text(`Crédito ${credito.id.substring(0, 8).toUpperCase()}  ·  ${credito.tipo}  ·  ${credito.estatus}`, ML + 6, barY + 6, { lineBreak: false });
+      doc.y = barY + 26;
 
       // Datos del crédito
       doc.font('Helvetica').fontSize(8).fillColor(GRAY);
@@ -248,13 +249,14 @@ export class ClientHistoryService {
 
       const drawHead = () => {
         let cx = ML;
-        doc.rect(ML, doc.y, tW, 16).fill('#2d3748');
+        const headY = doc.y;              // Y fija: no leer doc.y dentro del forEach
+        doc.rect(ML, headY, tW, 16).fill('#2d3748');
         cols.forEach((c) => {
           doc.font('Helvetica-Bold').fontSize(7).fillColor('#fff')
-            .text(c.label, cx + 3, doc.y + 5, { width: c.w - 6, align: c.align, lineBreak: false });
+            .text(c.label, cx + 3, headY + 5, { width: c.w - 6, align: c.align, lineBreak: false });
           cx += c.w;
         });
-        doc.y += 17;
+        doc.y = headY + 17;               // avanzar desde la Y fija, no la modificada
       };
       drawHead();
 
@@ -262,10 +264,11 @@ export class ClientHistoryService {
         if (doc.y + rowH > doc.page.height - 55) {
           doc.addPage(); doc.y = 50; drawHead();
         }
+        const rowY = doc.y;               // Y fija de esta fila
         // Fondo tenue si la cuota está vencida
         const vencida = !cu.pagada && cu.diasAtraso > 0;
-        if (vencida) { doc.rect(ML, doc.y, tW, rowH).fill('#FFF5F5'); }
-        else if (cu.pagada) { doc.rect(ML, doc.y, tW, rowH).fill('#F7FAFC'); }
+        if (vencida) { doc.rect(ML, rowY, tW, rowH).fill('#FFF5F5'); }
+        else if (cu.pagada) { doc.rect(ML, rowY, tW, rowH).fill('#F7FAFC'); }
 
         const estatusTxt = vencida ? 'VENCIDO' : cu.estatus;
         const cells = [
@@ -284,12 +287,12 @@ export class ClientHistoryService {
           if (i === 6 && cu.moraPendiente > 0) color = '#DC2626';
           if (cu.pagada) color = '#A0AEC0';
           doc.font('Helvetica').fontSize(7).fillColor(color)
-            .text(cell, cx + 3, doc.y + 4, { width: cols[i].w - 6, align: cols[i].align, lineBreak: false });
+            .text(cell, cx + 3, rowY + 4, { width: cols[i].w - 6, align: cols[i].align, lineBreak: false });
           cx += cols[i].w;
         });
-        doc.moveTo(ML, doc.y + rowH).lineTo(ML + tW, doc.y + rowH)
+        doc.moveTo(ML, rowY + rowH).lineTo(ML + tW, rowY + rowH)
           .strokeColor('#E2E8F0').lineWidth(0.3).stroke();
-        doc.y += rowH;
+        doc.y = rowY + rowH;              // avanzar desde la Y fija
       }
       doc.moveDown(1);
     }

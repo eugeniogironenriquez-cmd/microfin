@@ -10,6 +10,7 @@ import { MatInputModule } from '@angular/material/input';
 import { MatProgressSpinnerModule } from '@angular/material/progress-spinner';
 import { MatTableModule } from '@angular/material/table';
 import { MatTooltipModule } from '@angular/material/tooltip';
+import { Subject, debounceTime, distinctUntilChanged } from 'rxjs';
 
 import { GestorService } from '../../core/gestor.service';
 import { CreditoSemaforo, MonitorResumen, NivelSemaforo } from '../../core/models';
@@ -31,138 +32,177 @@ import { CreditoSemaforo, MonitorResumen, NivelSemaforo } from '../../core/model
         </button>
       </div>
 
-      <!-- Tarjetas del semáforo -->
-      <div class="semaforo-cards">
-        <button class="sf-card verde" [class.sel]="filtro() === 'VERDE'" (click)="toggleFiltro('VERDE')">
-          <span class="dot dot-verde"></span>
-          <span class="sf-num">{{ resumen().verde }}</span>
-          <span class="sf-lbl">Al corriente</span>
-        </button>
-        <button class="sf-card amarillo" [class.sel]="filtro() === 'AMARILLO'" (click)="toggleFiltro('AMARILLO')">
-          <span class="dot dot-amarillo"></span>
-          <span class="sf-num">{{ resumen().amarillo }}</span>
-          <span class="sf-lbl">En riesgo <small>(1–5 vencidas)</small></span>
-        </button>
-        <button class="sf-card rojo" [class.sel]="filtro() === 'ROJO'" (click)="toggleFiltro('ROJO')">
-          <span class="dot dot-rojo"></span>
-          <span class="sf-num">{{ resumen().rojo }}</span>
-          <span class="sf-lbl">Crítico <small>(+5 vencidas)</small></span>
-        </button>
-        <div class="sf-card total">
-          <mat-icon>account_balance_wallet</mat-icon>
-          <span class="sf-num">{{ resumen().total }}</span>
-          <span class="sf-lbl">Total de créditos</span>
+      <!-- Semáforo resumen (mismo diseño que el frontend principal) -->
+      <div class="semaforo-grid">
+        <div class="sem-card sem-verde" [class.active]="filtro() === 'VERDE'"
+             (click)="toggleFiltro('VERDE')">
+          <div class="sem-dot"></div>
+          <div class="sem-info">
+            <span class="sem-num">{{ resumen().verde }}</span>
+            <span class="sem-label">Al corriente</span>
+          </div>
+        </div>
+        <div class="sem-card sem-amarillo" [class.active]="filtro() === 'AMARILLO'"
+             (click)="toggleFiltro('AMARILLO')">
+          <div class="sem-dot"></div>
+          <div class="sem-info">
+            <span class="sem-num">{{ resumen().amarillo }}</span>
+            <span class="sem-label">1-5 atrasos</span>
+          </div>
+        </div>
+        <div class="sem-card sem-rojo" [class.active]="filtro() === 'ROJO'"
+             (click)="toggleFiltro('ROJO')">
+          <div class="sem-dot"></div>
+          <div class="sem-info">
+            <span class="sem-num">{{ resumen().rojo }}</span>
+            <span class="sem-label">Más de 5 atrasos</span>
+          </div>
+        </div>
+        <div class="sem-card sem-total">
+          <div class="sem-info">
+            <span class="sem-num">{{ resumen().total }}</span>
+            <span class="sem-label">Total créditos</span>
+          </div>
         </div>
       </div>
 
-      <!-- Buscador -->
-      <mat-form-field appearance="outline" class="search">
-        <mat-label>Buscar por cliente o teléfono</mat-label>
-        <mat-icon matPrefix>search</mat-icon>
-        <input matInput [(ngModel)]="search" (keyup.enter)="cargar()" placeholder="Nombre, teléfono...">
-        @if (search) {
-          <button mat-icon-button matSuffix (click)="search=''; cargar()"><mat-icon>close</mat-icon></button>
-        }
-      </mat-form-field>
+      <mat-card>
+        <mat-card-content>
+          <mat-form-field appearance="outline" class="search-field">
+            <mat-label>Buscar cliente</mat-label>
+            <input matInput [value]="search()" (input)="onSearch($event)"
+                   placeholder="Nombre o teléfono">
+            <mat-icon matPrefix>search</mat-icon>
+          </mat-form-field>
 
-      <!-- Tabla -->
-      <mat-card class="tabla-card">
-        @if (loading()) {
-          <div class="center"><mat-spinner diameter="40"></mat-spinner></div>
-        } @else if (creditosFiltrados().length === 0) {
-          <div class="empty">
-            <mat-icon>inbox</mat-icon>
-            <p>No hay créditos que mostrar con este filtro.</p>
-          </div>
-        } @else {
-          <table mat-table [dataSource]="creditosFiltrados()" class="full-table">
-            <ng-container matColumnDef="nivel">
-              <th mat-header-cell *matHeaderCellDef></th>
-              <td mat-cell *matCellDef="let c">
-                <span class="dot" [ngClass]="dotClass(c.nivel)"
-                      [matTooltip]="nivelLabel(c.nivel)"></span>
-              </td>
-            </ng-container>
+          @if (filtro()) {
+            <button mat-button color="primary" (click)="toggleFiltro(filtro()!)">
+              <mat-icon>clear</mat-icon> Quitar filtro {{ filtro() }}
+            </button>
+          }
 
-            <ng-container matColumnDef="cliente">
-              <th mat-header-cell *matHeaderCellDef>Cliente</th>
-              <td mat-cell *matCellDef="let c">
-                <div class="cli-name">{{ c.customerName }}</div>
-                @if (c.phone) { <div class="cli-sub">{{ c.phone }}</div> }
-              </td>
-            </ng-container>
-
-            <ng-container matColumnDef="vencidas">
-              <th mat-header-cell *matHeaderCellDef>Cuotas vencidas</th>
-              <td mat-cell *matCellDef="let c">
-                <span class="nivel-chip" [ngClass]="chipClass(c.nivel)">
-                  {{ c.cuotasVencidas }}
-                </span>
-              </td>
-            </ng-container>
-
-            <ng-container matColumnDef="saldo">
-              <th mat-header-cell *matHeaderCellDef>Saldo</th>
-              <td mat-cell *matCellDef="let c">
-                {{ c.saldoPendiente != null ? (c.saldoPendiente | currency:'MXN':'symbol':'1.2-2') : '—' }}
-              </td>
-            </ng-container>
-
-            <ng-container matColumnDef="accion">
-              <th mat-header-cell *matHeaderCellDef></th>
-              <td mat-cell *matCellDef="let c">
-                <button mat-flat-button color="primary" (click)="abrir(c)">
-                  Gestionar <mat-icon>chevron_right</mat-icon>
-                </button>
-              </td>
-            </ng-container>
-
-            <tr mat-header-row *matHeaderRowDef="cols"></tr>
-            <tr mat-row *matRowDef="let row; columns: cols;"></tr>
-          </table>
-        }
+          @if (loading()) {
+            <div class="loading-overlay"><mat-spinner diameter="40"></mat-spinner></div>
+          } @else if (creditosFiltrados().length === 0) {
+            <div class="empty-state">
+              <mat-icon>check_circle</mat-icon>
+              <p>No hay créditos {{ filtro() ? 'en este nivel' : '' }}.</p>
+            </div>
+          } @else {
+            <table mat-table [dataSource]="creditosFiltrados()" class="w-full">
+              <ng-container matColumnDef="nivel">
+                <th mat-header-cell *matHeaderCellDef>Semáforo</th>
+                <td mat-cell *matCellDef="let r">
+                  <span class="nivel-dot nivel-{{ r.nivel | lowercase }}"
+                        [matTooltip]="nivelLabel(r.nivel)"></span>
+                </td>
+              </ng-container>
+              <ng-container matColumnDef="cliente">
+                <th mat-header-cell *matHeaderCellDef>Cliente</th>
+                <td mat-cell *matCellDef="let r">
+                  <div class="cli-name">{{ r.customerName }}</div>
+                  <div class="cli-phone">{{ r.phone }}</div>
+                </td>
+              </ng-container>
+              <ng-container matColumnDef="atrasos">
+                <th mat-header-cell *matHeaderCellDef>Cuotas vencidas</th>
+                <td mat-cell *matCellDef="let r">
+                  <span class="atraso-badge atraso-{{ r.nivel | lowercase }}">{{ r.cuotasVencidas }}</span>
+                </td>
+              </ng-container>
+              <ng-container matColumnDef="monto">
+                <th mat-header-cell *matHeaderCellDef>Monto</th>
+                <td mat-cell *matCellDef="let r">
+                  {{ r.principalAmount != null ? (r.principalAmount | currency:'MXN') : '—' }}
+                </td>
+              </ng-container>
+              <ng-container matColumnDef="cuota">
+                <th mat-header-cell *matHeaderCellDef>Cuota</th>
+                <td mat-cell *matCellDef="let r">
+                  {{ r.periodicPayment != null ? (r.periodicPayment | currency:'MXN') : '—' }}
+                </td>
+              </ng-container>
+              <ng-container matColumnDef="saldo">
+                <th mat-header-cell *matHeaderCellDef>Saldo</th>
+                <td mat-cell *matCellDef="let r">
+                  {{ r.saldoPendiente != null ? (r.saldoPendiente | currency:'MXN') : '—' }}
+                </td>
+              </ng-container>
+              <ng-container matColumnDef="estatus">
+                <th mat-header-cell *matHeaderCellDef>Estado</th>
+                <td mat-cell *matCellDef="let r">
+                  <span class="badge badge-{{ (r.status || '') | lowercase }}">{{ r.status || '—' }}</span>
+                </td>
+              </ng-container>
+              <ng-container matColumnDef="acciones">
+                <th mat-header-cell *matHeaderCellDef></th>
+                <td mat-cell *matCellDef="let r">
+                  <button mat-flat-button color="primary" (click)="abrir(r)">
+                    Gestionar <mat-icon>chevron_right</mat-icon>
+                  </button>
+                </td>
+              </ng-container>
+              <tr mat-header-row *matHeaderRowDef="cols"></tr>
+              <tr mat-row *matRowDef="let row; columns: cols;"
+                  [class.row-rojo]="row.nivel === 'ROJO'"
+                  [class.row-amarillo]="row.nivel === 'AMARILLO'"></tr>
+            </table>
+          }
+        </mat-card-content>
       </mat-card>
     </div>
   `,
   styles: [`
-    .semaforo-cards {
-      display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
-      gap: 14px;
-      margin-bottom: 18px;
+    .semaforo-grid {
+      display:grid; grid-template-columns:repeat(4,1fr); gap:14px; margin-bottom:16px;
     }
-    .sf-card {
-      background: #fff; border: 2px solid transparent; border-radius: var(--radius);
-      padding: 18px; text-align: left; cursor: pointer;
-      display: flex; flex-direction: column; gap: 4px;
-      box-shadow: var(--shadow-sm);
-      transition: transform .12s, border-color .12s, box-shadow .12s;
-      font-family: inherit;
+    @media(max-width:800px){ .semaforo-grid { grid-template-columns:1fr 1fr; } }
+    .sem-card {
+      display:flex; align-items:center; gap:14px; padding:18px 16px;
+      border-radius:14px; cursor:pointer; border:2px solid transparent;
+      background:#fff; box-shadow:0 2px 8px rgba(0,0,0,.06); transition:.15s;
     }
-    .sf-card:hover { transform: translateY(-2px); box-shadow: var(--shadow-md); }
-    .sf-card .sf-num { font-size: 30px; font-weight: 700; color: var(--gray-900); }
-    .sf-card .sf-lbl { font-size: 13px; color: var(--gray-600); }
-    .sf-card .sf-lbl small { color: var(--gray-400); }
-    .sf-card .dot { width: 14px; height: 14px; }
-    .sf-card mat-icon { color: var(--blue-500); }
-    .sf-card.total { cursor: default; }
-    .sf-card.verde.sel    { border-color: var(--verde); background: #f0fdf4; }
-    .sf-card.amarillo.sel { border-color: var(--amarillo); background: #fffbeb; }
-    .sf-card.rojo.sel     { border-color: var(--rojo); background: #fef2f2; }
+    .sem-card:hover { box-shadow:0 4px 16px rgba(0,0,0,.12); }
+    .sem-card.active { border-color:#1C4532; }
+    .sem-total { cursor:default; }
+    .sem-dot { width:20px; height:20px; border-radius:50%; flex-shrink:0; }
+    .sem-verde    .sem-dot { background:#16A34A; box-shadow:0 0 0 4px #BBF7D0; }
+    .sem-amarillo .sem-dot { background:#F59E0B; box-shadow:0 0 0 4px #FDE68A; }
+    .sem-rojo     .sem-dot { background:#DC2626; box-shadow:0 0 0 4px #FECACA; }
+    .sem-info { display:flex; flex-direction:column; }
+    .sem-num { font-size:26px; font-weight:700; line-height:1; }
+    .sem-label { font-size:12px; color:#718096; margin-top:2px; }
 
-    .search { width: 100%; max-width: 420px; margin-bottom: 12px; }
-
-    .tabla-card { padding: 0; overflow: hidden; }
-    .full-table { width: 100%; }
-    .cli-name { font-weight: 600; color: var(--gray-900); }
-    .cli-sub { font-size: 12px; color: var(--gray-600); }
-    .center { display: flex; justify-content: center; padding: 48px; }
-    .empty { text-align: center; padding: 48px; color: var(--gray-600); }
-    .empty mat-icon { font-size: 48px; width: 48px; height: 48px; color: var(--gray-200); }
-    td.mat-mdc-cell { padding: 10px 12px; }
+    .search-field { width:320px; max-width:100%; }
+    .w-full { width:100%; }
+    .cli-name { font-weight:600; font-size:14px; }
+    .cli-phone { font-size:12px; color:#718096; }
+    .nivel-dot { display:inline-block; width:16px; height:16px; border-radius:50%; }
+    .nivel-verde    { background:#16A34A; }
+    .nivel-amarillo { background:#F59E0B; }
+    .nivel-rojo     { background:#DC2626; }
+    .atraso-badge {
+      display:inline-block; min-width:28px; text-align:center;
+      padding:2px 8px; border-radius:12px; font-weight:700; font-size:13px;
+    }
+    .atraso-verde    { background:#F0FFF4; color:#16A34A; }
+    .atraso-amarillo { background:#FFFBEB; color:#D97706; }
+    .atraso-rojo     { background:#FEF2F2; color:#DC2626; }
+    .badge {
+      display:inline-block; padding:3px 10px; border-radius:12px;
+      font-size:12px; font-weight:600; text-transform:capitalize;
+    }
+    .badge-activo    { background:#F0FFF4; color:#16A34A; }
+    .badge-atrasado  { background:#FFFBEB; color:#D97706; }
+    .badge-vencido   { background:#FEF2F2; color:#DC2626; }
+    .row-rojo    { background:#FFF5F5 !important; }
+    .row-amarillo{ background:#FFFEF5 !important; }
+    .loading-overlay { display:flex; justify-content:center; padding:40px; }
+    .empty-state { text-align:center; padding:40px; color:#718096; }
+    .empty-state mat-icon { font-size:48px; width:48px; height:48px; color:#16A34A; }
 
     @media (max-width: 599px) {
-      .mat-column-saldo { display: none; }
+      .mat-column-saldo, .mat-column-monto, .mat-column-cuota { display: none; }
     }
   `],
 })
@@ -170,12 +210,14 @@ export class MonitorComponent implements OnInit {
   private gestor = inject(GestorService);
   private router = inject(Router);
 
-  cols = ['nivel', 'cliente', 'vencidas', 'saldo', 'accion'];
+  cols = ['nivel', 'cliente', 'atrasos', 'monto', 'cuota', 'saldo', 'estatus', 'acciones'];
   loading = signal(true);
   creditos = signal<CreditoSemaforo[]>([]);
   resumen = signal<MonitorResumen>({ verde: 0, amarillo: 0, rojo: 0, total: 0 });
   filtro = signal<NivelSemaforo | null>(null);
-  search = '';
+  search = signal('');
+
+  private searchSubject = new Subject<string>();
 
   creditosFiltrados = computed(() => {
     const f = this.filtro();
@@ -184,12 +226,22 @@ export class MonitorComponent implements OnInit {
   });
 
   ngOnInit() {
+    // Búsqueda con debounce (como el frontend): busca al escribir, sin Enter.
+    this.searchSubject
+      .pipe(debounceTime(350), distinctUntilChanged())
+      .subscribe(() => this.cargar());
     this.cargar();
+  }
+
+  onSearch(ev: Event) {
+    const val = (ev.target as HTMLInputElement).value;
+    this.search.set(val);
+    this.searchSubject.next(val);
   }
 
   cargar() {
     this.loading.set(true);
-    this.gestor.getMonitor({ search: this.search || undefined }).subscribe({
+    this.gestor.getMonitor({ search: this.search() || undefined }).subscribe({
       next: (res) => {
         this.creditos.set(res.creditos);
         if (res.resumen) this.resumen.set(res.resumen);
@@ -207,17 +259,9 @@ export class MonitorComponent implements OnInit {
   }
 
   abrir(c: CreditoSemaforo) {
-    this.router.navigate(['/credito', c.loanId], {
-      state: { credito: c },
-    });
+    this.router.navigate(['/credito', c.loanId], { state: { credito: c } });
   }
 
-  dotClass(n: NivelSemaforo) {
-    return { VERDE: 'dot-verde', AMARILLO: 'dot-amarillo', ROJO: 'dot-rojo' }[n];
-  }
-  chipClass(n: NivelSemaforo) {
-    return { VERDE: 'nivel-verde', AMARILLO: 'nivel-amarillo', ROJO: 'nivel-rojo' }[n];
-  }
   nivelLabel(n: NivelSemaforo) {
     return { VERDE: 'Al corriente', AMARILLO: 'En riesgo', ROJO: 'Crítico' }[n];
   }
