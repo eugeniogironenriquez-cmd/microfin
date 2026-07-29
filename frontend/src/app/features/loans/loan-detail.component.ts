@@ -160,15 +160,9 @@ export class EditMontoDialogComponent {
           </button>
         }
         @if (loan()?.disbursedAt) {
-          @if (loan()?.isConvenio) {
-            <button mat-stroked-button (click)="downloadConvenioPdf()">
-              <mat-icon>handshake</mat-icon> Convenio PDF
-            </button>
-          } @else {
-            <button mat-stroked-button (click)="downloadContractPdf()">
-              <mat-icon>description</mat-icon> Contrato PDF
-            </button>
-          }
+          <button mat-stroked-button (click)="downloadContractPdf()">
+            <mat-icon>description</mat-icon> Contrato PDF
+          </button>
         }
         @if (loan()?.status === 'LIQUIDADO' && auth.can('prestamos.reestructurar')) {
           <button mat-raised-button color="primary" (click)="renovar()">
@@ -312,6 +306,17 @@ export class EditMontoDialogComponent {
                     </td>
                   </ng-container>
 
+                  <!-- Observaciones que el cobrador capturó al registrar el pago
+                       (columna notas de la tabla pagos, cruzada por cuota) -->
+                  <ng-container matColumnDef="observaciones">
+                    <th mat-header-cell *matHeaderCellDef>Observaciones</th>
+                    <td mat-cell *matCellDef="let s" class="obs-cell">
+                      @if (s.notas) {
+                        <span [matTooltip]="s.notas">{{ s.notas }}</span>
+                      } @else { — }
+                    </td>
+                  </ng-container>
+
                   <tr mat-header-row *matHeaderRowDef="scheduleCols"></tr>
                   <tr mat-row *matRowDef="let row; columns: scheduleCols;"
                       [class.overdue-row]="daysOverdue(row) > 0 && row.status === 'PENDIENTE'"
@@ -421,6 +426,14 @@ export class EditMontoDialogComponent {
     .had-mora    { background: #FFF7ED; }
     /* Celda de mora con generada / pagada / pendiente */
     .mora-cell { display:flex; flex-direction:column; gap:1px; }
+    .obs-cell {
+      max-width: 220px;
+      font-size: 12px;
+      color: #4A5568;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
     .mora-gen  { color:#C2410C; font-weight:600; }
     .mora-pag  { font-size:10px; color:#16A34A; }
     .mora-pend { font-size:10px; color:#DC2626; font-weight:600; }
@@ -465,7 +478,7 @@ export class LoanDetailComponent implements OnInit {
   loan      = signal<Loan | null>(null);
   schedules = signal<PaymentSchedule[]>([]);
   loading   = signal(true);
-  scheduleCols = ['periodo', 'vence', 'total', 'moratorio', 'estatus'];
+  scheduleCols = ['periodo', 'vence', 'total', 'moratorio', 'estatus', 'observaciones'];
 
   // Documentos de garantía
   existingDocs = signal<any[]>([]);
@@ -617,14 +630,6 @@ export class LoanDetailComponent implements OnInit {
     const l = this.loan();
     if (!l?.id) return;
     this.pdfSvc.open('/loans/' + l.id + '/pdf');
-  }
-
-  // Si el crédito es un convenio, descarga el formato de convenio (documento
-  // con cláusulas y encabezado azul que genera el gestor), no el contrato.
-  downloadConvenioPdf() {
-    const l = this.loan();
-    if (!l?.id) return;
-    this.pdfSvc.open('/loans/' + l.id + '/convenio-pdf');
   }
 
   downloadControlCard() {
