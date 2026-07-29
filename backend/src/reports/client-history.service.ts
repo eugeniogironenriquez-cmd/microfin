@@ -1,5 +1,5 @@
 import {
-  Injectable, Controller, Get, Param, Res, NotFoundException,
+  Injectable, Controller, Get, Param, Res, Query, NotFoundException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
@@ -42,15 +42,20 @@ export class ClientHistoryService {
     return Math.max(0, diff);
   }
 
-  async getClientHistory(customerId: string) {
+  async getClientHistory(customerId: string, incluirLiquidados = true) {
     const customer = await this.customerRepo.findOne({ where: { id: customerId } });
     if (!customer) throw new NotFoundException('Cliente no encontrado');
 
-    const loans = await this.loanRepo.find({
+    let loans = await this.loanRepo.find({
       where: { customerId },
       relations: ['loanType'],
       order: { createdAt: 'DESC' },
     });
+
+    // Filtro opcional: excluir créditos liquidados si el usuario no los quiere.
+    if (!incluirLiquidados) {
+      loans = loans.filter((l) => l.status !== 'LIQUIDADO');
+    }
 
     const hoyUTC = this.hoyMexicoUTC();
 
@@ -151,8 +156,8 @@ export class ClientHistoryService {
   }
 
   // ── PDF ────────────────────────────────────────────────────
-  async generatePdf(customerId: string, res: Response): Promise<void> {
-    const data = await this.getClientHistory(customerId);
+  async generatePdf(customerId: string, res: Response, incluirLiquidados = true): Promise<void> {
+    const data = await this.getClientHistory(customerId, incluirLiquidados);
     const company = await this.companyService.get().catch(() => null);
 
     const doc = new PDFDocument({ size: 'LETTER', margins: { top: 50, bottom: 50, left: 40, right: 40 }, bufferPages: true });
@@ -305,8 +310,8 @@ export class ClientHistoryService {
   }
 
   // ── Excel ──────────────────────────────────────────────────
-  async generateExcel(customerId: string, res: Response): Promise<void> {
-    const data = await this.getClientHistory(customerId);
+  async generateExcel(customerId: string, res: Response, incluirLiquidados = true): Promise<void> {
+    const data = await this.getClientHistory(customerId, incluirLiquidados);
 
     const wb = new ExcelJS.Workbook();
     const ws = wb.addWorksheet('Historial');
@@ -390,21 +395,32 @@ export class ClientHistoryController {
   // Datos JSON (por si se quiere previsualizar)
   @Get('client-history/:customerId')
   @AuthPermission('clientes.ver')
-  history(@Param('customerId') customerId: string) {
-    return this.service.getClientHistory(customerId);
+  history(
+    @Param('customerId') customerId: string,
+    @Query('incluirLiquidados') incluirLiquidados?: string,
+  ) {
+    return this.service.getClientHistory(customerId, incluirLiquidados !== 'false');
   }
 
   // PDF del historial
   @Get('client-history/:customerId/pdf')
   @AuthPermission('clientes.ver')
-  pdf(@Param('customerId') customerId: string, @Res() res: Response) {
-    return this.service.generatePdf(customerId, res);
+  pdf(
+    @Param('customerId') customerId: string,
+    @Res() res: Response,
+    @Query('incluirLiquidados') incluirLiquidados?: string,
+  ) {
+    return this.service.generatePdf(customerId, res, incluirLiquidados !== 'false');
   }
 
   // Excel del historial
   @Get('client-history/:customerId/excel')
   @AuthPermission('clientes.ver')
-  excel(@Param('customerId') customerId: string, @Res() res: Response) {
-    return this.service.generateExcel(customerId, res);
+  excel(
+    @Param('customerId') customerId: string,
+    @Res() res: Response,
+    @Query('incluirLiquidados') incluirLiquidados?: string,
+  ) {
+    return this.service.generateExcel(customerId, res, incluirLiquidados !== 'false');
   }
 }

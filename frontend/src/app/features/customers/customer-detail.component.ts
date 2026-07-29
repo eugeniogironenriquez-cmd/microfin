@@ -34,6 +34,11 @@ import { ApiService, AuthService, Customer, Loan } from '../../core/index';
               <mat-icon>edit</mat-icon> Editar
             </a>
           }
+          <label class="chk-liquidados">
+            <input type="checkbox" [checked]="incluirLiquidados()"
+                   (change)="incluirLiquidados.set($any($event.target).checked)">
+            Incluir liquidados
+          </label>
           <button mat-stroked-button (click)="imprimirHistorialPdf()">
             <mat-icon>picture_as_pdf</mat-icon> Historial PDF
           </button>
@@ -133,7 +138,20 @@ import { ApiService, AuthService, Customer, Loan } from '../../core/index';
         </mat-tab>
       </mat-tab-group>
     }
-  `
+  `,
+  styles: [`
+    .chk-liquidados {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 13px;
+      color: #4A5568;
+      cursor: pointer;
+      user-select: none;
+      margin-right: 4px;
+    }
+    .chk-liquidados input { cursor: pointer; }
+  `],
 })
 export class CustomerDetailComponent implements OnInit {
   readonly auth = inject(AuthService);
@@ -142,6 +160,8 @@ export class CustomerDetailComponent implements OnInit {
   private route = inject(ActivatedRoute);
 
   customer = signal<Customer | null>(null);
+  // Si el historial impreso debe incluir los créditos liquidados (por defecto sí).
+  incluirLiquidados = signal(true);
   photoUrl = signal<string | null>(null);
   loans = signal<Loan[]>([]);
   loading = signal(true);
@@ -178,15 +198,17 @@ export class CustomerDetailComponent implements OnInit {
   imprimirHistorialPdf() {
     const id = this.customer()?.id;
     if (!id) return;
-    this.pdfSvc.open(`/reports/client-history/${id}/pdf`);
+    const q = this.incluirLiquidados() ? '' : '?incluirLiquidados=false';
+    this.pdfSvc.open(`/reports/client-history/${id}/pdf${q}`);
   }
 
   // Mismo historial en Excel.
   imprimirHistorialExcel() {
     const id = this.customer()?.id;
     if (!id) return;
+    const q = this.incluirLiquidados() ? '' : '?incluirLiquidados=false';
     this.pdfSvc.download(
-      `/reports/client-history/${id}/excel`,
+      `/reports/client-history/${id}/excel${q}`,
       `historial-${(this.customer()?.fullName || 'cliente').replace(/\s+/g, '-').toLowerCase()}.xlsx`,
     );
   }
