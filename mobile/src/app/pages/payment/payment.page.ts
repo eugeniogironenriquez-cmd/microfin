@@ -317,7 +317,8 @@ type ModoPago = "DIA" | "SELECTIVO" | "TOTAL" | "MORATORIO";
             @if (calendario().length === 0) {
               <p class="cal-empty">Sin calendario disponible.</p>
             } @else {
-              <div class="cal-table">
+              <div class="cal-scroll">
+                <div class="cal-table">
                 <div class="cal-row cal-head">
                   <span class="c-num">#</span>
                   <span class="c-vence">Vence</span>
@@ -344,6 +345,7 @@ type ModoPago = "DIA" | "SELECTIVO" | "TOTAL" | "MORATORIO";
                     <span class="c-obs">{{ cu.notas || '—' }}</span>
                   </div>
                 }
+                </div>
               </div>
             }
           </ion-card-content>
@@ -487,11 +489,17 @@ type ModoPago = "DIA" | "SELECTIVO" | "TOTAL" | "MORATORIO";
         color: var(--ion-color-primary);
       }
       .cal-empty { color: #888; font-size: 13px; }
-      .cal-table { font-size: 12px; }
+      /* Scroll horizontal: en móvil la tabla no cabe completa, así el cobrador
+         puede desplazarse para ver las observaciones sin que se corten. */
+      .cal-scroll {
+        overflow-x: auto;
+        -webkit-overflow-scrolling: touch;
+      }
+      .cal-table { font-size: 12px; min-width: 560px; }
       .cal-row {
         display: grid;
-        grid-template-columns: 26px 60px 62px 52px 68px 1fr;
-        gap: 4px; align-items: center;
+        grid-template-columns: 26px 64px 66px 56px 74px 180px;
+        gap: 6px; align-items: center;
         padding: 6px 2px;
         border-bottom: 1px solid #eee;
       }
@@ -504,7 +512,8 @@ type ModoPago = "DIA" | "SELECTIVO" | "TOTAL" | "MORATORIO";
       .c-monto, .c-mora { text-align: right; }
       .c-obs {
         font-size: 11px; color: #666;
-        overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+        white-space: normal;
+        word-break: break-word;
       }
       ion-badge.b-pagado { --background: #d4f4dd; --color: #1a7f37; }
       ion-badge.b-vencido { --background: #ffd7d7; --color: #c0392b; }

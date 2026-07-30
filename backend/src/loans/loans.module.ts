@@ -921,13 +921,42 @@ export class LoansService {
   ) {
     const prev = await this.loanRepo.findOne({ where: { id: prevLoanId } });
     if (!prev) throw new NotFoundException("Crédito de origen no encontrado");
-    if (prev.status !== LoanStatus.LIQUIDADO)
+
+    // Se puede renovar si el crédito está LIQUIDADO, o si le quedan 3 o menos
+    // cuotas pendientes (renovación anticipada para buen cliente). En este
+    // último caso, el saldo pendiente se liquida con la renovación: se descuenta
+    // del monto que recibe el cliente y el crédito anterior queda LIQUIDADO.
+    const schedulesPrev = await this.scheduleRepo.find({
+      where: { loanId: prev.id },
+    });
+    const cuotasPendientes = schedulesPrev.filter(
+      (s) => s.status !== ScheduleStatus.PAGADO,
+    );
+    const saldoPendientePrev = this.calculator.round(
+      cuotasPendientes.reduce((sum, s) => sum + Number(s.balanceDue || 0), 0),
+    );
+
+    const estaLiquidado = prev.status === LoanStatus.LIQUIDADO;
+    const porTerminar =
+      cuotasPendientes.length > 0 && cuotasPendientes.length <= 3;
+
+    if (!estaLiquidado && !porTerminar) {
       throw new BadRequestException(
-        "Solo se puede renovar un crédito ya liquidado",
+        "Solo se puede renovar un crédito liquidado o con 3 o menos cuotas pendientes",
       );
+    }
 
     const principal = Number(dto.principalAmount);
     const days = Number(dto.days);
+
+    // Si se liquida saldo anterior, el monto solicitado debe cubrirlo.
+    const saldoALiquidar = estaLiquidado ? 0 : saldoPendientePrev;
+    if (saldoALiquidar > 0 && principal <= saldoALiquidar) {
+      throw new BadRequestException(
+        `El monto de la renovación ($${principal.toFixed(2)}) debe ser mayor al saldo pendiente que se liquida ($${saldoALiquidar.toFixed(2)}).`,
+      );
+    }
+
     const percentage = await this.plazosService.getPercentageForDays(days);
     const { totalAmount, periodicPayment } = this.calculator.calculate(
       principal,
@@ -939,6 +968,25 @@ export class LoansService {
     await qr.connect();
     await qr.startTransaction();
     try {
+      // Si el crédito anterior aún tenía cuotas pendientes, se liquida con la
+      // renovación: sus cuotas pendientes se marcan como PAGADO y el crédito
+      // pasa a LIQUIDADO. El saldo se descuenta del desembolso al cliente.
+      if (!estaLiquidado && saldoPendientePrev > 0) {
+        for (const s of cuotasPendientes) {
+          s.balanceDue = 0;
+          s.status = ScheduleStatus.PAGADO;
+          s.paidAt = new Date();
+          await qr.manager.save(s);
+        }
+        prev.status = LoanStatus.LIQUIDADO;
+        await qr.manager.save(prev);
+      }
+
+      // Monto neto que recibe el cliente = principal solicitado menos el saldo
+      // que se liquidó del crédito anterior.
+      const saldoLiquidado = saldoALiquidar;
+      const montoEntregado = this.calculator.round(principal - saldoLiquidado);
+
       // Crédito nuevo NACE AUTORIZADO (listo para desembolsar)
       const newLoan = this.loanRepo.create({
         customerId: prev.customerId,
@@ -954,7 +1002,11 @@ export class LoansService {
         authorizedAt: new Date(),
         periodicPayment: this.calculator.round(periodicPayment),
         totalAmount: this.calculator.round(totalAmount),
-        notes: dto.notes,
+        // Se deja constancia del descuento en las notas para el desembolso.
+        notes:
+          saldoLiquidado > 0
+            ? `${dto.notes ? dto.notes + " | " : ""}Renovación: se liquidó saldo anterior de $${saldoLiquidado.toFixed(2)}. Monto entregado al cliente: $${montoEntregado.toFixed(2)}.`
+            : dto.notes,
         createdBy: userId,
       } as any);
       const saved: Loan = await qr.manager.save(newLoan as any);
@@ -987,7 +1039,12 @@ export class LoansService {
 
       return {
         loan: saved,
-        message: "Renovación creada y autorizada. Lista para desembolsar.",
+        saldoLiquidado,
+        montoEntregado: this.calculator.round(principal - saldoLiquidado),
+        message:
+          saldoLiquidado > 0
+            ? `Renovación creada. Se liquidó el saldo anterior de $${saldoLiquidado.toFixed(2)}; el cliente recibe $${this.calculator.round(principal - saldoLiquidado).toFixed(2)}.`
+            : "Renovación creada y autorizada. Lista para desembolsar.",
       };
     } catch (err) {
       await qr.rollbackTransaction();
@@ -1012,6 +1069,14 @@ export class LoansService {
     const pagadas = payments.filter(
       (s) => s.status === ScheduleStatus.PAGADO,
     ).length;
+    // Cuotas y saldo aún pendientes: si el crédito no está liquidado, este
+    // saldo se descontará del monto de la renovación.
+    const pendientes = payments.filter(
+      (s) => s.status !== ScheduleStatus.PAGADO,
+    );
+    const saldoPendiente = this.calculator.round(
+      pendientes.reduce((sum, s) => sum + Number(s.balanceDue || 0), 0),
+    );
     const prevAval = await this.guarantorService.findByLoan(prevLoanId);
 
     return {
@@ -1022,6 +1087,8 @@ export class LoansService {
         termWeeks: prev.termWeeks,
         status: prev.status,
         disbursedAt: prev.disbursedAt,
+        cuotasPendientes: pendientes.length,
+        saldoPendiente,
       },
       customer: {
         id: prev.customerId,

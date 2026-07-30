@@ -32,38 +32,13 @@ import { CreditoSemaforo, MonitorResumen, NivelSemaforo } from '../../core/model
         </button>
       </div>
 
-      <!-- Semáforo resumen (mismo diseño que el frontend principal) -->
-      <div class="semaforo-grid">
-        <!--<div class="sem-card sem-verde" [class.active]="filtro() === 'VERDE'"
-             (click)="toggleFiltro('VERDE')">
-          <div class="sem-dot"></div>
-          <div class="sem-info">
-            <span class="sem-num">{{ resumen().verde }}</span>
-            <span class="sem-label">Al corriente</span>
-          </div>
+      <!-- Resumen de la cartera en rojo (vista fija: solo créditos críticos) -->
+      <div class="rojo-banner">
+        <div class="rb-dot"></div>
+        <div class="rb-info">
+          <span class="rb-num">{{ creditosFiltrados().length }}</span>
+          <span class="rb-label">créditos en rojo (más de 5 atrasos / vencidos)</span>
         </div>
-        <div class="sem-card sem-amarillo" [class.active]="filtro() === 'AMARILLO'"
-             (click)="toggleFiltro('AMARILLO')">
-          <div class="sem-dot"></div>
-          <div class="sem-info">
-            <span class="sem-num">{{ resumen().amarillo }}</span>
-            <span class="sem-label">1-5 atrasos</span>
-          </div>
-        </div>-->
-        <div class="sem-card sem-rojo" [class.active]="filtro() === 'ROJO'"
-             (click)="toggleFiltro('ROJO')">
-          <div class="sem-dot"></div>
-          <div class="sem-info">
-            <span class="sem-num">{{ resumen().rojo }}</span>
-            <span class="sem-label">Más de 5 atrasos</span>
-          </div>
-        </div>
-        <!--<div class="sem-card sem-total">
-          <div class="sem-info">
-            <span class="sem-num">{{ resumen().total }}</span>
-            <span class="sem-label">Total créditos</span>
-          </div>
-        </div>-->
       </div>
 
       <mat-card>
@@ -75,18 +50,12 @@ import { CreditoSemaforo, MonitorResumen, NivelSemaforo } from '../../core/model
             <mat-icon matPrefix>search</mat-icon>
           </mat-form-field>
 
-          @if (filtro()) {
-            <button mat-button color="primary" (click)="toggleFiltro(filtro()!)">
-              <mat-icon>clear</mat-icon> Quitar filtro {{ filtro() }}
-            </button>
-          }
-
           @if (loading()) {
             <div class="loading-overlay"><mat-spinner diameter="40"></mat-spinner></div>
           } @else if (creditosFiltrados().length === 0) {
             <div class="empty-state">
               <mat-icon>check_circle</mat-icon>
-              <p>No hay créditos {{ filtro() ? 'en este nivel' : '' }}.</p>
+              <p>No hay créditos en rojo por gestionar.</p>
             </div>
           } @else {
             <table mat-table [dataSource]="creditosFiltrados()" class="w-full">
@@ -153,6 +122,18 @@ import { CreditoSemaforo, MonitorResumen, NivelSemaforo } from '../../core/model
     </div>
   `,
   styles: [`
+    .rojo-banner {
+      display:flex; align-items:center; gap:14px; padding:16px 18px;
+      margin-bottom:16px; border-radius:14px; background:#FEF2F2;
+      border:1px solid #FECACA;
+    }
+    .rb-dot {
+      width:20px; height:20px; border-radius:50%; flex-shrink:0;
+      background:#DC2626; box-shadow:0 0 0 4px #FECACA;
+    }
+    .rb-info { display:flex; align-items:baseline; gap:8px; }
+    .rb-num { font-size:26px; font-weight:700; color:#DC2626; line-height:1; }
+    .rb-label { font-size:13px; color:#991B1B; }
     .semaforo-grid {
       display:grid; grid-template-columns:repeat(4,1fr); gap:14px; margin-bottom:16px;
     }
@@ -219,11 +200,8 @@ export class MonitorComponent implements OnInit {
 
   private searchSubject = new Subject<string>();
 
-  creditosFiltrados = computed(() => {
-    const f = this.filtro();
-    const list = this.creditos();
-    return f ? list.filter((c) => c.nivel === f) : list;
-  });
+  // La vista es fija en rojo; creditos() ya viene filtrado a ROJO desde cargar().
+  creditosFiltrados = computed(() => this.creditos());
 
   ngOnInit() {
     // Búsqueda con debounce (como el frontend): busca al escribir, sin Enter.
@@ -241,9 +219,13 @@ export class MonitorComponent implements OnInit {
 
   cargar() {
     this.loading.set(true);
-    this.gestor.getMonitor({ search: this.search() || undefined }).subscribe({
+    // El monitor del gestor muestra ÚNICAMENTE la cartera en rojo (créditos
+    // críticos, >5 atrasos / vencidos). Se pide directamente ese nivel al
+    // backend para no traer verdes/amarillos.
+    this.gestor.getMonitor({ nivel: 'ROJO', search: this.search() || undefined }).subscribe({
       next: (res) => {
-        this.creditos.set(res.creditos);
+        // Respaldo: por si el backend devolviera otros niveles, se filtra aquí.
+        this.creditos.set((res.creditos || []).filter((c) => c.nivel === 'ROJO'));
         if (res.resumen) this.resumen.set(res.resumen);
         this.loading.set(false);
       },

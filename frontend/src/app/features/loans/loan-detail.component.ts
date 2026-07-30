@@ -1,4 +1,4 @@
-import { Component, OnInit, Inject, inject, signal } from '@angular/core';
+import { Component, OnInit, Inject, inject, signal, computed } from '@angular/core';
 import { CommonModule, CurrencyPipe, DatePipe } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { ActivatedRoute, Router, RouterLink } from '@angular/router';
@@ -164,7 +164,7 @@ export class EditMontoDialogComponent {
             <mat-icon>description</mat-icon> Contrato PDF
           </button>
         }
-        @if (loan()?.status === 'LIQUIDADO' && auth.can('prestamos.reestructurar')) {
+        @if (puedeRenovar() && auth.can('prestamos.reestructurar')) {
           <button mat-raised-button color="primary" (click)="renovar()">
             <mat-icon>autorenew</mat-icon> Renovar
           </button>
@@ -477,6 +477,20 @@ export class LoanDetailComponent implements OnInit {
 
   loan      = signal<Loan | null>(null);
   schedules = signal<PaymentSchedule[]>([]);
+
+  // Cuotas que aún no están pagadas (para habilitar la renovación anticipada).
+  cuotasPendientes = computed(
+    () => this.schedules().filter((s) => s.status !== 'PAGADO').length,
+  );
+
+  // Se puede renovar si el crédito está LIQUIDADO o le quedan 3 o menos cuotas.
+  puedeRenovar = computed(() => {
+    const l = this.loan();
+    if (!l) return false;
+    if (l.status === 'LIQUIDADO') return true;
+    const pend = this.cuotasPendientes();
+    return pend > 0 && pend <= 3;
+  });
   loading   = signal(true);
   scheduleCols = ['periodo', 'vence', 'total', 'moratorio', 'estatus', 'observaciones'];
 

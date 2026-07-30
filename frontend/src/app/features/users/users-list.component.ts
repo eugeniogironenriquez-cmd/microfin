@@ -1,5 +1,6 @@
-import { Component, OnInit, inject, signal } from '@angular/core';
+import { Component, OnInit, inject, signal, Inject } from '@angular/core';
 import { CommonModule, DatePipe } from '@angular/common';
+import { FormsModule } from '@angular/forms';
 import { RouterLink } from '@angular/router';
 import { MatCardModule } from '@angular/material/card';
 import { MatTableModule } from '@angular/material/table';
@@ -10,7 +11,87 @@ import { MatChipsModule } from '@angular/material/chips';
 import { MatTooltipModule } from '@angular/material/tooltip';
 import { MatSlideToggleModule } from '@angular/material/slide-toggle';
 import { MatSnackBar, MatSnackBarModule } from '@angular/material/snack-bar';
-import { ApiService } from '../../core/index';
+import {
+  MatDialog, MatDialogModule, MatDialogRef, MAT_DIALOG_DATA,
+} from '@angular/material/dialog';
+import { MatFormFieldModule } from '@angular/material/form-field';
+import { MatInputModule } from '@angular/material/input';
+import { ApiService, AuthService } from '../../core/index';
+
+// ── Diálogo para cambiar/reiniciar la contraseña de un usuario ──
+@Component({
+  selector: 'app-change-password-dialog',
+  standalone: true,
+  imports: [
+    CommonModule, FormsModule, MatDialogModule, MatButtonModule,
+    MatIconModule, MatFormFieldModule, MatInputModule,
+  ],
+  template: `
+    <h2 mat-dialog-title>Cambiar contraseña</h2>
+    <mat-dialog-content>
+      <p class="usr">Usuario: <strong>{{ data.name }}</strong></p>
+
+      <mat-form-field appearance="outline" class="full">
+        <mat-label>Nueva contraseña</mat-label>
+        <input matInput [type]="ver ? 'text' : 'password'"
+               [(ngModel)]="password" autocomplete="new-password">
+        <button mat-icon-button matSuffix type="button" (click)="ver = !ver">
+          <mat-icon>{{ ver ? 'visibility_off' : 'visibility' }}</mat-icon>
+        </button>
+        <mat-hint>Mínimo 8 caracteres</mat-hint>
+      </mat-form-field>
+
+      <mat-form-field appearance="outline" class="full">
+        <mat-label>Confirmar contraseña</mat-label>
+        <input matInput [type]="ver ? 'text' : 'password'"
+               [(ngModel)]="confirmar" autocomplete="new-password">
+      </mat-form-field>
+
+      @if (error()) {
+        <p class="err">{{ error() }}</p>
+      }
+    </mat-dialog-content>
+    <mat-dialog-actions align="end">
+      <button mat-button (click)="cancelar()">Cancelar</button>
+      <button mat-raised-button color="primary" (click)="guardar()">
+        Cambiar contraseña
+      </button>
+    </mat-dialog-actions>
+  `,
+  styles: [`
+    .usr { color: #4A5568; margin: 0 0 14px; }
+    .full { width: 100%; }
+    .err { color: #DC2626; font-size: 13px; margin: 4px 0 0; }
+  `],
+})
+export class ChangePasswordDialog {
+  password = '';
+  confirmar = '';
+  ver = false;
+  error = signal('');
+
+  constructor(
+    private dialogRef: MatDialogRef<ChangePasswordDialog>,
+    @Inject(MAT_DIALOG_DATA) public data: { id: string; name: string },
+  ) {}
+
+  cancelar() {
+    this.dialogRef.close(null);
+  }
+
+  guardar() {
+    if (!this.password || this.password.length < 8) {
+      this.error.set('La contraseña debe tener al menos 8 caracteres.');
+      return;
+    }
+    if (this.password !== this.confirmar) {
+      this.error.set('Las contraseñas no coinciden.');
+      return;
+    }
+    // Devuelve la contraseña al componente padre, que llama al backend.
+    this.dialogRef.close(this.password);
+  }
+}
 
 @Component({
   selector: 'app-users-list',
@@ -19,7 +100,7 @@ import { ApiService } from '../../core/index';
     CommonModule, DatePipe, RouterLink,
     MatCardModule, MatTableModule, MatButtonModule, MatIconModule,
     MatProgressSpinnerModule, MatChipsModule, MatTooltipModule,
-    MatSlideToggleModule, MatSnackBarModule,
+    MatSlideToggleModule, MatSnackBarModule, MatDialogModule,
   ],
   template: `
     <div class="page-header">
@@ -72,6 +153,11 @@ import { ApiService } from '../../core/index';
               <a mat-icon-button [routerLink]="['/users', r.id, 'edit']" matTooltip="Editar">
                 <mat-icon>edit</mat-icon>
               </a>
+              @if (auth.can('usuarios.crear')) {
+                <button mat-icon-button (click)="cambiarPassword(r)" matTooltip="Cambiar contraseña">
+                  <mat-icon>lock_reset</mat-icon>
+                </button>
+              }
             </td>
           </ng-container>
           <tr mat-header-row *matHeaderRowDef="cols"></tr>
@@ -84,6 +170,8 @@ import { ApiService } from '../../core/index';
 export class UsersListComponent implements OnInit {
   private api     = inject(ApiService);
   private snackbar = inject(MatSnackBar);
+  private dialog  = inject(MatDialog);
+  readonly auth   = inject(AuthService);
 
   users   = signal<any[]>([]);
   loading = signal(true);
@@ -123,6 +211,32 @@ export class UsersListComponent implements OnInit {
         this.togglingId.set(null);
         this.load(); // recargar para revertir el toggle visual
       },
+    });
+  }
+
+  // Abre el diálogo para cambiar la contraseña de un usuario y, si se confirma,
+  // llama al endpoint del backend (PATCH /users/:id/reset-password).
+  cambiarPassword(user: any) {
+    const ref = this.dialog.open(ChangePasswordDialog, {
+      width: '400px',
+      data: { id: user.id, name: user.name },
+    });
+    ref.afterClosed().subscribe((nuevaPassword: string | null) => {
+      if (!nuevaPassword) return; // canceló
+      this.api
+        .patch(`/users/${user.id}/reset-password`, { password: nuevaPassword })
+        .subscribe({
+          next: () => {
+            this.snackbar.open('Contraseña actualizada', 'OK', { duration: 2500 });
+          },
+          error: (err) => {
+            const msg =
+              err?.status === 403
+                ? 'No tienes permiso para cambiar contraseñas'
+                : err?.error?.message || 'No se pudo cambiar la contraseña';
+            this.snackbar.open(msg, 'Cerrar', { duration: 4000 });
+          },
+        });
     });
   }
 }

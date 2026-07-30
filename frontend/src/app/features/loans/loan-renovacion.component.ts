@@ -1,4 +1,4 @@
-import { Component, OnInit, inject, signal } from '@angular/core';
+import { Component, OnInit, inject, signal, computed } from '@angular/core';
 import { CommonModule, CurrencyPipe, DatePipe } from '@angular/common';
 import { FormBuilder, Validators, ReactiveFormsModule } from '@angular/forms';
 import { ActivatedRoute, Router, RouterLink } from '@angular/router';
@@ -46,6 +46,16 @@ import { ApiService } from '../../core/index';
               <div class="info-row"><span>Estado</span>
                 <span class="badge badge-{{ info()!.prevLoan.status | lowercase }}">{{ info()!.prevLoan.status }}</span>
               </div>
+              @if (info()!.prevLoan.status !== 'LIQUIDADO' && info()!.prevLoan.saldoPendiente > 0) {
+                <div class="info-row saldo-row">
+                  <span>Saldo pendiente ({{ info()!.prevLoan.cuotasPendientes }} cuotas)</span>
+                  <strong class="saldo-desc">{{ info()!.prevLoan.saldoPendiente | currency:'MXN' }}</strong>
+                </div>
+                <div class="saldo-aviso">
+                  <mat-icon>info</mat-icon>
+                  Este saldo se liquidará con la renovación y se descontará del monto que reciba el cliente.
+                </div>
+              }
             </div>
 
             <mat-divider style="margin:14px 0"></mat-divider>
@@ -97,6 +107,11 @@ import { ApiService } from '../../core/index';
                 <div class="sim-preview">
                   <div><span>Cuota diaria</span><strong>{{ sim()!.periodicPayment | currency:'MXN' }}</strong></div>
                   <div><span>Total a pagar</span><strong>{{ sim()!.totalPayment | currency:'MXN' }}</strong></div>
+                  @if (saldoADescontar() > 0) {
+                    <div class="sim-desc"><span>Monto solicitado</span><strong>{{ form.value.principalAmount | currency:'MXN' }}</strong></div>
+                    <div class="sim-desc"><span>− Saldo anterior a liquidar</span><strong class="saldo-desc">{{ saldoADescontar() | currency:'MXN' }}</strong></div>
+                    <div class="sim-entrega"><span>Cliente recibe</span><strong>{{ montoEntregado() | currency:'MXN' }}</strong></div>
+                  }
                 </div>
               }
 
@@ -134,8 +149,16 @@ import { ApiService } from '../../core/index';
                 <textarea matInput formControlName="notes" rows="2"></textarea>
               </mat-form-field>
 
+              @if (saldoADescontar() > 0 && form.value.principalAmount && montoEntregado() <= 0) {
+                <div class="saldo-aviso" style="margin-bottom:12px">
+                  <mat-icon>warning</mat-icon>
+                  El monto solicitado debe ser mayor al saldo pendiente que se liquida
+                  ({{ saldoADescontar() | currency:'MXN' }}).
+                </div>
+              }
+
               <button mat-raised-button color="primary" type="submit" class="w-full"
-                      [disabled]="form.invalid || saving()">
+                      [disabled]="form.invalid || saving() || (saldoADescontar() > 0 && montoEntregado() <= 0)">
                 @if (saving()) { <mat-spinner diameter="20"></mat-spinner> }
                 @else { <mat-icon>autorenew</mat-icon> }
                 Crear renovación (autorizada)
@@ -172,6 +195,22 @@ import { ApiService } from '../../core/index';
     .sim-preview div { display:flex; flex-direction:column; }
     .sim-preview span { font-size:11px; color:#276749; }
     .sim-preview strong { font-size:16px; color:#1C4532; }
+    .saldo-row { margin-top:6px; }
+    .saldo-desc { color:#DC2626 !important; }
+    .saldo-aviso {
+      display:flex; align-items:flex-start; gap:6px;
+      background:#FEF2F2; border:1px solid #FECACA; border-radius:8px;
+      padding:8px 10px; margin-top:8px; font-size:12px; color:#991B1B;
+    }
+    .saldo-aviso mat-icon { font-size:18px; width:18px; height:18px; }
+    .sim-desc { margin-top:4px; }
+    .sim-desc span { color:#718096; }
+    .sim-desc strong { font-size:14px; }
+    .sim-entrega {
+      margin-top:6px; padding-top:6px; border-top:1px dashed #9AE6B4;
+    }
+    .sim-entrega span { color:#276749; font-weight:600; }
+    .sim-entrega strong { font-size:18px; color:#1C4532; }
     .loading-overlay { display:flex; justify-content:center; padding:48px; }
   `],
 })
@@ -187,6 +226,19 @@ export class LoanRenovacionComponent implements OnInit {
   info = signal<any>(null);
   plazos = signal<any[]>([]);
   sim = signal<any>(null);
+
+  // Saldo del crédito anterior que se liquidará (solo si no está liquidado).
+  saldoADescontar = computed(() => {
+    const prev = this.info()?.prevLoan;
+    if (!prev || prev.status === 'LIQUIDADO') return 0;
+    return Number(prev.saldoPendiente || 0);
+  });
+
+  // Monto neto que recibe el cliente = solicitado − saldo anterior.
+  montoEntregado = computed(() => {
+    const solicitado = Number(this.form.value.principalAmount || 0);
+    return Math.max(0, Math.round((solicitado - this.saldoADescontar()) * 100) / 100);
+  });
 
   prevLoanId = '';
 
