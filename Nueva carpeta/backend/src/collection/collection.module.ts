@@ -9,7 +9,7 @@ import {
   Query,
 } from "@nestjs/common";
 import { TypeOrmModule, InjectRepository } from "@nestjs/typeorm";
-import { Repository, DataSource } from "typeorm";
+import { Repository } from "typeorm";
 import { ApiTags, ApiBearerAuth } from "@nestjs/swagger";
 import {
   CollectionVisit,
@@ -35,7 +35,6 @@ export class CollectionService {
     @InjectRepository(CustomerCreditBalance)
     private saldoFavorRepo: Repository<CustomerCreditBalance>,
     private semaforoService: SemaforoService,
-    private dataSource: DataSource,
   ) {}
 
   async getMyLoans(collectorId: string) {
@@ -260,39 +259,6 @@ export class CollectionService {
       })
       .getMany();
 
-    // Observaciones del cobrador: se cruzan las notas de la tabla pagos con
-    // las cuotas mediante el JSON cuotas_pagadas (periodos que cubrió el pago).
-    // Se hace en una sola consulta para todos los créditos del cobrador.
-    const loanIds = loans.map((l) => l.id);
-    const notasPorLoanPeriodo = new Map<string, string[]>();
-    if (loanIds.length > 0) {
-      const pagos = await this.dataSource.query(
-        `SELECT prestamo_id, notas, cuotas_pagadas
-           FROM pagos
-          WHERE prestamo_id IN (${loanIds.map(() => "?").join(",")})
-            AND notas IS NOT NULL AND notas <> ''
-          ORDER BY creado_en ASC`,
-        loanIds,
-      );
-      for (const p of pagos) {
-        if (!p.cuotas_pagadas) continue;
-        try {
-          const arr = JSON.parse(p.cuotas_pagadas);
-          if (!Array.isArray(arr)) continue;
-          for (const item of arr) {
-            const periodo = Number(item?.periodo ?? item);
-            if (isNaN(periodo)) continue;
-            const key = `${p.prestamo_id}:${periodo}`;
-            if (!notasPorLoanPeriodo.has(key)) notasPorLoanPeriodo.set(key, []);
-            const lista = notasPorLoanPeriodo.get(key)!;
-            if (!lista.includes(p.notas)) lista.push(p.notas);
-          }
-        } catch {
-          // JSON inválido: se ignora.
-        }
-      }
-    }
-
     // Un objeto por crédito con su lista de cuotas (ordenadas por periodo).
     return loans.map((l: any) => ({
       loanId: l.id,
@@ -308,10 +274,6 @@ export class CollectionService {
           pagadoEn: s.paidAt || null,
           moraGenerada: Number(s.moraGenerada || 0),
           moraPagada: Number(s.moraPagada || 0),
-          notas:
-            (notasPorLoanPeriodo.get(`${l.id}:${s.periodNumber}`) || []).join(
-              " | ",
-            ) || null,
         })),
     }));
   }

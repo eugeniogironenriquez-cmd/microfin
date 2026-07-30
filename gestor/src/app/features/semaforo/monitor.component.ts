@@ -34,7 +34,7 @@ import { CreditoSemaforo, MonitorResumen, NivelSemaforo } from '../../core/model
 
       <!-- Semáforo resumen (mismo diseño que el frontend principal) -->
       <div class="semaforo-grid">
-        <div class="sem-card sem-verde" [class.active]="filtro() === 'VERDE'"
+        <!--<div class="sem-card sem-verde" [class.active]="filtro() === 'VERDE'"
              (click)="toggleFiltro('VERDE')">
           <div class="sem-dot"></div>
           <div class="sem-info">
@@ -49,7 +49,7 @@ import { CreditoSemaforo, MonitorResumen, NivelSemaforo } from '../../core/model
             <span class="sem-num">{{ resumen().amarillo }}</span>
             <span class="sem-label">1-5 atrasos</span>
           </div>
-        </div>
+        </div>-->
         <div class="sem-card sem-rojo" [class.active]="filtro() === 'ROJO'"
              (click)="toggleFiltro('ROJO')">
           <div class="sem-dot"></div>
@@ -58,12 +58,12 @@ import { CreditoSemaforo, MonitorResumen, NivelSemaforo } from '../../core/model
             <span class="sem-label">Más de 5 atrasos</span>
           </div>
         </div>
-        <div class="sem-card sem-total">
+        <!--<div class="sem-card sem-total">
           <div class="sem-info">
             <span class="sem-num">{{ resumen().total }}</span>
             <span class="sem-label">Total créditos</span>
           </div>
-        </div>
+        </div>-->
       </div>
 
       <mat-card>

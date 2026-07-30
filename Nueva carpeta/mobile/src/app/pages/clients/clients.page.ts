@@ -14,8 +14,6 @@ import {
   IonButton,
   IonButtons,
   IonSearchbar,
-  IonSegment,
-  IonSegmentButton,
   IonRefresher,
   IonRefresherContent,
   IonSpinner,
@@ -62,8 +60,6 @@ import { AssignedClient } from "../../core/models";
     IonButton,
     IonButtons,
     IonSearchbar,
-    IonSegment,
-    IonSegmentButton,
     IonRefresher,
     IonRefresherContent,
     IonSpinner,
@@ -115,18 +111,6 @@ import { AssignedClient } from "../../core/models";
         (ionInput)="onSearch($event)"
       ></ion-searchbar>
 
-      <!-- Pestañas solo para el cobrador: hoy vs toda la cartera -->
-      @if (!mp.esGestor()) {
-        <ion-segment [value]="tab()" (ionChange)="cambiarTab($event)">
-          <ion-segment-button value="hoy">
-            <ion-label>Pendientes de hoy ({{ countHoy() }})</ion-label>
-          </ion-segment-button>
-          <ion-segment-button value="todos">
-            <ion-label>Toda mi cartera ({{ countTodos() }})</ion-label>
-          </ion-segment-button>
-        </ion-segment>
-      }
-
       @if (loading()) {
         <div class="center"><ion-spinner name="crescent"></ion-spinner></div>
       } @else if (filtered().length === 0) {
@@ -136,9 +120,7 @@ import { AssignedClient } from "../../core/models";
             {{
               mp.esGestor()
                 ? "No hay créditos en rojo por gestionar."
-                : (tab() === 'hoy'
-                    ? "No hay clientes con cuota pendiente para hoy."
-                    : "No tienes créditos asignados.")
+                : "No hay clientes con cuota pendiente para hoy."
             }}
           </p>
           <ion-button fill="outline" (click)="download()">
@@ -256,28 +238,20 @@ export class ClientsPage implements OnInit {
 
   loading = signal(true);
   search = signal("");
-  // Pestaña activa para el cobrador: 'hoy' (cuota pendiente del día) o
-  // 'todos' (toda la cartera asignada). Permite registrar un segundo pago
-  // aunque la cuota de hoy ya esté cubierta.
-  tab = signal<'hoy' | 'todos'>('hoy');
 
   filtered = computed(() => {
     const term = this.search().toLowerCase().trim();
     const pagadosLocal = this.pagadosHoyLocal();
     const esGestor = this.mp.esGestor();
-    const tab = this.tab();
 
     // Regla según el rol:
+    //  - COBRADOR: solo ve los créditos con la cuota de HOY pendiente (a quién
+    //    visitar hoy). Si ya pagó lo de hoy, se oculta aunque siga atrasado.
     //  - GESTOR: ve TODA la cartera en rojo (>5 atrasos / vencidos), tenga o no
-    //    cuota programada para hoy. No usa pestañas.
-    //  - COBRADOR: dos pestañas.
-    //     · 'hoy':   créditos con la cuota de HOY pendiente (a quién visitar).
-    //     · 'todos': toda la cartera asignada, para registrar pagos extra
-    //                (p.ej. si el cliente adelanta dos días) aunque el crédito
-    //                ya no tenga cuota pendiente para hoy.
+    //    cuota programada para hoy, porque su labor es gestionar los críticos,
+    //    no cobrar la cuota diaria.
     const list = this.collection.clients().filter((cliente) => {
-      if (esGestor) return true;
-      if (tab === 'todos') return true; // toda la cartera del cobrador
+      if (esGestor) return true; // el gestor ve toda la cartera en rojo
       return (
         cliente.tieneCuotaHoy === true &&
         !pagadosLocal.has(cliente.loanId)
@@ -295,15 +269,6 @@ export class ClientsPage implements OnInit {
         (cliente.addressLine || "").toLowerCase().includes(term),
     );
   });
-
-  // Conteos para mostrar en las pestañas (sin aplicar el término de búsqueda).
-  countHoy = computed(() => {
-    const pagadosLocal = this.pagadosHoyLocal();
-    return this.collection.clients().filter(
-      (c) => c.tieneCuotaHoy === true && !pagadosLocal.has(c.loanId),
-    ).length;
-  });
-  countTodos = computed(() => this.collection.clients().length);
 
   /** Créditos con un pago registrado HOY que aún no se sincroniza. */
   pagadosHoyLocal = signal<Set<string>>(new Set());
@@ -469,11 +434,6 @@ export class ClientsPage implements OnInit {
 
   onSearch(ev: any) {
     this.search.set(ev.target.value || "");
-  }
-
-  cambiarTab(ev: any) {
-    const val = ev?.detail?.value;
-    if (val === 'hoy' || val === 'todos') this.tab.set(val);
   }
 
   open(c: AssignedClient) {

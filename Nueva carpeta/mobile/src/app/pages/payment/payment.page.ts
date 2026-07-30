@@ -4,7 +4,7 @@ import { FormsModule } from "@angular/forms";
 import { ActivatedRoute, Router } from "@angular/router";
 import { ThermalPrinterService } from "../../core/thermal-printer.service";
 // en el addIcons, agrega: printOutline
-import { printOutline, informationCircleOutline, calendarOutline } from "ionicons/icons";
+import { printOutline, informationCircleOutline } from "ionicons/icons";
 import {
   IonHeader,
   IonToolbar,
@@ -22,7 +22,6 @@ import {
   IonSpinner,
   IonCard,
   IonCardContent,
-  IonBadge,
   IonSegment,
   IonSegmentButton,
   IonText,
@@ -80,7 +79,6 @@ type ModoPago = "DIA" | "SELECTIVO" | "TOTAL" | "MORATORIO";
     IonSpinner,
     IonCard,
     IonCardContent,
-    IonBadge,
     IonSegment,
     IonSegmentButton,
     IonText,
@@ -307,47 +305,6 @@ type ModoPago = "DIA" | "SELECTIVO" | "TOTAL" | "MORATORIO";
             </ion-button>
           </ion-card-content>
         </ion-card>
-
-        <!-- Calendario de pagos (informativo) -->
-        <ion-card class="cal-card">
-          <ion-card-content>
-            <div class="cal-title">
-              <ion-icon name="calendar-outline"></ion-icon> Calendario de pagos
-            </div>
-            @if (calendario().length === 0) {
-              <p class="cal-empty">Sin calendario disponible.</p>
-            } @else {
-              <div class="cal-table">
-                <div class="cal-row cal-head">
-                  <span class="c-num">#</span>
-                  <span class="c-vence">Vence</span>
-                  <span class="c-monto">Cuota</span>
-                  <span class="c-mora">Mora</span>
-                  <span class="c-estatus">Estatus</span>
-                  <span class="c-obs">Observaciones</span>
-                </div>
-                @for (cu of calendario(); track cu.periodo) {
-                  <div class="cal-row"
-                       [class.row-pagado]="cu.estatus === 'PAGADO'"
-                       [class.row-vencido]="cu.vencida && cu.estatus !== 'PAGADO'">
-                    <span class="c-num">{{ cu.periodo }}</span>
-                    <span class="c-vence">{{ cu.vence | date: 'dd/MM/yy' : 'UTC' }}</span>
-                    <span class="c-monto">{{ cu.monto | currency: 'MXN' : 'symbol' : '1.0-0' }}</span>
-                    <span class="c-mora">
-                      {{ cu.mora > 0 ? (cu.mora | currency: 'MXN' : 'symbol' : '1.0-0') : '—' }}
-                    </span>
-                    <span class="c-estatus">
-                      <ion-badge [class]="cu.estatus === 'PAGADO' ? 'b-pagado' : (cu.vencida ? 'b-vencido' : 'b-pend')">
-                        {{ cu.vencida && cu.estatus !== 'PAGADO' ? 'VENCIDO' : cu.estatus }}
-                      </ion-badge>
-                    </span>
-                    <span class="c-obs">{{ cu.notas || '—' }}</span>
-                  </div>
-                }
-              </div>
-            }
-          </ion-card-content>
-        </ion-card>
       } @else {
         <!-- Confirmación + ticket -->
         <div class="ok">
@@ -480,35 +437,6 @@ type ModoPago = "DIA" | "SELECTIVO" | "TOTAL" | "MORATORIO";
         line-height: 1.5;
         margin: 0;
       }
-      .cal-card { margin-top: 12px; }
-      .cal-title {
-        display: flex; align-items: center; gap: 6px;
-        font-weight: 700; font-size: 15px; margin-bottom: 10px;
-        color: var(--ion-color-primary);
-      }
-      .cal-empty { color: #888; font-size: 13px; }
-      .cal-table { font-size: 12px; }
-      .cal-row {
-        display: grid;
-        grid-template-columns: 26px 60px 62px 52px 68px 1fr;
-        gap: 4px; align-items: center;
-        padding: 6px 2px;
-        border-bottom: 1px solid #eee;
-      }
-      .cal-head {
-        font-weight: 700; font-size: 10px; text-transform: uppercase;
-        color: #888; border-bottom: 2px solid #ddd;
-      }
-      .row-pagado { background: #f7f7f7; color: #999; }
-      .row-vencido { background: #fff5f5; }
-      .c-monto, .c-mora { text-align: right; }
-      .c-obs {
-        font-size: 11px; color: #666;
-        overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
-      }
-      ion-badge.b-pagado { --background: #d4f4dd; --color: #1a7f37; }
-      ion-badge.b-vencido { --background: #ffd7d7; --color: #c0392b; }
-      ion-badge.b-pend { --background: #eef1f5; --color: #566; }
     `,
   ],
 })
@@ -535,8 +463,6 @@ export class PaymentPage implements OnInit {
   seleccionadas = signal<Set<number>>(new Set());
   loadingCuotas = signal(false);
   info = signal<PaymentInfo | null>(null);
-  // Calendario completo del crédito (informativo, todas las cuotas).
-  calendario = signal<any[]>([]);
 
   geo = signal<{ lat: number; lng: number } | null>(null);
   capturingGeo = signal(false);
@@ -588,7 +514,6 @@ export class PaymentPage implements OnInit {
       checkboxOutline,
       printOutline,
       informationCircleOutline,
-      calendarOutline,
     });
   }
 
@@ -611,45 +536,6 @@ export class PaymentPage implements OnInit {
         /* sin info */
       }
     }
-
-    // Cargar el calendario completo (informativo). Del cache local, que ya se
-    // descarga al sincronizar; funciona también sin conexión.
-    await this.cargarCalendario(loanId);
-  }
-
-  // Arma el calendario para mostrar: marca vencidas y calcula mora pendiente.
-  private async cargarCalendario(loanId: string) {
-    const hoy = this.hoyMexicoUTC();
-    const cuotas = await this.collection.getCuotasLocal(loanId);
-    const cal = (cuotas || []).map((c: any) => {
-      const dueUTC = this.fechaUTC(c.vence);
-      const pagada = c.estatus === "PAGADO";
-      const mora = Math.max(
-        0,
-        Number(c.moraGenerada || 0) - Number(c.moraPagada || 0),
-      );
-      return {
-        periodo: c.periodo,
-        vence: c.vence,
-        monto: Number(c.monto ?? c.saldo ?? 0),
-        mora,
-        estatus: c.estatus,
-        vencida: !pagada && dueUTC < hoy,
-        notas: c.notas ?? null,
-      };
-    });
-    this.calendario.set(cal);
-  }
-
-  private hoyMexicoUTC(): number {
-    const MX = 6 * 60 * 60 * 1000;
-    const d = new Date(Date.now() - MX);
-    return Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate());
-  }
-
-  private fechaUTC(v: string | Date): number {
-    const d = new Date(v);
-    return Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate());
   }
 
   async onTypeChange() {
