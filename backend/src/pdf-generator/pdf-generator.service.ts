@@ -812,10 +812,16 @@ export class PdfGeneratorService {
       [data.address, data.city, data.state].filter(Boolean).join(", ");
 
     // Determinar el TIPO de documento: contrato normal, convenio o reestructura.
+    // OJO: tanto las reestructuras como las renovaciones tienen parentLoanId
+    // (nacen de un crédito anterior), así que parentLoanId por sí solo NO basta.
+    // Una reestructura se identifica por su método de desembolso o su estado;
+    // una renovación es un contrato de crédito normal (no lleva el aviso).
     const loan = data.loan || {};
     const esConvenio = !!loan.isConvenio || loan.status === "CONVENIO";
     const esReestructura =
-      !esConvenio && (loan.status === "REESTRUCTURADO" || !!loan.parentLoanId);
+      !esConvenio &&
+      (loan.status === "REESTRUCTURADO" ||
+        loan.disbursementMethod === "REESTRUCTURA");
 
     const titulo = esConvenio
       ? "CONVENIO DE PAGO"
