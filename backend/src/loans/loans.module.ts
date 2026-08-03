@@ -933,8 +933,23 @@ export class LoansService {
     const cuotasPendientes = schedulesPrev.filter(
       (s) => s.status !== ScheduleStatus.PAGADO,
     );
-    const saldoPendientePrev = this.calculator.round(
+    // Saldo de capital+interés pendiente (campo saldo_adeudado).
+    const saldoCapitalPrev = this.calculator.round(
       cuotasPendientes.reduce((sum, s) => sum + Number(s.balanceDue || 0), 0),
+    );
+    // Mora pendiente = mora generada − mora pagada, de TODAS las cuotas
+    // (la mora puede existir en cuotas que ya no están pendientes de capital).
+    const moraPendientePrev = this.calculator.round(
+      schedulesPrev.reduce(
+        (sum, s) =>
+          sum +
+          Math.max(0, Number(s.moraGenerada || 0) - Number(s.moraPagada || 0)),
+        0,
+      ),
+    );
+    // El saldo total a liquidar con la renovación = capital+interés + mora.
+    const saldoPendientePrev = this.calculator.round(
+      saldoCapitalPrev + moraPendientePrev,
     );
 
     const estaLiquidado = prev.status === LoanStatus.LIQUIDADO;
@@ -976,15 +991,28 @@ export class LoansService {
     await qr.connect();
     await qr.startTransaction();
     try {
-      // Si el crédito anterior aún tenía cuotas pendientes, se liquida con la
-      // renovación: sus cuotas pendientes se marcan como PAGADO y el crédito
-      // pasa a LIQUIDADO. El saldo se descuenta del desembolso al cliente.
+      // Si el crédito anterior aún tenía saldo (capital+interés o mora), se
+      // liquida con la renovación: las cuotas pendientes se marcan PAGADO, la
+      // mora pendiente se da por saldada, y el crédito pasa a LIQUIDADO. Todo
+      // ese saldo se descuenta del desembolso al cliente.
       if (!estaLiquidado && saldoPendientePrev > 0) {
+        // Saldar capital+interés de las cuotas pendientes.
         for (const s of cuotasPendientes) {
           s.balanceDue = 0;
           s.status = ScheduleStatus.PAGADO;
           s.paidAt = new Date();
-          await qr.manager.save(s);
+        }
+        // Saldar la mora pendiente en TODAS las cuotas (puede haber mora en
+        // cuotas cuyo capital ya estaba pagado).
+        for (const s of schedulesPrev) {
+          const moraPend =
+            Number(s.moraGenerada || 0) - Number(s.moraPagada || 0);
+          if (moraPend > 0) {
+            s.moraPagada = Number(s.moraGenerada || 0);
+            await qr.manager.save(s);
+          } else if (cuotasPendientes.includes(s)) {
+            await qr.manager.save(s);
+          }
         }
         prev.status = LoanStatus.LIQUIDADO;
         await qr.manager.save(prev);
@@ -1013,7 +1041,7 @@ export class LoansService {
         // Se deja constancia del descuento en las notas para el desembolso.
         notes:
           saldoLiquidado > 0
-            ? `${dto.notes ? dto.notes + " | " : ""}Renovación: se liquidó saldo anterior de $${saldoLiquidado.toFixed(2)}. Monto entregado al cliente: $${montoEntregado.toFixed(2)}.`
+            ? `${dto.notes ? dto.notes + " | " : ""}Renovación: se liquidó saldo anterior de $${saldoLiquidado.toFixed(2)} (capital+interés $${saldoCapitalPrev.toFixed(2)}, mora $${moraPendientePrev.toFixed(2)}). Monto entregado al cliente: $${montoEntregado.toFixed(2)}.`
             : dto.notes,
         createdBy: userId,
       } as any);
@@ -1048,10 +1076,12 @@ export class LoansService {
       return {
         loan: saved,
         saldoLiquidado,
+        saldoCapital: saldoCapitalPrev,
+        moraLiquidada: moraPendientePrev,
         montoEntregado: this.calculator.round(principal - saldoLiquidado),
         message:
           saldoLiquidado > 0
-            ? `Renovación creada. Se liquidó el saldo anterior de $${saldoLiquidado.toFixed(2)}; el cliente recibe $${this.calculator.round(principal - saldoLiquidado).toFixed(2)}.`
+            ? `Renovación creada. Se liquidó el saldo anterior de $${saldoLiquidado.toFixed(2)} (incluye mora $${moraPendientePrev.toFixed(2)}); el cliente recibe $${this.calculator.round(principal - saldoLiquidado).toFixed(2)}.`
             : "Renovación creada y autorizada. Lista para desembolsar.",
       };
     } catch (err) {
@@ -1082,9 +1112,21 @@ export class LoansService {
     const pendientes = payments.filter(
       (s) => s.status !== ScheduleStatus.PAGADO,
     );
-    const saldoPendiente = this.calculator.round(
+    // Saldo de capital+interés pendiente.
+    const saldoCapital = this.calculator.round(
       pendientes.reduce((sum, s) => sum + Number(s.balanceDue || 0), 0),
     );
+    // Mora pendiente = mora generada − mora pagada (de todas las cuotas).
+    const moraPendiente = this.calculator.round(
+      payments.reduce(
+        (sum, s) =>
+          sum +
+          Math.max(0, Number(s.moraGenerada || 0) - Number(s.moraPagada || 0)),
+        0,
+      ),
+    );
+    // Saldo total a liquidar con la renovación = capital+interés + mora.
+    const saldoPendiente = this.calculator.round(saldoCapital + moraPendiente);
     const prevAval = await this.guarantorService.findByLoan(prevLoanId);
 
     return {
@@ -1096,6 +1138,8 @@ export class LoansService {
         status: prev.status,
         disbursedAt: prev.disbursedAt,
         cuotasPendientes: pendientes.length,
+        saldoCapital,
+        moraPendiente,
         saldoPendiente,
       },
       customer: {

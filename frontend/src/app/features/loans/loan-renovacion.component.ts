@@ -48,12 +48,22 @@ import { ApiService } from '../../core/index';
               </div>
               @if (info()!.prevLoan.status !== 'LIQUIDADO' && info()!.prevLoan.saldoPendiente > 0) {
                 <div class="info-row saldo-row">
-                  <span>Saldo pendiente ({{ info()!.prevLoan.cuotasPendientes }} cuotas)</span>
+                  <span>Saldo capital ({{ info()!.prevLoan.cuotasPendientes }} cuotas)</span>
+                  <strong class="saldo-desc">{{ info()!.prevLoan.saldoCapital | currency:'MXN' }}</strong>
+                </div>
+                @if (info()!.prevLoan.moraPendiente > 0) {
+                  <div class="info-row saldo-row">
+                    <span>Mora pendiente</span>
+                    <strong class="saldo-desc">{{ info()!.prevLoan.moraPendiente | currency:'MXN' }}</strong>
+                  </div>
+                }
+                <div class="info-row saldo-row saldo-total-row">
+                  <span>Total a liquidar</span>
                   <strong class="saldo-desc">{{ info()!.prevLoan.saldoPendiente | currency:'MXN' }}</strong>
                 </div>
                 <div class="saldo-aviso">
                   <mat-icon>info</mat-icon>
-                  Este saldo se liquidará con la renovación y se descontará del monto que reciba el cliente.
+                  Este saldo (capital + mora) se liquidará con la renovación y se descontará del monto que reciba el cliente.
                 </div>
               }
             </div>
@@ -124,8 +134,11 @@ import { ApiService } from '../../core/index';
                   <div><span>Cuota diaria</span><strong>{{ sim()!.periodicPayment | currency:'MXN' }}</strong></div>
                   <div><span>Total a pagar</span><strong>{{ sim()!.totalPayment | currency:'MXN' }}</strong></div>
                   @if (saldoADescontar() > 0) {
-                    <div class="sim-desc"><span>Monto solicitado</span><strong>{{ form.value.principalAmount | currency:'MXN' }}</strong></div>
-                    <div class="sim-desc"><span>− Saldo anterior a liquidar</span><strong class="saldo-desc">{{ saldoADescontar() | currency:'MXN' }}</strong></div>
+                    <div class="sim-desc"><span>Monto solicitado</span><strong>{{ montoSolicitado() | currency:'MXN' }}</strong></div>
+                    <div class="sim-desc"><span>− Saldo capital anterior</span><strong class="saldo-desc">{{ (info()!.prevLoan.saldoCapital || 0) | currency:'MXN' }}</strong></div>
+                    @if ((info()!.prevLoan.moraPendiente || 0) > 0) {
+                      <div class="sim-desc"><span>− Mora pendiente</span><strong class="saldo-desc">{{ info()!.prevLoan.moraPendiente | currency:'MXN' }}</strong></div>
+                    }
                     <div class="sim-entrega"><span>Cliente recibe</span><strong>{{ montoEntregado() | currency:'MXN' }}</strong></div>
                   }
                 </div>
@@ -165,7 +178,7 @@ import { ApiService } from '../../core/index';
                 <textarea matInput formControlName="notes" rows="2"></textarea>
               </mat-form-field>
 
-              @if (saldoADescontar() > 0 && form.value.principalAmount && montoEntregado() <= 0) {
+              @if (saldoADescontar() > 0 && montoSolicitado() > 0 && montoEntregado() <= 0) {
                 <div class="saldo-aviso" style="margin-bottom:12px">
                   <mat-icon>warning</mat-icon>
                   El monto solicitado debe ser mayor al saldo pendiente que se liquida
@@ -219,6 +232,10 @@ import { ApiService } from '../../core/index';
     .cuota-ajuste .min-hint { font-size:11px; color:#718096; font-weight:400; }
     .cuota-ajuste .cuota-field { width:140px; margin-bottom:-1.25em; }
     .saldo-row { margin-top:6px; }
+    .saldo-total-row {
+      margin-top:4px; padding-top:6px;
+      border-top:1px dashed #FCA5A5; font-weight:700;
+    }
     .saldo-desc { color:#DC2626 !important; }
     .saldo-aviso {
       display:flex; align-items:flex-start; gap:6px;
@@ -260,9 +277,14 @@ export class LoanRenovacionComponent implements OnInit {
     return Number(prev.saldoPendiente || 0);
   });
 
+  // Monto solicitado como signal, para que los cálculos reaccionen a los
+  // cambios del formulario (un computed no reacciona al valor de un
+  // FormControl por sí solo; hay que reflejarlo en un signal).
+  montoSolicitado = signal<number>(0);
+
   // Monto neto que recibe el cliente = solicitado − saldo anterior.
   montoEntregado = computed(() => {
-    const solicitado = Number(this.form.value.principalAmount || 0);
+    const solicitado = this.montoSolicitado();
     return Math.max(0, Math.round((solicitado - this.saldoADescontar()) * 100) / 100);
   });
 
@@ -283,6 +305,13 @@ export class LoanRenovacionComponent implements OnInit {
 
   ngOnInit() {
     this.prevLoanId = this.route.snapshot.paramMap.get('id')!;
+
+    // Reflejar el monto del formulario en el signal, para que "Cliente recibe"
+    // y las validaciones se actualicen en tiempo real al escribir.
+    this.form.get('principalAmount')!.valueChanges.subscribe((v) => {
+      this.montoSolicitado.set(Number(v || 0));
+    });
+
     this.api.get<any>('/plazos-credito').subscribe({
       next: (r) => this.plazos.set(Array.isArray(r) ? r : r?.data ?? []),
     });
