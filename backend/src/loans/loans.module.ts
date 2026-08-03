@@ -916,6 +916,7 @@ export class LoansService {
       avalMode?: "NINGUNO" | "REUSAR" | "NUEVO";
       aval?: any; // datos del aval nuevo si avalMode === 'NUEVO'
       notes?: string;
+      customPayment?: number; // cuota diaria ajustada por el usuario
     },
     userId: string,
   ) {
@@ -958,11 +959,18 @@ export class LoansService {
     }
 
     const percentage = await this.plazosService.getPercentageForDays(days);
-    const { totalAmount, periodicPayment } = this.calculator.calculate(
+    // Si el usuario ajustó la cuota diaria, se respeta (no puede ser menor a la
+    // calculada por la fórmula). Si no, se usa el cálculo automático.
+    const calc = this.calculator.calculateWithPayment(
       principal,
       percentage,
       days,
+      dto.customPayment,
     );
+    if ((calc as any).error) {
+      throw new BadRequestException((calc as any).error);
+    }
+    const { totalAmount, periodicPayment } = calc;
 
     const qr = this.dataSource.createQueryRunner();
     await qr.connect();

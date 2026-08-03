@@ -104,6 +104,22 @@ import { ApiService } from '../../core/index';
               </mat-form-field>
 
               @if (sim()) {
+                <!-- Cuota diaria ajustable (igual que al crear un crédito) -->
+                <div class="cuota-ajuste">
+                  <div class="cuota-label">
+                    <span>Cuota diaria (ajustable)</span>
+                    <span class="min-hint">Mínimo: {{ minPayment() | currency:'MXN' }}</span>
+                  </div>
+                  <mat-form-field appearance="outline" class="cuota-field">
+                    <input matInput type="number" step="1" [value]="cuotaActual()"
+                           (input)="onCuotaInput($event)">
+                    <span matPrefix>$&nbsp;</span>
+                  </mat-form-field>
+                  <button mat-stroked-button color="primary" type="button" (click)="recalcConCuota()">
+                    <mat-icon>refresh</mat-icon> Aplicar
+                  </button>
+                </div>
+
                 <div class="sim-preview">
                   <div><span>Cuota diaria</span><strong>{{ sim()!.periodicPayment | currency:'MXN' }}</strong></div>
                   <div><span>Total a pagar</span><strong>{{ sim()!.totalPayment | currency:'MXN' }}</strong></div>
@@ -195,6 +211,13 @@ import { ApiService } from '../../core/index';
     .sim-preview div { display:flex; flex-direction:column; }
     .sim-preview span { font-size:11px; color:#276749; }
     .sim-preview strong { font-size:16px; color:#1C4532; }
+    .cuota-ajuste {
+      display:flex; align-items:center; gap:12px;
+      margin:8px 0 4px; flex-wrap:wrap;
+    }
+    .cuota-ajuste .cuota-label { display:flex; flex-direction:column; font-size:13px; font-weight:600; }
+    .cuota-ajuste .min-hint { font-size:11px; color:#718096; font-weight:400; }
+    .cuota-ajuste .cuota-field { width:140px; margin-bottom:-1.25em; }
     .saldo-row { margin-top:6px; }
     .saldo-desc { color:#DC2626 !important; }
     .saldo-aviso {
@@ -226,6 +249,9 @@ export class LoanRenovacionComponent implements OnInit {
   info = signal<any>(null);
   plazos = signal<any[]>([]);
   sim = signal<any>(null);
+  // Cuota diaria: mínimo permitido (calculado) y valor actual (ajustable).
+  minPayment = signal<number>(0);
+  cuotaActual = signal<number>(0);
 
   // Saldo del crédito anterior que se liquidará (solo si no está liquidado).
   saldoADescontar = computed(() => {
@@ -272,7 +298,40 @@ export class LoanRenovacionComponent implements OnInit {
     const { principalAmount, days } = this.form.value;
     if (!principalAmount || !days) return;
     this.api.post<any>('/loans/simulate', { principalAmount, days }).subscribe({
-      next: (r) => this.sim.set(r),
+      next: (r) => {
+        this.sim.set(r);
+        this.minPayment.set(r.minPayment ?? r.periodicPayment);
+        this.cuotaActual.set(r.periodicPayment);
+      },
+    });
+  }
+
+  onCuotaInput(event: Event) {
+    this.cuotaActual.set(Number((event.target as HTMLInputElement).value));
+  }
+
+  // Recalcula la simulación con la cuota que capturó el usuario. La cuota no
+  // puede ser menor a la mínima (la calculada por la fórmula).
+  recalcConCuota() {
+    const { principalAmount, days } = this.form.value;
+    const cuota = Number(this.cuotaActual());
+    if (!principalAmount || !days) return;
+    if (cuota < this.minPayment()) {
+      this.snackbar.open(
+        `La cuota no puede ser menor a ${this.minPayment()}`,
+        'Cerrar',
+        { duration: 4000 },
+      );
+      return;
+    }
+    this.api.post<any>('/loans/simulate', {
+      principalAmount, days, customPayment: cuota,
+    }).subscribe({
+      next: (r) => {
+        this.sim.set(r);
+        this.minPayment.set(r.minPayment ?? r.periodicPayment);
+      },
+      error: (err) => this.snackbar.open(err.error?.message || 'Error al recalcular', 'Cerrar', { duration: 4000 }),
     });
   }
 
@@ -288,11 +347,14 @@ export class LoanRenovacionComponent implements OnInit {
       }
     }
     this.saving.set(true);
+    const cuota = Number(this.cuotaActual());
     const body: any = {
       principalAmount: v.principalAmount,
       days: v.days,
       avalMode: v.avalMode,
       notes: v.notes,
+      // Solo se envía la cuota si el usuario la ajustó por encima de la mínima.
+      customPayment: cuota > this.minPayment() ? cuota : undefined,
     };
     if (v.avalMode === 'NUEVO') {
       body.aval = { ...v.aval, curp: (v.aval!.curp || '').toUpperCase() };
