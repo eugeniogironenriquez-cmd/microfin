@@ -52,9 +52,13 @@ export class ClientHistoryService {
       order: { createdAt: 'DESC' },
     });
 
-    // Filtro opcional: excluir créditos liquidados si el usuario no los quiere.
+    // Filtro opcional: al desactivar "Incluir liquidados" se ocultan los
+    // créditos que ya no están vigentes: los LIQUIDADOS y los REESTRUCTURADOS
+    // (estos últimos fueron reemplazados por un crédito nuevo).
     if (!incluirLiquidados) {
-      loans = loans.filter((l) => l.status !== 'LIQUIDADO');
+      loans = loans.filter(
+        (l) => l.status !== 'LIQUIDADO' && l.status !== 'REESTRUCTURADO',
+      );
     }
 
     const hoyUTC = this.hoyMexicoUTC();

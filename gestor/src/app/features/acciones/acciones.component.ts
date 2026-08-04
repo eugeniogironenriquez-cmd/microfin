@@ -528,6 +528,20 @@ interface Seguimiento {
                         </mat-form-field>
                       </div>
                       <mat-form-field appearance="outline" class="full">
+                        <mat-label>Fecha del primer pago</mat-label>
+                        <input
+                          matInput
+                          [matDatepicker]="dpr"
+                          formControlName="fechaPrimerPago"
+                        />
+                        <mat-datepicker-toggle
+                          matSuffix
+                          [for]="dpr"
+                        ></mat-datepicker-toggle>
+                        <mat-datepicker #dpr></mat-datepicker>
+                        <mat-hint>El nuevo calendario iniciará este día</mat-hint>
+                      </mat-form-field>
+                      <mat-form-field appearance="outline" class="full">
                         <mat-label>Motivo de reestructura</mat-label>
                         <textarea
                           matInput
@@ -1162,6 +1176,7 @@ export class AccionesComponent implements OnInit {
     ],
     days: [null as number | null, [Validators.required, Validators.min(1)]],
     customPayment: [null as number | null],
+    fechaPrimerPago: [null as Date | null, Validators.required],
     restructureReason: ["", Validators.required],
   });
 
@@ -1455,6 +1470,10 @@ export class AccionesComponent implements OnInit {
         principalAmount: Number(v.principalAmount),
         days: Number(v.days),
         customPayment: v.customPayment ? Number(v.customPayment) : undefined,
+        // Se envía como "YYYY-MM-DD" con la fecha local (sin desfase UTC).
+        fechaPrimerPago: v.fechaPrimerPago
+          ? this.toISODate(v.fechaPrimerPago)
+          : undefined,
         restructureReason: v.restructureReason,
       })
       .subscribe({
