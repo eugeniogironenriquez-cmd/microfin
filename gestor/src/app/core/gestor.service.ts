@@ -65,8 +65,10 @@ export class GestorService {
   // ── ACCIONES DE GESTOR ────────────────────────────────────
   /** Simula una reestructura (nueva cuota/total/calendario). */
   simular(principalAmount: number, days: number, customPayment?: number): Observable<SimulacionResponse> {
+    // El monto de reestructura ya incluye el interés del crédito original,
+    // así que se simula sin aplicar el factor (esReestructura: true).
     return this.api.post<SimulacionResponse>('/loans/simulate', {
-      principalAmount, days, customPayment,
+      principalAmount, days, customPayment, esReestructura: true,
     });
   }
 

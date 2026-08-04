@@ -200,7 +200,7 @@ export class LoanRestructureComponent implements OnInit {
   simulate() {
     const { principalAmount, days } = this.form.value;
     if (!principalAmount || !days) return;
-    this.api.post<any>('/loans/simulate', { principalAmount, days }).subscribe({
+    this.api.post<any>('/loans/simulate', { principalAmount, days, esReestructura: true }).subscribe({
       next: (r) => {
         this.sim.set(r);
         this.minPayment.set(r.minPayment ?? r.periodicPayment);
@@ -221,7 +221,7 @@ export class LoanRestructureComponent implements OnInit {
       this.snackbar.open(`La cuota no puede ser menor a ${this.minPayment()}`, 'Cerrar', { duration: 4000 });
       return;
     }
-    this.api.post<any>('/loans/simulate', { principalAmount, days, customPayment: cuota }).subscribe({
+    this.api.post<any>('/loans/simulate', { principalAmount, days, customPayment: cuota, esReestructura: true }).subscribe({
       next: (r) => { this.sim.set(r); this.minPayment.set(r.minPayment ?? r.periodicPayment); },
       error: (err) => this.snackbar.open(err.error?.message || 'Error al recalcular', 'Cerrar', { duration: 4000 }),
     });

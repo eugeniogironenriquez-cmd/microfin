@@ -1,4 +1,4 @@
-import { Component, OnInit, inject, signal } from "@angular/core";
+import { Component, OnInit, inject, signal, computed } from "@angular/core";
 import { CommonModule } from "@angular/common";
 import { FormBuilder, Validators, ReactiveFormsModule } from "@angular/forms";
 import { ActivatedRoute, Router } from "@angular/router";
@@ -519,6 +519,12 @@ interface Seguimiento {
                             type="number"
                             formControlName="customPayment"
                           />
+                          @if (cuotaAutomaticaRef() > 0) {
+                            <mat-hint>
+                              Cuota sugerida: {{ cuotaAutomaticaRef() | currency: 'MXN' }}
+                              (monto ÷ plazo)
+                            </mat-hint>
+                          }
                         </mat-form-field>
                       </div>
                       <mat-form-field appearance="outline" class="full">
@@ -550,6 +556,12 @@ interface Seguimiento {
 
                       @if (simulacion(); as s) {
                         <div class="sim-result">
+                          <div class="sim-row sim-auto">
+                            <span>Cuota automática (monto ÷ plazo)</span
+                            ><strong>{{
+                              s.minPayment | currency: "MXN"
+                            }}</strong>
+                          </div>
                           <div class="sim-row">
                             <span>Nueva cuota</span
                             ><strong>{{
@@ -560,12 +572,6 @@ interface Seguimiento {
                             <span>Total a pagar</span
                             ><strong>{{
                               s.totalPayment | currency: "MXN"
-                            }}</strong>
-                          </div>
-                          <div class="sim-row">
-                            <span>Interés total</span
-                            ><strong>{{
-                              s.totalInterest | currency: "MXN"
                             }}</strong>
                           </div>
                         </div>
@@ -962,6 +968,13 @@ interface Seguimiento {
       .sim-row span {
         color: var(--gray-600);
       }
+      .sim-auto {
+        border-bottom: 1px dashed var(--gray-300);
+        padding-bottom: 8px;
+        margin-bottom: 4px;
+      }
+      .sim-auto span { font-style: italic; }
+      .sim-auto strong { color: var(--gray-600); }
 
       /* Panel de seguimiento */
       .seg-card {
@@ -1096,6 +1109,14 @@ export class AccionesComponent implements OnInit {
   simulacion = signal<SimulacionResponse | null>(null);
   saving = signal(false);
   simulando = signal(false);
+  // Monto y plazo de reestructura reflejados como signal, para calcular la
+  // cuota sugerida (monto ÷ plazo) en tiempo real como referencia al usuario.
+  private reestMontoPlazo = signal<{ monto: number; dias: number }>({ monto: 0, dias: 0 });
+  cuotaAutomaticaRef = computed(() => {
+    const { monto, dias } = this.reestMontoPlazo();
+    if (monto > 0 && dias > 0) return Math.round((monto / dias) * 100) / 100;
+    return 0;
+  });
 
   // Pantalla de éxito con documentos del crédito generado.
   hecho = signal(false);
@@ -1158,6 +1179,15 @@ export class AccionesComponent implements OnInit {
     this.convenioForm.valueChanges.subscribe(() =>
       this.recalcConvenioPreview(),
     );
+
+    // Reflejar monto y plazo de reestructura en un signal, para mostrar la
+    // cuota sugerida (monto ÷ plazo) como referencia junto al campo.
+    this.reestructuraForm.valueChanges.subscribe((v) => {
+      this.reestMontoPlazo.set({
+        monto: Number(v.principalAmount || 0),
+        dias: Number(v.days || 0),
+      });
+    });
 
     // Cargar detalle del crédito (para cliente) y aval.
     this.gestor.getLoan(this.loanId).subscribe({

@@ -201,6 +201,7 @@ export class FinancialCalculator {
     days: number,
     startDate: Date,
     customPayment?: number,
+    fechaPrimerPago?: string, // "YYYY-MM-DD": si viene, el 1er pago cae ese día
   ) {
     const calc = this.calculateWithPayment(
       principal,
@@ -214,7 +215,12 @@ export class FinancialCalculator {
     const interestPerPeriod = this.round(interestTotal / days);
     const capitalPerPeriod = this.round(principal / days);
 
-    const dates = this.generateBusinessDates(startDate, days);
+    // Si se indicó una fecha de primer pago, el calendario arranca EXACTAMENTE
+    // ese día (parseando por partes año-mes-día para no correr el día por UTC).
+    // Si no, se usa el comportamiento normal (primer día hábil tras startDate).
+    const dates = fechaPrimerPago
+      ? this.generateConvenioDates(fechaPrimerPago, "DIARIO", days)
+      : this.generateBusinessDates(startDate, days);
     const table = [];
     let balance = totalAmount;
 
@@ -807,6 +813,7 @@ export class LoansService {
         days,
         new Date(),
         periodicPayment > cuotaAutomatica ? periodicPayment : undefined,
+        dto.fechaPrimerPago || undefined, // el calendario inicia ese día
       );
       const schedules = table.map((row: any) =>
         this.scheduleRepo.create({
