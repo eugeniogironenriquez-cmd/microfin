@@ -336,11 +336,15 @@ export class LoansService {
     days?: number;
     percentage?: number;
     customPayment?: number;
+    esReestructura?: boolean;
   }) {
     const principal = Number(dto.principalAmount);
     const days = Number(dto.days ?? dto.termWeeks);
-    const percentage =
-      dto.percentage != null
+    // En una reestructura, el monto ya incluye el interés del crédito original,
+    // así que no se aplica el factor: el porcentaje es 0 (cuota = monto / plazo).
+    const percentage = dto.esReestructura
+      ? 0
+      : dto.percentage != null
         ? Number(dto.percentage)
         : await this.plazosService.getPercentageForDays(days);
 
@@ -752,19 +756,29 @@ export class LoansService {
 
       const principal = Number(dto.principalAmount);
       const days = Number(dto.days ?? dto.termWeeks);
-      const percentage =
-        dto.percentage != null
-          ? Number(dto.percentage)
-          : await this.plazosService.getPercentageForDays(days);
 
-      const calc = this.calculator.calculateWithPayment(
-        principal,
-        percentage,
-        days,
-        dto.customPayment,
-      );
-      if ((calc as any).error)
-        throw new BadRequestException((calc as any).error);
+      // En una REESTRUCTURA, el monto que se captura ya es el saldo a
+      // reestructurar (ya incluye el interés y factor del crédito original).
+      // Por eso NO se vuelve a aplicar el factor ni el interés: el total a
+      // pagar es el propio monto, y la cuota es monto / plazo.
+      const totalAmount = this.calculator.round(principal);
+      const cuotaAutomatica = this.calculator.round(totalAmount / days);
+
+      let periodicPayment = cuotaAutomatica;
+      if (dto.customPayment != null && Number(dto.customPayment) > 0) {
+        const cuota = this.calculator.round(Number(dto.customPayment));
+        // La cuota personalizada no puede ser menor a la automática, porque
+        // no alcanzaría a cubrir el saldo en el plazo indicado.
+        if (cuota < cuotaAutomatica) {
+          throw new BadRequestException(
+            `La cuota no puede ser menor a ${cuotaAutomatica}`,
+          );
+        }
+        periodicPayment = cuota;
+      }
+      // El porcentaje se guarda solo como referencia (0 en reestructura, ya que
+      // el interés no se recalcula).
+      const percentage = 0;
 
       const newLoan = this.loanRepo.create({
         customerId: loan.customerId,
@@ -779,8 +793,8 @@ export class LoansService {
         disbursedAt: new Date(),
         disbursedBy: userId,
         disbursementMethod: "REESTRUCTURA",
-        periodicPayment: this.calculator.round(calc.periodicPayment),
-        totalAmount: this.calculator.round(calc.totalAmount),
+        periodicPayment: this.calculator.round(periodicPayment),
+        totalAmount: this.calculator.round(totalAmount),
         restructureCount: (loan.restructureCount || 0) + 1,
         restructureReason: dto.restructureReason,
         createdBy: userId,
@@ -789,10 +803,10 @@ export class LoansService {
 
       const table = this.calculator.generateScheduleTable(
         principal,
-        percentage,
+        percentage, // 0 en reestructura: el monto ya es el total, sin interés
         days,
         new Date(),
-        dto.customPayment,
+        periodicPayment > cuotaAutomatica ? periodicPayment : undefined,
       );
       const schedules = table.map((row: any) =>
         this.scheduleRepo.create({
