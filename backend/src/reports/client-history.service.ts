@@ -219,7 +219,7 @@ export class ClientHistoryService {
       const barY = doc.y;
       doc.rect(ML, barY, CW, 20).fill('#EFF6FF');
       doc.fillColor(BLUE).font('Helvetica-Bold').fontSize(9)
-        .text(`Crédito ${credito.id.substring(0, 8).toUpperCase()}  ·  ${credito.tipo}  ·  ${credito.estatus}`, ML + 6, barY + 6, { lineBreak: false });
+        .text(`Crédito ${credito.id.toUpperCase()}  ·  ${credito.tipo}  ·  ${credito.estatus}`, ML + 6, barY + 6, { lineBreak: false });
       doc.y = barY + 26;
 
       // Datos del crédito
