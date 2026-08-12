@@ -14,6 +14,7 @@ import { MatSnackBar, MatSnackBarModule } from '@angular/material/snack-bar';
 import { MatPaginatorModule, PageEvent } from '@angular/material/paginator';
 import { MatDividerModule } from '@angular/material/divider';
 import { ApiService } from '../../core/index';
+import { PdfDownloadService } from '../../core/pdf-download.service';
 
 /**
  * Fecha de HOY en la zona de México (America/Mexico_City), formato YYYY-MM-DD.
@@ -127,6 +128,9 @@ function inicioMesMexico(): string {
                   </button>
                   <button mat-button (click)="limpiarFiltroLista()">
                     <mat-icon>clear</mat-icon> Limpiar
+                  </button>
+                  <button mat-stroked-button color="accent" (click)="exportarExcel()">
+                    <mat-icon>download</mat-icon> Exportar Excel
                   </button>
                 </div>
 
@@ -286,6 +290,7 @@ export class ExpensesComponent implements OnInit {
   private api = inject(ApiService);
   private fb = inject(FormBuilder);
   private snackbar = inject(MatSnackBar);
+  private pdfSvc = inject(PdfDownloadService);
 
   categories = signal<any[]>([]);
   expenses   = signal<any[]>([]);
@@ -362,6 +367,18 @@ export class ExpensesComponent implements OnInit {
     this.listEndCtrl.setValue('');
     this.page = 0;
     this.loadExpenses();
+  }
+
+  // Exporta a Excel los gastos con el filtro de fechas aplicado actualmente.
+  exportarExcel() {
+    const params = new URLSearchParams();
+    const desde = this.listStartCtrl.value;
+    const hasta = this.listEndCtrl.value;
+    if (desde) params.set('startDate', desde);
+    if (hasta) params.set('endDate', hasta);
+    const qs = params.toString() ? `?${params.toString()}` : '';
+    const sufijo = desde || hasta ? `-${desde || 'inicio'}-a-${hasta || 'hoy'}` : '';
+    this.pdfSvc.download(`/expenses/export/excel${qs}`, `gastos${sufijo}.xlsx`);
   }
 
   save() {

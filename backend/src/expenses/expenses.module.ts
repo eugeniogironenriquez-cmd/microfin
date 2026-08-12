@@ -1,12 +1,14 @@
 import {
   Module, Controller, Injectable, Get, Post, Delete,
-  Body, Param, Query, NotFoundException,
+  Body, Param, Query, NotFoundException, Res,
 } from '@nestjs/common';
 import { TypeOrmModule, InjectRepository } from '@nestjs/typeorm';
 import { Repository, DataSource } from 'typeorm';
 import { ApiTags, ApiBearerAuth } from '@nestjs/swagger';
 import { ExpenseCategory, Expense, Payment, CashSession, UserRole, PaymentMethod } from '../common/entities';
 import { Auth, CurrentUser } from '../common/guards/roles.guard';
+import { Response } from 'express';
+import * as ExcelJS from 'exceljs';
 
 @Injectable()
 export class ExpenseCategoryService {
@@ -48,6 +50,82 @@ export class ExpenseService {
     if (filters.categoryId) qb.andWhere('g.categoryId = :cat', { cat: filters.categoryId });
     const [data, total] = await qb.getManyAndCount();
     return { data, total, page, limit };
+  }
+
+  // Exporta los gastos (con los mismos filtros de fecha/categoría) a un Excel.
+  async exportExcel(
+    filters: { startDate?: string; endDate?: string; categoryId?: string },
+    res: Response,
+  ): Promise<void> {
+    const qb = this.expenseRepo.createQueryBuilder('g')
+      .leftJoinAndSelect('g.category', 'cat')
+      .orderBy('g.expenseDate', 'ASC');
+    if (filters.startDate) qb.andWhere('g.expenseDate >= :start', { start: filters.startDate });
+    if (filters.endDate)   qb.andWhere('g.expenseDate <= :end',   { end: filters.endDate });
+    if (filters.categoryId) qb.andWhere('g.categoryId = :cat', { cat: filters.categoryId });
+    const gastos = await qb.getMany();
+
+    const wb = new ExcelJS.Workbook();
+    const ws = wb.addWorksheet('Gastos');
+
+    ws.columns = [
+      { header: 'Fecha', key: 'fecha', width: 14 },
+      { header: 'Categoría', key: 'categoria', width: 24 },
+      { header: 'Descripción', key: 'descripcion', width: 40 },
+      { header: 'Método', key: 'metodo', width: 16 },
+      { header: 'Monto', key: 'monto', width: 16 },
+    ];
+
+    // Encabezado con estilo (mismo azul del sistema).
+    ws.getRow(1).font = { bold: true, color: { argb: 'FFFFFFFF' } };
+    ws.getRow(1).fill = {
+      type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF2795F5' },
+    };
+
+    let totalMonto = 0;
+    for (const g of gastos) {
+      const monto = Number((g as any).amount || 0);
+      totalMonto += monto;
+      ws.addRow({
+        fecha: (g as any).expenseDate,
+        categoria: (g as any).category?.name || '—',
+        descripcion: (g as any).description || '',
+        metodo: (g as any).method || '',
+        monto,
+      });
+    }
+
+    // Fila de total.
+    const totalRow = ws.addRow({
+      descripcion: 'TOTAL',
+      monto: this.round2(totalMonto),
+    });
+    totalRow.font = { bold: true, size: 12 };
+    totalRow.eachCell((cell) => {
+      cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFDBEAFE' } };
+    });
+
+    ws.getColumn('monto').numFmt = '"$"#,##0.00';
+
+    const rango =
+      filters.startDate || filters.endDate
+        ? `${filters.startDate || 'inicio'}-a-${filters.endDate || 'hoy'}`
+        : 'todos';
+
+    res.setHeader(
+      'Content-Type',
+      'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    );
+    res.setHeader(
+      'Content-Disposition',
+      `attachment; filename="gastos-${rango}.xlsx"`,
+    );
+    await wb.xlsx.write(res);
+    res.end();
+  }
+
+  private round2(n: number): number {
+    return Math.round(n * 100) / 100;
   }
 
   async create(dto: {
@@ -117,6 +195,17 @@ export class ExpenseController {
   constructor(private svc: ExpenseService) {}
 
   @Get() @Auth() findAll(@Query() q: any) { return this.svc.findAll(q); }
+
+  // Exporta los gastos a Excel, respetando los filtros de fecha/categoría.
+  @Get('export/excel') @Auth()
+  exportExcel(
+    @Query('startDate') startDate: string,
+    @Query('endDate') endDate: string,
+    @Query('categoryId') categoryId: string,
+    @Res() res: Response,
+  ) {
+    return this.svc.exportExcel({ startDate, endDate, categoryId }, res);
+  }
 
   @Post() @Auth(UserRole.ADMIN, UserRole.CAJERO)
   create(@Body() dto: any, @CurrentUser('id') userId: string) { return this.svc.create(dto, userId); }
