@@ -276,8 +276,9 @@ export class LoansService {
       .leftJoinAndSelect("l.customer", "c")
       .leftJoinAndSelect("l.loanType", "lt")
       // Join manual con usuarios para traer el nombre del cobrador asignado.
+      // Se usa un alias explícito (collector_name) para leerlo del raw sin ambigüedad.
       .leftJoin("usuarios", "col", "col.id = l.cobrador_id")
-      .addSelect(["col.id", "col.nombre"])
+      .addSelect("col.nombre", "collector_name")
       .orderBy("l.createdAt", "DESC")
       .skip((page - 1) * limit)
       .take(limit);
@@ -300,12 +301,18 @@ export class LoansService {
       qb.getRawAndEntities(),
       qb.getCount(),
     ]);
-    // Adjuntar el nombre del cobrador a cada crédito (viene en el raw).
-    const data = rawResult.entities.map((loan: any, i: number) => {
-      const raw = rawResult.raw[i];
+    // Adjuntar el nombre del cobrador a cada crédito. Se mapea por el id del
+    // préstamo (l_id en el raw) en vez de por índice, para evitar desalineación.
+    const rawPorId = new Map<string, any>();
+    for (const raw of rawResult.raw) {
+      const loanId = raw?.l_id ?? raw?.l_ID;
+      if (loanId != null) rawPorId.set(String(loanId), raw);
+    }
+    const data = rawResult.entities.map((loan: any) => {
+      const raw = rawPorId.get(String(loan.id));
       return {
         ...loan,
-        collectorName: raw?.col_nombre || null,
+        collectorName: raw?.collector_name || null,
       };
     });
     return { data, total, page, limit, pages: Math.ceil(total / limit) };
