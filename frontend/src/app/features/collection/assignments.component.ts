@@ -94,6 +94,24 @@ function hoyMexico(): string {
           <mat-card-subtitle>Selecciona los créditos a asignar</mat-card-subtitle>
         </mat-card-header>
         <mat-card-content>
+          <!-- Filtros: estado de asignación y búsqueda por cliente -->
+          <div class="filtros-bar">
+            <mat-form-field appearance="outline" class="f-asignacion">
+              <mat-label>Mostrar</mat-label>
+              <mat-select [value]="filtroAsignacion()" (selectionChange)="onFiltroAsignacion($event.value)">
+                <mat-option value="todos">Todos</mat-option>
+                <mat-option value="sin_asignar">Sin asignar</mat-option>
+                <mat-option value="asignados">Asignados</mat-option>
+              </mat-select>
+            </mat-form-field>
+            <mat-form-field appearance="outline" class="f-cliente">
+              <mat-label>Buscar cliente</mat-label>
+              <input matInput [value]="filtroCliente()" (input)="onFiltroCliente($event)"
+                     placeholder="Nombre o teléfono">
+              <mat-icon matPrefix>search</mat-icon>
+            </mat-form-field>
+          </div>
+
           @if (loading()) {
             <div class="loading-overlay"><mat-spinner diameter="36"></mat-spinner></div>
           } @else if (loans().length === 0) {
@@ -143,8 +161,12 @@ function hoyMexico(): string {
 
               <ng-container matColumnDef="cobrador">
                 <th mat-header-cell *matHeaderCellDef>Cobrador actual</th>
-                <td mat-cell *matCellDef="let r" style="font-size:12px;color:#718096">
-                  {{ r.collectorId ? 'Asignado' : 'Sin asignar' }}
+                <td mat-cell *matCellDef="let r" style="font-size:12px">
+                  @if (r.collectorId) {
+                    <span class="asignado-a">{{ r.collectorName || 'Asignado' }}</span>
+                  } @else {
+                    <span style="color:#A0AEC0">Sin asignar</span>
+                  }
                 </td>
               </ng-container>
 
@@ -165,6 +187,13 @@ function hoyMexico(): string {
     .assign-layout { display:grid; grid-template-columns:320px 1fr; gap:16px; align-items:start; }
     .assign-form { display:flex; flex-direction:column; gap:12px; }
     .selected-row { background:rgba(28,69,50,.06) !important; }
+    .filtros-bar { display:flex; gap:12px; margin-bottom:8px; flex-wrap:wrap; }
+    .filtros-bar .f-asignacion { width:170px; }
+    .filtros-bar .f-cliente { flex:1; min-width:200px; }
+    .asignado-a {
+      display:inline-block; padding:2px 8px; border-radius:10px;
+      background:#EBF8FF; color:#2B6CB0; font-weight:600; font-size:12px;
+    }
     @media(max-width:800px){ .assign-layout { grid-template-columns:1fr; } }
   `],
 })
@@ -178,6 +207,10 @@ export class AssignmentsComponent implements OnInit {
   selectedIds  = signal<Set<string>>(new Set());
   loading      = signal(true);
   saving       = signal(false);
+  // Filtros de la lista de créditos.
+  filtroAsignacion = signal<'todos' | 'sin_asignar' | 'asignados'>('todos');
+  filtroCliente    = signal('');
+  private buscarTimer: any = null;
 
   cols = ['select', 'cliente', 'monto', 'estatus', 'cobrador'];
 
@@ -195,59 +228,68 @@ export class AssignmentsComponent implements OnInit {
     // Cargar cobradores
     this.api.get<any>('/users/collectors').subscribe({
       next: (r) => {
-        // Handle: array, { data: [] }, or nested { data: { data: [] } }
         let list: any[] = [];
         if (Array.isArray(r))            list = r;
         else if (Array.isArray(r?.data)) list = r.data;
         else if (Array.isArray(r?.data?.data)) list = r.data.data;
         this.collectors.set(list);
-        console.log('Cobradores cargados:', list.length, list);
       },
       error: (e) => console.error('Error cargando cobradores:', e),
     });
 
-// Cargar créditos activos, atrasados y vencidos
-const extractList = (r: any): any[] => {
-  if (Array.isArray(r)) return r;
-  if (Array.isArray(r?.data)) return r.data;
-  if (Array.isArray(r?.data?.data)) return r.data.data;
-  return [];
-};
+    this.cargarCreditos();
+  }
 
-this.loading.set(true);
+  // Carga los créditos aplicando los filtros de asignación y cliente.
+  cargarCreditos() {
+    const extractList = (r: any): any[] => {
+      if (Array.isArray(r)) return r;
+      if (Array.isArray(r?.data)) return r.data;
+      if (Array.isArray(r?.data?.data)) return r.data.data;
+      return [];
+    };
 
-forkJoin({
-  activos: this.api.get<any>('/loans', {
-    status: 'ACTIVO',
-    limit: 100,
-  }),
+    this.loading.set(true);
 
-  atrasados: this.api.get<any>('/loans', {
-    status: 'ATRASADO',
-    limit: 100,
-  }),
+    // Parámetros comunes de filtro (asignación y búsqueda de cliente).
+    const asignacion = this.filtroAsignacion();
+    const search = this.filtroCliente().trim();
+    const baseParams: any = { limit: 100 };
+    if (asignacion !== 'todos') baseParams.asignacion = asignacion;
+    if (search) baseParams.search = search;
 
-  vencidos: this.api.get<any>('/loans', {
-    status: 'VENCIDO',
-    limit: 100,
-  }),
-}).subscribe({
-  next: ({ activos, atrasados, vencidos }) => {
-    this.loans.set([
-      ...extractList(vencidos),
-      ...extractList(atrasados),
-      ...extractList(activos),
-    ]);
+    forkJoin({
+      activos:   this.api.get<any>('/loans', { ...baseParams, status: 'ACTIVO' }),
+      atrasados: this.api.get<any>('/loans', { ...baseParams, status: 'ATRASADO' }),
+      vencidos:  this.api.get<any>('/loans', { ...baseParams, status: 'VENCIDO' }),
+    }).subscribe({
+      next: ({ activos, atrasados, vencidos }) => {
+        this.loans.set([
+          ...extractList(vencidos),
+          ...extractList(atrasados),
+          ...extractList(activos),
+        ]);
+        this.loading.set(false);
+      },
+      error: (err) => {
+        console.error('Error cargando créditos disponibles:', err);
+        this.loans.set([]);
+        this.loading.set(false);
+      },
+    });
+  }
 
-    this.loading.set(false);
-  },
+  onFiltroAsignacion(val: 'todos' | 'sin_asignar' | 'asignados') {
+    this.filtroAsignacion.set(val);
+    this.selectedIds.set(new Set()); // limpiar selección al cambiar filtro
+    this.cargarCreditos();
+  }
 
-  error: (err) => {
-    console.error('Error cargando créditos disponibles:', err);
-    this.loans.set([]);
-    this.loading.set(false);
-  },
-});
+  onFiltroCliente(ev: Event) {
+    this.filtroCliente.set((ev.target as HTMLInputElement).value || '');
+    // Debounce para no consultar en cada tecla.
+    clearTimeout(this.buscarTimer);
+    this.buscarTimer = setTimeout(() => this.cargarCreditos(), 350);
   }
 
   toggleLoan(id: string) {
@@ -280,6 +322,7 @@ forkJoin({
         );
         this.selectedIds.set(new Set());
         this.saving.set(false);
+        this.cargarCreditos(); // refrescar para ver el nuevo cobrador asignado
       },
       error: (err: any) => {
         this.snackbar.open(err.error?.message?.[0] || 'Error al asignar', 'Cerrar', { duration: 5000 });

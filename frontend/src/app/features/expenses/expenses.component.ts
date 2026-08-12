@@ -110,14 +110,32 @@ function inicioMesMexico(): string {
 
             <!-- Lista reciente -->
             <mat-card>
-              <mat-card-header><mat-card-title>Gastos recientes</mat-card-title></mat-card-header>
+              <mat-card-header><mat-card-title>Gastos registrados</mat-card-title></mat-card-header>
               <mat-card-content>
+                <!-- Filtro por rango de fechas: permite consultar cualquier fecha -->
+                <div class="date-filters" style="margin-bottom:16px">
+                  <mat-form-field appearance="outline">
+                    <mat-label>Desde</mat-label>
+                    <input matInput type="date" [formControl]="listStartCtrl">
+                  </mat-form-field>
+                  <mat-form-field appearance="outline">
+                    <mat-label>Hasta</mat-label>
+                    <input matInput type="date" [formControl]="listEndCtrl">
+                  </mat-form-field>
+                  <button mat-stroked-button color="primary" (click)="aplicarFiltroLista()">
+                    <mat-icon>search</mat-icon> Filtrar
+                  </button>
+                  <button mat-button (click)="limpiarFiltroLista()">
+                    <mat-icon>clear</mat-icon> Limpiar
+                  </button>
+                </div>
+
                 @if (loading()) {
                   <div class="loading-overlay"><mat-spinner diameter="36"></mat-spinner></div>
                 } @else if (expenses().length === 0) {
                   <div class="empty-state">
                     <mat-icon>receipt_long</mat-icon>
-                    <p>Sin gastos registrados</p>
+                    <p>Sin gastos en el periodo seleccionado</p>
                   </div>
                 } @else {
                   <table mat-table [dataSource]="expenses()">
@@ -285,6 +303,11 @@ export class ExpensesComponent implements OnInit {
     hoyMexico()
   );
 
+  // FormControls para filtrar la LISTA de gastos por rango de fechas.
+  // Vacíos por defecto: muestra los gastos más recientes (sin filtro).
+  listStartCtrl = new FormControl('');
+  listEndCtrl = new FormControl('');
+
   expCols = ['fecha', 'categoria', 'descripcion', 'monto'];
   catCols = ['nombre', 'desc', 'acciones'];
   page = 0;
@@ -315,10 +338,30 @@ export class ExpensesComponent implements OnInit {
 
   loadExpenses() {
     this.loading.set(true);
-    this.api.get<any>('/expenses', { page: this.page + 1, limit: 10 }).subscribe({
+    const params: any = { page: this.page + 1, limit: 10 };
+    // Aplicar filtro de fechas si el usuario lo definió.
+    const desde = this.listStartCtrl.value;
+    const hasta = this.listEndCtrl.value;
+    if (desde) params.startDate = desde;
+    if (hasta) params.endDate = hasta;
+    this.api.get<any>('/expenses', params).subscribe({
       next: (r) => { this.expenses.set(r.data); this.total.set(r.total); this.loading.set(false); },
       error: () => this.loading.set(false),
     });
+  }
+
+  // Aplica el filtro de fechas a la lista (vuelve a la primera página).
+  aplicarFiltroLista() {
+    this.page = 0;
+    this.loadExpenses();
+  }
+
+  // Limpia el filtro de fechas y recarga los gastos más recientes.
+  limpiarFiltroLista() {
+    this.listStartCtrl.setValue('');
+    this.listEndCtrl.setValue('');
+    this.page = 0;
+    this.loadExpenses();
   }
 
   save() {

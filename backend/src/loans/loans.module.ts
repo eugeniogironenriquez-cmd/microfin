@@ -268,12 +268,16 @@ export class LoansService {
     status?: string;
     customerId?: string;
     search?: string;
+    asignacion?: string;
   }) {
     const { page = 1, limit = 20 } = filters;
     const qb = this.loanRepo
       .createQueryBuilder("l")
       .leftJoinAndSelect("l.customer", "c")
       .leftJoinAndSelect("l.loanType", "lt")
+      // Join manual con usuarios para traer el nombre del cobrador asignado.
+      .leftJoin("usuarios", "col", "col.id = l.cobrador_id")
+      .addSelect(["col.id", "col.nombre"])
       .orderBy("l.createdAt", "DESC")
       .skip((page - 1) * limit)
       .take(limit);
@@ -282,12 +286,28 @@ export class LoansService {
       qb.andWhere("l.status = :status", { status: filters.status });
     if (filters.customerId)
       qb.andWhere("l.customerId = :cid", { cid: filters.customerId });
+    // Filtro por estado de asignación: 'sin_asignar' o 'asignados'.
+    if ((filters as any).asignacion === "sin_asignar")
+      qb.andWhere("l.cobrador_id IS NULL");
+    if ((filters as any).asignacion === "asignados")
+      qb.andWhere("l.cobrador_id IS NOT NULL");
     if (filters.search) {
       qb.andWhere("(c.fullName LIKE :s OR c.phone LIKE :s)", {
         s: `%${filters.search}%`,
       });
     }
-    const [data, total] = await qb.getManyAndCount();
+    const [rawResult, total] = await Promise.all([
+      qb.getRawAndEntities(),
+      qb.getCount(),
+    ]);
+    // Adjuntar el nombre del cobrador a cada crédito (viene en el raw).
+    const data = rawResult.entities.map((loan: any, i: number) => {
+      const raw = rawResult.raw[i];
+      return {
+        ...loan,
+        collectorName: raw?.col_nombre || null,
+      };
+    });
     return { data, total, page, limit, pages: Math.ceil(total / limit) };
   }
 
