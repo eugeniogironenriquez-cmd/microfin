@@ -628,10 +628,8 @@ export class LoanDetailComponent implements OnInit {
   downloadPlanPdf() {
     const l = this.loan();
     if (!l) return;
-    if (l.disbursedAt) {
-      this.pdfSvc.open('/loans/' + l.id + '/pdf');
-      return;
-    }
+    // Siempre genera el plan de pagos con el endpoint de simulación,
+    // usando los datos del crédito (monto, plazo, cuota y cliente).
     this.pdfSvc.downloadPost('/loans/simulate/pdf', 'plan-pagos-' + l.id.substring(0,8) + '.pdf', {
       principalAmount: l.principalAmount,
       days:            l.termWeeks,
