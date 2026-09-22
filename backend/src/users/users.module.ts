@@ -137,10 +137,13 @@ export class UsersService {
     return this.findOne(id);
   }
 
-  async getCollectors(): Promise<any[]> {
-    // Cobradores: por enum legacy O por rol cuyo nombre sea COBRADOR
+  async getCollectors(sucursalId?: string, isGlobal?: boolean): Promise<any[]> {
+    // Cobradores: por enum legacy O por rol cuyo nombre sea COBRADOR.
+    // Aislamiento: un usuario no global solo ve los cobradores de su sucursal.
+    const where: any = { role: UserRole.COBRADOR, isActive: true };
+    if (!isGlobal && sucursalId) where.sucursalId = sucursalId;
     const users = await this.userRepo.find({
-      where: { role: UserRole.COBRADOR, isActive: true },
+      where,
       order: { name: 'ASC' },
     });
     return users.map(u => this.serialize(u));
@@ -160,7 +163,10 @@ export class UsersController {
   ) { return this.usersService.findAll(sucursalId, isGlobal); }
 
   @Get('collectors') @Auth()
-  getCollectors() { return this.usersService.getCollectors(); }
+  getCollectors(
+    @CurrentUser('sucursalId') sucursalId: string,
+    @CurrentUser('isGlobal') isGlobal: boolean,
+  ) { return this.usersService.getCollectors(sucursalId, isGlobal); }
 
   @Get(':id') @AuthPermission('usuarios.ver')
   findOne(@Param('id') id: string) { return this.usersService.findOne(id); }
