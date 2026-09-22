@@ -1398,11 +1398,13 @@ export class LoansService {
       {
         // Encabezado azul (mismo estilo que el contrato).
         companyName: company?.name || "Microcapital-Ixtepec",
-        companyAddress: company
-          ? [company.address, company.city, company.state]
-              .filter(Boolean)
-              .join(", ")
-          : "",
+        sucursalNombre: (loan as any)?.sucursal?.name || null,
+        companyAddress: (loan as any)?.sucursal?.address
+          || (company
+            ? [company.address, company.city, company.state]
+                .filter(Boolean)
+                .join(", ")
+            : ""),
         folio: (loan.id || "").toUpperCase(),
         lugarFecha: `${lugar}. A ${this.fechaLargaMx(new Date())}.`,
         deudorNombre: loan.customer?.fullName || "",
@@ -1559,6 +1561,20 @@ export class LoansService {
   async generateSimulationPdf(dto: any, res: Response): Promise<void> {
     const sim = await this.simulate(dto);
     const company = await this.companyService.get().catch(() => null);
+
+    // Si viene un loanId (plan de pagos desde el detalle de un crédito), se
+    // toma la sucursal de ese crédito para mostrar su nombre y dirección.
+    let sucursalNombre: string | null = null;
+    let sucursalAddress: string | null = null;
+    if (dto.loanId) {
+      const loan = await this.loanRepo.findOne({
+        where: { id: dto.loanId },
+        relations: ["sucursal"],
+      });
+      sucursalNombre = (loan as any)?.sucursal?.name || null;
+      sucursalAddress = (loan as any)?.sucursal?.address || null;
+    }
+
     return this.pdfService.generateSimulationPdf(
       {
         principalAmount: dto.principalAmount,
@@ -1574,6 +1590,11 @@ export class LoansService {
         generatedAt: new Date(),
         companyName: company?.name,
         legalFooter: company?.legalFooter,
+        logoPath: company?.logoPath,
+        sucursalNombre,
+        // Dirección de la sucursal del crédito; si no, la de la empresa.
+        companyAddress: sucursalAddress
+          || [company?.address, company?.city, company?.state].filter(Boolean).join(", "),
       },
       res,
     );
@@ -1620,6 +1641,9 @@ export class LoansService {
         sucursalNombre: (loan as any)?.sucursal?.name || null,
         legalFooter: company?.legalFooter,
         logoPath: (company as any)?.logoPath,
+        // Dirección de la sucursal del crédito; si no, la de la empresa.
+        companyAddress: (loan as any)?.sucursal?.address
+          || [company?.address, company?.city, company?.state].filter(Boolean).join(", "),
       },
       res,
     );
@@ -1684,9 +1708,9 @@ export class LoansService {
         sucursalNombre: (loan as any)?.sucursal?.name || null,
         legalFooter: company?.legalFooter,
         logoPath: company?.logoPath,
-        companyAddress: [company.address, company.city, company.state]
-          .filter(Boolean)
-          .join(", "),
+        // Dirección de la sucursal del crédito; si no tiene, la de la empresa.
+        companyAddress: (loan as any)?.sucursal?.address
+          || [company.address, company.city, company.state].filter(Boolean).join(", "),
       },
       res,
     );
