@@ -316,7 +316,7 @@ export class CollectionService {
     }));
   }
 
-  async getOverdue(filters: { page?: number; limit?: number; sucursalId?: string; isGlobal?: boolean }) {
+  async getOverdue(filters: { page?: number; limit?: number }) {
     const { page = 1, limit = 20 } = filters;
     const qb = this.loanRepo
       .createQueryBuilder("l")
@@ -326,9 +326,6 @@ export class CollectionService {
       .orderBy("l.updatedAt", "ASC")
       .skip((page - 1) * limit)
       .take(limit);
-    // Aislamiento por sucursal.
-    if (!filters.isGlobal && filters.sucursalId)
-      qb.andWhere("l.sucursal_id = :suc", { suc: filters.sucursalId });
     const [data, total] = await qb.getManyAndCount();
     return { data, total, page, limit };
   }
@@ -405,16 +402,10 @@ export class CollectionController {
 
   @Get("overdue")
   @Auth()
-  getOverdue(
-    @Query() q: any,
-    @CurrentUser("sucursalId") sucursalId: string,
-    @CurrentUser("isGlobal") isGlobal: boolean,
-  ) {
+  getOverdue(@Query() q: any) {
     return this.collectionService.getOverdue({
       page: q.page ? Number(q.page) : 1,
       limit: q.limit ? Number(q.limit) : 20,
-      sucursalId,
-      isGlobal,
     });
   }
 
