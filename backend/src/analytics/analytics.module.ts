@@ -5,7 +5,7 @@ import { TypeOrmModule } from '@nestjs/typeorm';
 import { DataSource } from 'typeorm';
 import { ApiTags, ApiBearerAuth } from '@nestjs/swagger';
 import { Loan, Payment, Customer, PaymentSchedule } from '../common/entities';
-import { Auth } from '../common/guards/roles.guard';
+import { Auth, CurrentUser } from '../common/guards/roles.guard';
 import { Response } from 'express';
 import * as ExcelJS from 'exceljs';
 
@@ -32,56 +32,70 @@ export class AnalyticsService {
 
   // ── 1. SOLICITUDES POR MES ──────────────────────────────────
   // Cuántos créditos se solicitaron cada mes (por fecha de creación).
-  async solicitudesPorMes(start?: string, end?: string) {
+
+  // Genera el fragmento SQL para aislar por sucursal (alias de tabla dado).
+  // Devuelve '' si el usuario es global (ve todas las sucursales).
+  private filtroSuc(alias: string, ctx?: { sucursalId?: string; isGlobal?: boolean }): { sql: string; params: any[] } {
+    if (!ctx || ctx.isGlobal || !ctx.sucursalId) return { sql: '', params: [] };
+    return { sql: ` AND ${alias}.sucursal_id = ?`, params: [ctx.sucursalId] };
+  }
+
+  async solicitudesPorMes(start?: string, end?: string, ctx?: { sucursalId?: string; isGlobal?: boolean }) {
     const { startDate, endDate } = this.resolveRange(start, end);
+    const f = this.filtroSuc('l', ctx);
     return this.dataSource.query(`
       SELECT DATE_FORMAT(l.creado_en, '%Y-%m') AS mes,
              COUNT(*) AS total,
              SUM(CASE WHEN l.estatus = 'RECHAZADO' THEN 1 ELSE 0 END) AS rechazadas,
              SUM(CASE WHEN l.estatus NOT IN ('SOLICITUD','RECHAZADO') THEN 1 ELSE 0 END) AS aprobadas
       FROM prestamos l
-      WHERE DATE(l.creado_en) BETWEEN ? AND ?
+      WHERE DATE(l.creado_en) BETWEEN ? AND ?${f.sql}
       GROUP BY DATE_FORMAT(l.creado_en, '%Y-%m')
       ORDER BY mes ASC
-    `, [startDate, endDate]);
+    `, [startDate, endDate, ...f.params]);
   }
 
   // ── 2. ATRASOS POR MES ──────────────────────────────────────
   // Cuántas cuotas vencieron sin pagarse en cada mes.
-  async atrasosPorMes(start?: string, end?: string) {
+  async atrasosPorMes(start?: string, end?: string, ctx?: { sucursalId?: string; isGlobal?: boolean }) {
     const { startDate, endDate } = this.resolveRange(start, end);
+    // La sucursal vive en prestamos, así que se une el calendario con su préstamo.
+    const f = this.filtroSuc('l', ctx);
     return this.dataSource.query(`
       SELECT DATE_FORMAT(cp.fecha_vencimiento, '%Y-%m') AS mes,
              COUNT(*) AS cuotas_vencidas,
              COUNT(DISTINCT cp.prestamo_id) AS creditos_afectados,
              COALESCE(SUM(cp.saldo_adeudado), 0) AS monto_atrasado
       FROM calendario_pagos cp
+      INNER JOIN prestamos l ON l.id = cp.prestamo_id
       WHERE cp.fecha_vencimiento < CURDATE()
         AND cp.estatus <> 'PAGADO'
-        AND DATE(cp.fecha_vencimiento) BETWEEN ? AND ?
+        AND DATE(cp.fecha_vencimiento) BETWEEN ? AND ?${f.sql}
       GROUP BY DATE_FORMAT(cp.fecha_vencimiento, '%Y-%m')
       ORDER BY mes ASC
-    `, [startDate, endDate]);
+    `, [startDate, endDate, ...f.params]);
   }
 
   // ── 3. COLOCACIÓN POR MES ($ desembolsado) ──────────────────
-  async colocacionPorMes(start?: string, end?: string) {
+  async colocacionPorMes(start?: string, end?: string, ctx?: { sucursalId?: string; isGlobal?: boolean }) {
     const { startDate, endDate } = this.resolveRange(start, end);
+    const f = this.filtroSuc('l', ctx);
     return this.dataSource.query(`
       SELECT DATE_FORMAT(l.desembolsado_en, '%Y-%m') AS mes,
              COUNT(*) AS num_creditos,
              COALESCE(SUM(l.monto_principal), 0) AS monto_colocado
       FROM prestamos l
       WHERE l.desembolsado_en IS NOT NULL
-        AND DATE(l.desembolsado_en) BETWEEN ? AND ?
+        AND DATE(l.desembolsado_en) BETWEEN ? AND ?${f.sql}
       GROUP BY DATE_FORMAT(l.desembolsado_en, '%Y-%m')
       ORDER BY mes ASC
-    `, [startDate, endDate]);
+    `, [startDate, endDate, ...f.params]);
   }
 
   // ── 4. RECUPERACIÓN POR MES ($ cobrado) ─────────────────────
-  async recuperacionPorMes(start?: string, end?: string) {
+  async recuperacionPorMes(start?: string, end?: string, ctx?: { sucursalId?: string; isGlobal?: boolean }) {
     const { startDate, endDate } = this.resolveRange(start, end);
+    const f = this.filtroSuc('p', ctx);
     return this.dataSource.query(`
       SELECT DATE_FORMAT(p.fecha_pago, '%Y-%m') AS mes,
              COUNT(*) AS num_pagos,
@@ -90,28 +104,32 @@ export class AnalyticsService {
              COALESCE(SUM(p.interes_aplicado), 0) AS interes,
              COALESCE(SUM(p.moratorio_aplicado), 0) AS moratorio
       FROM pagos p
-      WHERE DATE(p.fecha_pago) BETWEEN ? AND ?
+      WHERE DATE(p.fecha_pago) BETWEEN ? AND ?${f.sql}
       GROUP BY DATE_FORMAT(p.fecha_pago, '%Y-%m')
       ORDER BY mes ASC
-    `, [startDate, endDate]);
+    `, [startDate, endDate, ...f.params]);
   }
 
   // ── 5. ESTADO DE LA CARTERA (dona) ──────────────────────────
-  async estadoCartera() {
+  async estadoCartera(ctx?: { sucursalId?: string; isGlobal?: boolean }) {
+    const f = this.filtroSuc('l', ctx);
+    // WHERE 1=1 permite encadenar el filtro opcional sin romper la sintaxis.
     const rows = await this.dataSource.query(`
       SELECT l.estatus AS estado,
              COUNT(*) AS total,
              COALESCE(SUM(l.monto_principal), 0) AS monto
       FROM prestamos l
+      WHERE 1=1${f.sql}
       GROUP BY l.estatus
       ORDER BY total DESC
-    `);
+    `, [...f.params]);
     return rows;
   }
 
   // ── 6. TASA DE MOROSIDAD ────────────────────────────────────
   // % de la cartera activa que está en mora (atrasada o vencida).
-  async tasaMorosidad() {
+  async tasaMorosidad(ctx?: { sucursalId?: string; isGlobal?: boolean }) {
+    const f = this.filtroSuc('l', ctx);
     const [row] = await this.dataSource.query(`
       SELECT
         COUNT(*) AS total_activos,
@@ -120,8 +138,8 @@ export class AnalyticsService {
         COALESCE(SUM(CASE WHEN l.estatus IN ('ATRASADO','VENCIDO')
                      THEN l.monto_principal ELSE 0 END), 0) AS cartera_en_mora
       FROM prestamos l
-      WHERE l.estatus IN ('ACTIVO','ATRASADO','VENCIDO')
-    `);
+      WHERE l.estatus IN ('ACTIVO','ATRASADO','VENCIDO')${f.sql}
+    `, [...f.params]);
 
     const totalActivos = Number(row?.total_activos || 0);
     const enMora = Number(row?.en_mora || 0);
@@ -145,23 +163,25 @@ export class AnalyticsService {
   }
 
   // ── 7. CRÉDITOS POR TIPO DE PRODUCTO ────────────────────────
-  async creditosPorTipo(start?: string, end?: string) {
+  async creditosPorTipo(start?: string, end?: string, ctx?: { sucursalId?: string; isGlobal?: boolean }) {
     const { startDate, endDate } = this.resolveRange(start, end);
+    const f = this.filtroSuc('l', ctx);
     return this.dataSource.query(`
       SELECT COALESCE(tp.nombre, 'Sin tipo') AS tipo,
              COUNT(*) AS total,
              COALESCE(SUM(l.monto_principal), 0) AS monto
       FROM prestamos l
       LEFT JOIN tipos_prestamo tp ON tp.id = l.tipo_prestamo_id
-      WHERE DATE(l.creado_en) BETWEEN ? AND ?
+      WHERE DATE(l.creado_en) BETWEEN ? AND ?${f.sql}
       GROUP BY tp.nombre
       ORDER BY total DESC
-    `, [startDate, endDate]);
+    `, [startDate, endDate, ...f.params]);
   }
 
   // ── 8. DESEMPEÑO POR COBRADOR ───────────────────────────────
-  async desempenoPorCobrador(start?: string, end?: string) {
+  async desempenoPorCobrador(start?: string, end?: string, ctx?: { sucursalId?: string; isGlobal?: boolean }) {
     const { startDate, endDate } = this.resolveRange(start, end);
+    const f = this.filtroSuc('p', ctx);
     return this.dataSource.query(`
       SELECT u.nombre AS cobrador,
              COUNT(DISTINCT p.id) AS num_pagos,
@@ -170,26 +190,26 @@ export class AnalyticsService {
       FROM pagos p
       INNER JOIN usuarios u ON u.id = p.cobrador_id
       WHERE p.cobrador_id IS NOT NULL
-        AND DATE(p.fecha_pago) BETWEEN ? AND ?
+        AND DATE(p.fecha_pago) BETWEEN ? AND ?${f.sql}
       GROUP BY u.id, u.nombre
       ORDER BY total_cobrado DESC
-    `, [startDate, endDate]);
+    `, [startDate, endDate, ...f.params]);
   }
 
   // ── RESUMEN COMPLETO (una sola llamada) ─────────────────────
-  async dashboard(start?: string, end?: string) {
+  async dashboard(start?: string, end?: string, ctx?: { sucursalId?: string; isGlobal?: boolean }) {
     const [
       solicitudes, atrasos, colocacion, recuperacion,
       estado, morosidad, porTipo, cobradores,
     ] = await Promise.all([
-      this.solicitudesPorMes(start, end),
-      this.atrasosPorMes(start, end),
-      this.colocacionPorMes(start, end),
-      this.recuperacionPorMes(start, end),
-      this.estadoCartera(),
-      this.tasaMorosidad(),
-      this.creditosPorTipo(start, end),
-      this.desempenoPorCobrador(start, end),
+      this.solicitudesPorMes(start, end, ctx),
+      this.atrasosPorMes(start, end, ctx),
+      this.colocacionPorMes(start, end, ctx),
+      this.recuperacionPorMes(start, end, ctx),
+      this.estadoCartera(ctx),
+      this.tasaMorosidad(ctx),
+      this.creditosPorTipo(start, end, ctx),
+      this.desempenoPorCobrador(start, end, ctx),
     ]);
 
     return {
@@ -215,49 +235,83 @@ export class AnalyticsController {
   /** Todo el dashboard en una sola llamada. */
   @Get('dashboard')
   @Auth()
-  dashboard(@Query('start') start?: string, @Query('end') end?: string) {
-    return this.analytics.dashboard(start, end);
+  dashboard(
+    @Query('start') start?: string, @Query('end') end?: string,
+    @CurrentUser('sucursalId') sucursalId?: string,
+    @CurrentUser('isGlobal') isGlobal?: boolean,
+  ) {
+    return this.analytics.dashboard(start, end, { sucursalId, isGlobal });
   }
 
   // Endpoints individuales (por si se quiere refrescar solo una gráfica)
   @Get('solicitudes')  @Auth()
-  solicitudes(@Query('start') s?: string, @Query('end') e?: string) {
-    return this.analytics.solicitudesPorMes(s, e);
+  solicitudes(
+    @Query('start') s?: string, @Query('end') e?: string,
+    @CurrentUser('sucursalId') sucursalId?: string,
+    @CurrentUser('isGlobal') isGlobal?: boolean,
+  ) {
+    return this.analytics.solicitudesPorMes(s, e, { sucursalId, isGlobal });
   }
 
   @Get('atrasos')      @Auth()
-  atrasos(@Query('start') s?: string, @Query('end') e?: string) {
-    return this.analytics.atrasosPorMes(s, e);
+  atrasos(
+    @Query('start') s?: string, @Query('end') e?: string,
+    @CurrentUser('sucursalId') sucursalId?: string,
+    @CurrentUser('isGlobal') isGlobal?: boolean,
+  ) {
+    return this.analytics.atrasosPorMes(s, e, { sucursalId, isGlobal });
   }
 
   @Get('colocacion')   @Auth()
-  colocacion(@Query('start') s?: string, @Query('end') e?: string) {
-    return this.analytics.colocacionPorMes(s, e);
+  colocacion(
+    @Query('start') s?: string, @Query('end') e?: string,
+    @CurrentUser('sucursalId') sucursalId?: string,
+    @CurrentUser('isGlobal') isGlobal?: boolean,
+  ) {
+    return this.analytics.colocacionPorMes(s, e, { sucursalId, isGlobal });
   }
 
   @Get('recuperacion') @Auth()
-  recuperacion(@Query('start') s?: string, @Query('end') e?: string) {
-    return this.analytics.recuperacionPorMes(s, e);
+  recuperacion(
+    @Query('start') s?: string, @Query('end') e?: string,
+    @CurrentUser('sucursalId') sucursalId?: string,
+    @CurrentUser('isGlobal') isGlobal?: boolean,
+  ) {
+    return this.analytics.recuperacionPorMes(s, e, { sucursalId, isGlobal });
   }
 
   @Get('estado-cartera') @Auth()
-  estadoCartera() {
-    return this.analytics.estadoCartera();
+  estadoCartera(
+    @CurrentUser('sucursalId') sucursalId?: string,
+    @CurrentUser('isGlobal') isGlobal?: boolean,
+  ) {
+    return this.analytics.estadoCartera({ sucursalId, isGlobal });
   }
 
   @Get('morosidad')    @Auth()
-  morosidad() {
-    return this.analytics.tasaMorosidad();
+  morosidad(
+    @CurrentUser('sucursalId') sucursalId?: string,
+    @CurrentUser('isGlobal') isGlobal?: boolean,
+  ) {
+    return this.analytics.tasaMorosidad({ sucursalId, isGlobal });
   }
 
   @Get('por-tipo')     @Auth()
-  porTipo(@Query('start') s?: string, @Query('end') e?: string) {
-    return this.analytics.creditosPorTipo(s, e);
+  porTipo(
+    @Query('start') s?: string, @Query('end') e?: string,
+    @CurrentUser('sucursalId') sucursalId?: string,
+    @CurrentUser('isGlobal') isGlobal?: boolean,
+  ) {
+    return this.analytics.creditosPorTipo(s, e, { sucursalId, isGlobal });
   }
 
   @Get('cobradores')   @Auth()
-  cobradores(@Query('start') s?: string, @Query('end') e?: string) {
-    return this.analytics.desempenoPorCobrador(s, e);
+  cobradores(
+    @Query('start') s?: string, @Query('end') e?: string,
+    @CurrentUser('sucursalId') sucursalId?: string,
+    @CurrentUser('isGlobal') isGlobal?: boolean,
+  ) {
+    return this.analytics.desempenoPorCobrador(s, e, { sucursalId, isGlobal });
   }
 
   // ══════════════════════════════════════════════════════════
@@ -274,9 +328,11 @@ export class AnalyticsController {
   @Auth()
   async exportDashboard(
     @Body() body: { start?: string; end?: string; imagenes?: Record<string, string> },
+    @CurrentUser('sucursalId') sucursalId: string,
+    @CurrentUser('isGlobal') isGlobal: boolean,
     @Res() res: Response,
   ) {
-    const d = await this.analytics.dashboard(body.start, body.end);
+    const d = await this.analytics.dashboard(body.start, body.end, { sucursalId, isGlobal });
     const wb = new ExcelJS.Workbook();
     wb.creator = 'Microcapital-Ixtepec';
     wb.created = new Date();
@@ -489,9 +545,12 @@ export class AnalyticsController {
   @Auth()
   async exportUno(
     @Body() body: { tipo: string; start?: string; end?: string; imagen?: string },
+    @CurrentUser('sucursalId') sucursalId: string,
+    @CurrentUser('isGlobal') isGlobal: boolean,
     @Res() res: Response,
   ) {
     const tipo = body.tipo;
+    const ctx = { sucursalId, isGlobal };
     const wb = new ExcelJS.Workbook();
     const AZUL = 'FF2795F5';
 
@@ -502,7 +561,7 @@ export class AnalyticsController {
 
     switch (tipo) {
       case 'solicitudes':
-        rows = await this.analytics.solicitudesPorMes(body.start, body.end);
+        rows = await this.analytics.solicitudesPorMes(body.start, body.end, ctx);
         titulo = 'Solicitudes por mes';
         columnas = [
           { header: 'Mes', key: 'mes', width: 12 },
@@ -513,7 +572,7 @@ export class AnalyticsController {
         break;
 
       case 'atrasos':
-        rows = await this.analytics.atrasosPorMes(body.start, body.end);
+        rows = await this.analytics.atrasosPorMes(body.start, body.end, ctx);
         titulo = 'Atrasos por mes';
         columnas = [
           { header: 'Mes', key: 'mes', width: 12 },
@@ -525,7 +584,7 @@ export class AnalyticsController {
         break;
 
       case 'colocacion':
-        rows = await this.analytics.colocacionPorMes(body.start, body.end);
+        rows = await this.analytics.colocacionPorMes(body.start, body.end, ctx);
         titulo = 'Colocación por mes';
         columnas = [
           { header: 'Mes', key: 'mes', width: 12 },
@@ -536,7 +595,7 @@ export class AnalyticsController {
         break;
 
       case 'recuperacion':
-        rows = await this.analytics.recuperacionPorMes(body.start, body.end);
+        rows = await this.analytics.recuperacionPorMes(body.start, body.end, ctx);
         titulo = 'Recuperación por mes';
         columnas = [
           { header: 'Mes', key: 'mes', width: 12 },
@@ -550,7 +609,7 @@ export class AnalyticsController {
         break;
 
       case 'estado':
-        rows = await this.analytics.estadoCartera();
+        rows = await this.analytics.estadoCartera(ctx);
         titulo = 'Estado de la cartera';
         columnas = [
           { header: 'Estado', key: 'estado', width: 20 },
@@ -561,7 +620,7 @@ export class AnalyticsController {
         break;
 
       case 'por-tipo':
-        rows = await this.analytics.creditosPorTipo(body.start, body.end);
+        rows = await this.analytics.creditosPorTipo(body.start, body.end, ctx);
         titulo = 'Créditos por tipo';
         columnas = [
           { header: 'Tipo', key: 'tipo', width: 24 },
@@ -572,7 +631,7 @@ export class AnalyticsController {
         break;
 
       case 'cobradores':
-        rows = await this.analytics.desempenoPorCobrador(body.start, body.end);
+        rows = await this.analytics.desempenoPorCobrador(body.start, body.end, ctx);
         titulo = 'Desempeño por cobrador';
         columnas = [
           { header: 'Cobrador', key: 'cobrador', width: 28 },

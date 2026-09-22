@@ -13,6 +13,8 @@ import { MatProgressSpinnerModule } from '@angular/material/progress-spinner';
 import { MatSnackBar, MatSnackBarModule } from '@angular/material/snack-bar';
 import { MatPaginatorModule, PageEvent } from '@angular/material/paginator';
 import { MatDividerModule } from '@angular/material/divider';
+import { MatDatepickerModule } from '@angular/material/datepicker';
+import { MatNativeDateModule, provideNativeDateAdapter } from '@angular/material/core';
 import { ApiService } from '../../core/index';
 import { PdfDownloadService } from '../../core/pdf-download.service';
 
@@ -42,7 +44,9 @@ function inicioMesMexico(): string {
     MatCardModule, MatFormFieldModule, MatInputModule, MatSelectModule,
     MatButtonModule, MatIconModule, MatTableModule, MatTabsModule,
     MatProgressSpinnerModule, MatSnackBarModule, MatPaginatorModule, MatDividerModule,
+    MatDatepickerModule, MatNativeDateModule,
   ],
+  providers: [provideNativeDateAdapter()],
   template: `
     <div class="page-header">
       <h1><mat-icon>receipt_long</mat-icon> Gastos operativos</h1>
@@ -117,11 +121,15 @@ function inicioMesMexico(): string {
                 <div class="date-filters" style="margin-bottom:16px">
                   <mat-form-field appearance="outline">
                     <mat-label>Desde</mat-label>
-                    <input matInput type="date" [formControl]="listStartCtrl">
+                    <input matInput [matDatepicker]="dpDesde" [formControl]="listStartCtrl">
+                    <mat-datepicker-toggle matSuffix [for]="dpDesde"></mat-datepicker-toggle>
+                    <mat-datepicker #dpDesde></mat-datepicker>
                   </mat-form-field>
                   <mat-form-field appearance="outline">
                     <mat-label>Hasta</mat-label>
-                    <input matInput type="date" [formControl]="listEndCtrl">
+                    <input matInput [matDatepicker]="dpHasta" [formControl]="listEndCtrl">
+                    <mat-datepicker-toggle matSuffix [for]="dpHasta"></mat-datepicker-toggle>
+                    <mat-datepicker #dpHasta></mat-datepicker>
                   </mat-form-field>
                   <button mat-stroked-button color="primary" (click)="aplicarFiltroLista()">
                     <mat-icon>search</mat-icon> Filtrar
@@ -309,9 +317,9 @@ export class ExpensesComponent implements OnInit {
   );
 
   // FormControls para filtrar la LISTA de gastos por rango de fechas.
-  // Vacíos por defecto: muestra los gastos más recientes (sin filtro).
-  listStartCtrl = new FormControl('');
-  listEndCtrl = new FormControl('');
+  // Manejan objetos Date (del datepicker); null = sin filtro.
+  listStartCtrl = new FormControl<Date | null>(null);
+  listEndCtrl = new FormControl<Date | null>(null);
 
   expCols = ['fecha', 'categoria', 'descripcion', 'monto'];
   catCols = ['nombre', 'desc', 'acciones'];
@@ -341,12 +349,22 @@ export class ExpensesComponent implements OnInit {
     });
   }
 
+  // Convierte un Date a "YYYY-MM-DD" usando la fecha LOCAL (sin desfase UTC),
+  // para que el día seleccionado no se corra por la zona horaria.
+  private toISODate(d: Date | null): string | null {
+    if (!d) return null;
+    const yyyy = d.getFullYear();
+    const mm = String(d.getMonth() + 1).padStart(2, '0');
+    const dd = String(d.getDate()).padStart(2, '0');
+    return `${yyyy}-${mm}-${dd}`;
+  }
+
   loadExpenses() {
     this.loading.set(true);
     const params: any = { page: this.page + 1, limit: 10 };
     // Aplicar filtro de fechas si el usuario lo definió.
-    const desde = this.listStartCtrl.value;
-    const hasta = this.listEndCtrl.value;
+    const desde = this.toISODate(this.listStartCtrl.value);
+    const hasta = this.toISODate(this.listEndCtrl.value);
     if (desde) params.startDate = desde;
     if (hasta) params.endDate = hasta;
     this.api.get<any>('/expenses', params).subscribe({
@@ -363,17 +381,17 @@ export class ExpensesComponent implements OnInit {
 
   // Limpia el filtro de fechas y recarga los gastos más recientes.
   limpiarFiltroLista() {
-    this.listStartCtrl.setValue('');
-    this.listEndCtrl.setValue('');
+    this.listStartCtrl.setValue(null);
+    this.listEndCtrl.setValue(null);
     this.page = 0;
     this.loadExpenses();
   }
 
   // Exporta a Excel los gastos con el filtro de fechas aplicado actualmente.
   exportarExcel() {
+    const desde = this.toISODate(this.listStartCtrl.value);
+    const hasta = this.toISODate(this.listEndCtrl.value);
     const params = new URLSearchParams();
-    const desde = this.listStartCtrl.value;
-    const hasta = this.listEndCtrl.value;
     if (desde) params.set('startDate', desde);
     if (hasta) params.set('endDate', hasta);
     const qs = params.toString() ? `?${params.toString()}` : '';

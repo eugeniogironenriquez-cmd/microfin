@@ -7,7 +7,7 @@ import { Repository } from 'typeorm';
 import { ApiTags, ApiBearerAuth } from '@nestjs/swagger';
 import * as bcrypt from 'bcrypt';
 import { User, UserRole, Role } from '../common/entities';
-import { Auth, AuthPermission } from '../common/guards/roles.guard';
+import { Auth, AuthPermission, CurrentUser } from '../common/guards/roles.guard';
 
 @Injectable()
 export class UsersService {
@@ -32,8 +32,10 @@ export class UsersService {
     };
   }
 
-  async findAll() {
-    const users = await this.userRepo.find({ order: { name: 'ASC' } });
+  async findAll(sucursalId?: string, isGlobal?: boolean) {
+    // Un usuario global ve todos; uno normal solo los de su sucursal.
+    const where = (!isGlobal && sucursalId) ? { sucursalId } : {};
+    const users = await this.userRepo.find({ where, order: { name: 'ASC' } });
     return users.map(u => this.serialize(u));
   }
 
@@ -43,7 +45,7 @@ export class UsersService {
     return this.serialize(u);
   }
 
-  async create(dto: { name: string; email: string; password: string; roleId?: string; role?: UserRole }): Promise<any> {
+  async create(dto: { name: string; email: string; password: string; roleId?: string; role?: UserRole; sucursalId?: string }, creatorSucursalId?: string, creatorIsGlobal?: boolean): Promise<any> {
     const existing = await this.userRepo.findOne({ where: { email: dto.email } });
     if (existing) throw new BadRequestException('El correo ya está registrado');
     if (!dto.password || dto.password.length < 8) {
@@ -64,6 +66,13 @@ export class UsersService {
       }
     }
 
+    // Determinar la sucursal del nuevo usuario:
+    // - Un usuario global puede fijar cualquier sucursal (dto.sucursalId).
+    // - Un admin de sucursal solo crea usuarios en SU propia sucursal.
+    const sucursalId = creatorIsGlobal
+      ? (dto.sucursalId || creatorSucursalId || null)
+      : (creatorSucursalId || null);
+
     const hash = await bcrypt.hash(dto.password, 12);
     const u: User = this.userRepo.create({
       name: dto.name,
@@ -71,6 +80,7 @@ export class UsersService {
       passwordHash: hash,
       role: roleEnum || UserRole.CAJERO,
       ...(roleId ? { roleId } : {}),
+      ...(sucursalId ? { sucursalId } : {}),
     } as Partial<User>) as User;
     const saved: User = await this.userRepo.save(u);
     return this.findOne(saved.id);
@@ -144,7 +154,10 @@ export class UsersController {
   constructor(private usersService: UsersService) {}
 
   @Get() @AuthPermission('usuarios.ver')
-  findAll() { return this.usersService.findAll(); }
+  findAll(
+    @CurrentUser('sucursalId') sucursalId: string,
+    @CurrentUser('isGlobal') isGlobal: boolean,
+  ) { return this.usersService.findAll(sucursalId, isGlobal); }
 
   @Get('collectors') @Auth()
   getCollectors() { return this.usersService.getCollectors(); }
@@ -153,8 +166,12 @@ export class UsersController {
   findOne(@Param('id') id: string) { return this.usersService.findOne(id); }
 
   @Post() @AuthPermission('usuarios.crear')
-  create(@Body() dto: { name: string; email: string; password: string; roleId?: string; role?: UserRole }) {
-    return this.usersService.create(dto);
+  create(
+    @Body() dto: { name: string; email: string; password: string; roleId?: string; role?: UserRole; sucursalId?: string },
+    @CurrentUser('sucursalId') sucursalId: string,
+    @CurrentUser('isGlobal') isGlobal: boolean,
+  ) {
+    return this.usersService.create(dto, sucursalId, isGlobal);
   }
 
   @Put(':id') @AuthPermission('usuarios.crear')

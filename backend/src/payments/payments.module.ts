@@ -627,6 +627,12 @@ export class PaymentsService {
       saldoFavorAplicado = consumidoDelSaldo;
     }
 
+    // El pago hereda la sucursal del préstamo al que pertenece.
+    const loanSuc = await this.loanRepo.findOne({
+      where: { id: dto.loanId },
+      select: ["id", "sucursalId"],
+    });
+
     const payment = this.paymentRepo.create({
       loanId: dto.loanId,
       collectorId: source === PaymentSource.COBRADOR ? userId : undefined,
@@ -649,6 +655,7 @@ export class PaymentsService {
       cuotasPagadas:
         cuotasPagadas.length > 0 ? JSON.stringify(cuotasPagadas) : null,
       createdBy: userId,
+      sucursalId: (loanSuc as any)?.sucursalId ?? null,
     });
     const saved = await this.paymentRepo.save(payment);
 
@@ -898,7 +905,7 @@ const liquidado = nuevoEstado === LoanStatus.LIQUIDADO;
       .getMany();
   }
 
-  async getPaymentsByRange(from: string, to?: string) {
+  async getPaymentsByRange(from: string, to?: string, sucursalId?: string, isGlobal?: boolean) {
     if (!from) throw new BadRequestException("Debe indicar la fecha inicial");
 
     // Inicio: medianoche del día `from`.
@@ -916,14 +923,19 @@ const liquidado = nuevoEstado === LoanStatus.LIQUIDADO;
       );
     }
 
-    const rows = await this.paymentRepo
+    const qb = this.paymentRepo
       .createQueryBuilder("p")
       .leftJoinAndSelect("p.loan", "l")
       .leftJoinAndSelect("l.customer", "c")
       .where("p.paymentDate >= :start", { start })
       .andWhere("p.paymentDate < :end", { end })
-      .orderBy("p.paymentDate", "DESC")
-      .getMany();
+      .orderBy("p.paymentDate", "DESC");
+
+    // Aislamiento por sucursal.
+    if (!isGlobal && sucursalId)
+      qb.andWhere("p.sucursal_id = :suc", { suc: sucursalId });
+
+    const rows = await qb.getMany();
 
     for (const p of rows as any[]) {
       p.saldoFavor = await this.getSaldoFavorActual(p.loanId);
@@ -1164,8 +1176,13 @@ export class PaymentsController {
 
   @Get("by-range")
   @Auth()
-  byRange(@Query("from") from: string, @Query("to") to?: string) {
-    return this.paymentsService.getPaymentsByRange(from, to);
+  byRange(
+    @Query("from") from: string,
+    @Query("to") to: string,
+    @CurrentUser('sucursalId') sucursalId: string,
+    @CurrentUser('isGlobal') isGlobal: boolean,
+  ) {
+    return this.paymentsService.getPaymentsByRange(from, to, sucursalId, isGlobal);
   }
 
   @Get("geo")

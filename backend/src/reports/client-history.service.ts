@@ -4,7 +4,7 @@ import {
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { ApiTags, ApiBearerAuth } from '@nestjs/swagger';
-import { AuthPermission } from '../common/guards/roles.guard';
+import { AuthPermission, CurrentUser } from '../common/guards/roles.guard';
 import { Response } from 'express';
 import * as ExcelJS from 'exceljs';
 import * as PDFDocument from 'pdfkit';
@@ -42,9 +42,15 @@ export class ClientHistoryService {
     return Math.max(0, diff);
   }
 
-  async getClientHistory(customerId: string, incluirLiquidados = true) {
+  async getClientHistory(customerId: string, incluirLiquidados = true, sucursalId?: string, isGlobal?: boolean) {
     const customer = await this.customerRepo.findOne({ where: { id: customerId } });
     if (!customer) throw new NotFoundException('Cliente no encontrado');
+
+    // Aislamiento por sucursal: un usuario no global no puede consultar el
+    // historial de un cliente de otra sucursal.
+    if (!isGlobal && sucursalId && (customer as any).sucursalId && (customer as any).sucursalId !== sucursalId) {
+      throw new NotFoundException('Cliente no encontrado');
+    }
 
     let loans = await this.loanRepo.find({
       where: { customerId },
@@ -160,8 +166,8 @@ export class ClientHistoryService {
   }
 
   // ── PDF ────────────────────────────────────────────────────
-  async generatePdf(customerId: string, res: Response, incluirLiquidados = true): Promise<void> {
-    const data = await this.getClientHistory(customerId, incluirLiquidados);
+  async generatePdf(customerId: string, res: Response, incluirLiquidados = true, sucursalId?: string, isGlobal?: boolean): Promise<void> {
+    const data = await this.getClientHistory(customerId, incluirLiquidados, sucursalId, isGlobal);
     const company = await this.companyService.get().catch(() => null);
 
     const doc = new PDFDocument({ size: 'LETTER', margins: { top: 50, bottom: 50, left: 40, right: 40 }, bufferPages: true });
@@ -327,8 +333,8 @@ export class ClientHistoryService {
   }
 
   // ── Excel ──────────────────────────────────────────────────
-  async generateExcel(customerId: string, res: Response, incluirLiquidados = true): Promise<void> {
-    const data = await this.getClientHistory(customerId, incluirLiquidados);
+  async generateExcel(customerId: string, res: Response, incluirLiquidados = true, sucursalId?: string, isGlobal?: boolean): Promise<void> {
+    const data = await this.getClientHistory(customerId, incluirLiquidados, sucursalId, isGlobal);
 
     const wb = new ExcelJS.Workbook();
     const ws = wb.addWorksheet('Historial');
@@ -414,9 +420,11 @@ export class ClientHistoryController {
   @AuthPermission('clientes.ver')
   history(
     @Param('customerId') customerId: string,
+    @CurrentUser('sucursalId') sucursalId: string,
+    @CurrentUser('isGlobal') isGlobal: boolean,
     @Query('incluirLiquidados') incluirLiquidados?: string,
   ) {
-    return this.service.getClientHistory(customerId, incluirLiquidados !== 'false');
+    return this.service.getClientHistory(customerId, incluirLiquidados !== 'false', sucursalId, isGlobal);
   }
 
   // PDF del historial
@@ -424,10 +432,12 @@ export class ClientHistoryController {
   @AuthPermission('clientes.ver')
   pdf(
     @Param('customerId') customerId: string,
+    @CurrentUser('sucursalId') sucursalId: string,
+    @CurrentUser('isGlobal') isGlobal: boolean,
     @Res() res: Response,
     @Query('incluirLiquidados') incluirLiquidados?: string,
   ) {
-    return this.service.generatePdf(customerId, res, incluirLiquidados !== 'false');
+    return this.service.generatePdf(customerId, res, incluirLiquidados !== 'false', sucursalId, isGlobal);
   }
 
   // Excel del historial
@@ -435,9 +445,11 @@ export class ClientHistoryController {
   @AuthPermission('clientes.ver')
   excel(
     @Param('customerId') customerId: string,
+    @CurrentUser('sucursalId') sucursalId: string,
+    @CurrentUser('isGlobal') isGlobal: boolean,
     @Res() res: Response,
     @Query('incluirLiquidados') incluirLiquidados?: string,
   ) {
-    return this.service.generateExcel(customerId, res, incluirLiquidados !== 'false');
+    return this.service.generateExcel(customerId, res, incluirLiquidados !== 'false', sucursalId, isGlobal);
   }
 }

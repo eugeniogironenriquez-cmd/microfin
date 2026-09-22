@@ -33,6 +33,10 @@ function buildUserContext(user: User): any {
     roleName,
     isAdmin,
     permissions,
+    // Multi-sucursal: sucursal del usuario y si es global (ve todas).
+    sucursalId: (user as any).sucursalId || null,
+    sucursalNombre: (user as any).sucursal?.name || null,
+    isGlobal: !!(user as any).isGlobal,
   };
 }
 
@@ -53,7 +57,10 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
 
   async validate(payload: { sub: string; email: string; role: string }) {
     // roleEntity es eager → carga rol + permisos automáticamente
-    const user = await this.userRepo.findOne({ where: { id: payload.sub } });
+    const user = await this.userRepo.findOne({
+      where: { id: payload.sub },
+      relations: ['sucursal'],
+    });
     if (!user || !user.isActive) throw new UnauthorizedException('Usuario no autorizado');
     return buildUserContext(user);
   }
@@ -74,6 +81,7 @@ export class AuthService {
       .addSelect('u.passwordHash')
       .leftJoinAndSelect('u.roleEntity', 'rol')
       .leftJoinAndSelect('rol.permissions', 'permisos')
+      .leftJoinAndSelect('u.sucursal', 'sucursal')
       .where('u.email = :email', { email })
       .getOne();
 

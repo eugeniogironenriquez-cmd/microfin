@@ -1,7 +1,7 @@
 import { Injectable, Controller, Get, Query, Res } from '@nestjs/common';
 import { DataSource } from 'typeorm';
 import { ApiTags, ApiBearerAuth } from '@nestjs/swagger';
-import { Auth } from '../common/guards/roles.guard';
+import { Auth, CurrentUser } from '../common/guards/roles.guard';
 import { Response } from 'express';
 import * as ExcelJS from 'exceljs';
 
@@ -23,7 +23,7 @@ import * as ExcelJS from 'exceljs';
 export class CollectorCashService {
   constructor(private dataSource: DataSource) {}
 
-  async getDailyCashByCollector(filters: { start?: string; end?: string }) {
+  async getDailyCashByCollector(filters: { start?: string; end?: string; sucursalId?: string; isGlobal?: boolean }) {
     // Rango por defecto: del primer día del mes actual a hoy.
     const hoy = new Intl.DateTimeFormat('en-CA', {
       timeZone: 'America/Mexico_City',
@@ -31,6 +31,12 @@ export class CollectorCashService {
     }).format(new Date());
     const start = filters.start || `${hoy.slice(0, 7)}-01`;
     const end = filters.end || hoy;
+
+    // Aislamiento por sucursal: si el usuario no es global, se filtra por la suya.
+    const filtroSucursal = (!filters.isGlobal && filters.sucursalId)
+      ? 'AND pg.sucursal_id = ?' : '';
+    const params: any[] = [start, end];
+    if (filtroSucursal) params.push(filters.sucursalId);
 
     // CONVERT_TZ pasa el timestamp UTC a hora de México antes de sacar el día,
     // así el corte cae en el día correcto aunque el cobro se registre de noche.
@@ -51,9 +57,10 @@ export class CollectorCashService {
       LEFT JOIN usuarios u ON u.id = pg.cobrador_id
       WHERE DATE(CONVERT_TZ(pg.creado_en, '+00:00', '-06:00')) >= ?
         AND DATE(CONVERT_TZ(pg.creado_en, '+00:00', '-06:00')) <= ?
+        ${filtroSucursal}
       GROUP BY dia, pg.cobrador_id, cobrador
       ORDER BY dia ASC, total DESC
-    `, [start, end]);
+    `, params);
 
     // Agrupar en estructura por día para que el front la pinte directo.
     const dias: Record<string, any> = {};
@@ -116,16 +123,25 @@ export class CollectorCashController {
   // Datos JSON para la pantalla.
   @Get('collector-cash')
   @Auth()
-  collectorCash(@Query() q: any) {
-    return this.service.getDailyCashByCollector({ start: q.start, end: q.end });
+  collectorCash(
+    @Query() q: any,
+    @CurrentUser('sucursalId') sucursalId: string,
+    @CurrentUser('isGlobal') isGlobal: boolean,
+  ) {
+    return this.service.getDailyCashByCollector({ start: q.start, end: q.end, sucursalId, isGlobal });
   }
 
   // Excel del corte de caja por cobrador.
   @Get('export/collector-cash')
   @Auth()
-  async exportCollectorCash(@Query() q: any, @Res() res: Response) {
+  async exportCollectorCash(
+    @Query() q: any,
+    @CurrentUser('sucursalId') sucursalId: string,
+    @CurrentUser('isGlobal') isGlobal: boolean,
+    @Res() res: Response,
+  ) {
     const { start, end, dias, totales } = await this.service.getDailyCashByCollector({
-      start: q.start, end: q.end,
+      start: q.start, end: q.end, sucursalId, isGlobal,
     });
 
     const wb = new ExcelJS.Workbook();

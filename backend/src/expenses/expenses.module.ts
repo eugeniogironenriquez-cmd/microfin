@@ -39,12 +39,14 @@ export class ExpenseService {
     private dataSource: DataSource,
   ) {}
 
-  async findAll(filters: { page?: number; limit?: number; startDate?: string; endDate?: string; categoryId?: string }) {
+  async findAll(filters: { page?: number; limit?: number; startDate?: string; endDate?: string; categoryId?: string; sucursalId?: string; isGlobal?: boolean }) {
     const { page = 1, limit = 20 } = filters;
     const qb = this.expenseRepo.createQueryBuilder('g')
       .leftJoinAndSelect('g.category', 'cat')
       .orderBy('g.createdAt', 'DESC')
       .skip((page - 1) * limit).take(limit);
+    // Aislamiento por sucursal.
+    if (!filters.isGlobal && filters.sucursalId) qb.andWhere('g.sucursal_id = :suc', { suc: filters.sucursalId });
     if (filters.startDate) qb.andWhere('g.expenseDate >= :start', { start: filters.startDate });
     if (filters.endDate)   qb.andWhere('g.expenseDate <= :end',   { end: filters.endDate });
     if (filters.categoryId) qb.andWhere('g.categoryId = :cat', { cat: filters.categoryId });
@@ -54,12 +56,13 @@ export class ExpenseService {
 
   // Exporta los gastos (con los mismos filtros de fecha/categoría) a un Excel.
   async exportExcel(
-    filters: { startDate?: string; endDate?: string; categoryId?: string },
+    filters: { startDate?: string; endDate?: string; categoryId?: string; sucursalId?: string; isGlobal?: boolean },
     res: Response,
   ): Promise<void> {
     const qb = this.expenseRepo.createQueryBuilder('g')
       .leftJoinAndSelect('g.category', 'cat')
       .orderBy('g.expenseDate', 'ASC');
+    if (!filters.isGlobal && filters.sucursalId) qb.andWhere('g.sucursal_id = :suc', { suc: filters.sucursalId });
     if (filters.startDate) qb.andWhere('g.expenseDate >= :start', { start: filters.startDate });
     if (filters.endDate)   qb.andWhere('g.expenseDate <= :end',   { end: filters.endDate });
     if (filters.categoryId) qb.andWhere('g.categoryId = :cat', { cat: filters.categoryId });
@@ -131,9 +134,10 @@ export class ExpenseService {
   async create(dto: {
     categoryId: string; amount: number; description: string;
     expenseDate: string; method?: PaymentMethod;
-  }, userId: string): Promise<Expense> {
+  }, userId: string, sucursalId?: string): Promise<Expense> {
     const session = await this.cashRepo.findOne({ where: { cashierId: userId, closedAt: null as any } });
-    const expense = this.expenseRepo.create({ ...dto, cashSessionId: session?.id, createdBy: userId });
+    // El gasto nace en la sucursal del usuario que lo registra.
+    const expense = this.expenseRepo.create({ ...dto, cashSessionId: session?.id, createdBy: userId, ...(sucursalId ? { sucursalId } : {}) });
     return this.expenseRepo.save(expense);
   }
 
@@ -194,7 +198,11 @@ export class ExpenseCategoryController {
 export class ExpenseController {
   constructor(private svc: ExpenseService) {}
 
-  @Get() @Auth() findAll(@Query() q: any) { return this.svc.findAll(q); }
+  @Get() @Auth() findAll(
+    @Query() q: any,
+    @CurrentUser('sucursalId') sucursalId: string,
+    @CurrentUser('isGlobal') isGlobal: boolean,
+  ) { return this.svc.findAll({ ...q, sucursalId, isGlobal }); }
 
   // Exporta los gastos a Excel, respetando los filtros de fecha/categoría.
   @Get('export/excel') @Auth()
@@ -202,13 +210,19 @@ export class ExpenseController {
     @Query('startDate') startDate: string,
     @Query('endDate') endDate: string,
     @Query('categoryId') categoryId: string,
+    @CurrentUser('sucursalId') sucursalId: string,
+    @CurrentUser('isGlobal') isGlobal: boolean,
     @Res() res: Response,
   ) {
-    return this.svc.exportExcel({ startDate, endDate, categoryId }, res);
+    return this.svc.exportExcel({ startDate, endDate, categoryId, sucursalId, isGlobal }, res);
   }
 
   @Post() @Auth(UserRole.ADMIN, UserRole.CAJERO)
-  create(@Body() dto: any, @CurrentUser('id') userId: string) { return this.svc.create(dto, userId); }
+  create(
+    @Body() dto: any,
+    @CurrentUser('id') userId: string,
+    @CurrentUser('sucursalId') sucursalId: string,
+  ) { return this.svc.create(dto, userId, sucursalId); }
 
   @Delete(':id') @Auth(UserRole.ADMIN)
   remove(@Param('id') id: string) { return this.svc.remove(id); }

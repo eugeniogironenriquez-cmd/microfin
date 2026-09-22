@@ -25,12 +25,18 @@ export class CustomersService {
   async findAll(filters: {
     page?: number; limit?: number; search?: string;
     status?: string; stateId?: number; municipalityId?: number;
+    sucursalId?: string; isGlobal?: boolean;
   }) {
     const { page = 1, limit = 20, search, status, stateId, municipalityId } = filters;
     const qb = this.customerRepo.createQueryBuilder('c')
       .orderBy('c.createdAt', 'DESC')
       .skip((page - 1) * limit)
       .take(limit);
+
+    // Aislamiento por sucursal: un usuario no global solo ve su sucursal.
+    if (!filters.isGlobal && filters.sucursalId) {
+      qb.andWhere('c.sucursal_id = :suc', { suc: filters.sucursalId });
+    }
 
     if (search) {
       qb.andWhere(
@@ -55,7 +61,7 @@ export class CustomersService {
     return customer;
   }
 
-  async create(dto: Partial<Customer>, userId: string): Promise<Customer> {
+  async create(dto: Partial<Customer>, userId: string, sucursalId?: string): Promise<Customer> {
     const checks: Promise<string | null>[] = [];
 
     if (dto.curp) {
@@ -70,7 +76,12 @@ export class CustomersService {
     const errors = (await Promise.all(checks)).filter(Boolean);
     if (errors.length > 0) throw new BadRequestException(errors[0] as string);
 
-    const customer = this.customerRepo.create({ ...dto, createdBy: userId });
+    // El cliente nace en la sucursal del usuario que lo registra.
+    const customer = this.customerRepo.create({
+      ...dto,
+      createdBy: userId,
+      ...(sucursalId ? { sucursalId } : {}),
+    });
     return this.customerRepo.save(customer);
   }
 
@@ -167,7 +178,11 @@ export class CustomersController {
   @Get()
   @Auth()
   @ApiOperation({ summary: 'Listar clientes con filtros y paginación' })
-  findAll(@Query() q: any) {
+  findAll(
+    @Query() q: any,
+    @CurrentUser('sucursalId') sucursalId: string,
+    @CurrentUser('isGlobal') isGlobal: boolean,
+  ) {
     return this.customersService.findAll({
       page: q.page ? Number(q.page) : 1,
       limit: q.limit ? Number(q.limit) : 20,
@@ -175,6 +190,8 @@ export class CustomersController {
       status: q.status,
       stateId: q.stateId ? Number(q.stateId) : undefined,
       municipalityId: q.municipalityId ? Number(q.municipalityId) : undefined,
+      sucursalId,
+      isGlobal,
     });
   }
 
@@ -187,8 +204,12 @@ export class CustomersController {
   @Post()
   @Auth()
   @ApiOperation({ summary: 'Crear nuevo cliente' })
-  create(@Body() dto: Partial<Customer>, @CurrentUser('id') userId: string) {
-    return this.customersService.create(dto, userId);
+  create(
+    @Body() dto: Partial<Customer>,
+    @CurrentUser('id') userId: string,
+    @CurrentUser('sucursalId') sucursalId: string,
+  ) {
+    return this.customersService.create(dto, userId, sucursalId);
   }
 
   @Put(':id')

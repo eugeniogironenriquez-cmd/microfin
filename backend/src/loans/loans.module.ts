@@ -269,6 +269,8 @@ export class LoansService {
     customerId?: string;
     search?: string;
     asignacion?: string;
+    sucursalId?: string;
+    isGlobal?: boolean;
   }) {
     const { page = 1, limit = 20 } = filters;
     const qb = this.loanRepo
@@ -282,6 +284,10 @@ export class LoansService {
       .orderBy("l.createdAt", "DESC")
       .skip((page - 1) * limit)
       .take(limit);
+
+    // Aislamiento por sucursal: un usuario no global solo ve su sucursal.
+    if (!filters.isGlobal && filters.sucursalId)
+      qb.andWhere("l.sucursal_id = :suc", { suc: filters.sucursalId });
 
     if (filters.status)
       qb.andWhere("l.status = :status", { status: filters.status });
@@ -449,6 +455,12 @@ export class LoansService {
     );
     if ((calc as any).error) throw new BadRequestException((calc as any).error);
 
+    // El préstamo hereda la sucursal del cliente al que pertenece.
+    const clienteSuc = await this.customerRepo.findOne({
+      where: { id: dto.customerId },
+      select: ["id", "sucursalId"],
+    });
+
     const loan = this.loanRepo.create({
       ...dto,
       termWeeks: days,
@@ -458,6 +470,7 @@ export class LoansService {
       periodicPayment: this.calculator.round(calc.periodicPayment),
       totalAmount: this.calculator.round(calc.totalAmount),
       createdBy: userId,
+      sucursalId: (clienteSuc as any)?.sucursalId ?? null,
     } as any);
     return this.loanRepo.save(loan as any);
   }
@@ -1685,8 +1698,12 @@ export class LoansService {
 export class LoansController {
   constructor(private loansService: LoansService) {}
 
-  @Get() @Auth() findAll(@Query() q: any) {
-    return this.loansService.findAll(q);
+  @Get() @Auth() findAll(
+    @Query() q: any,
+    @CurrentUser('sucursalId') sucursalId: string,
+    @CurrentUser('isGlobal') isGlobal: boolean,
+  ) {
+    return this.loansService.findAll({ ...q, sucursalId, isGlobal });
   }
   @Get("reportes/proximos-liquidar")
   @AuthPermission("prestamos.proximos")

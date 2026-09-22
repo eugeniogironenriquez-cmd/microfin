@@ -63,6 +63,43 @@ export enum CustomerStatus {
 // ============================================================
 
 
+// ─── SUCURSAL ─────────────────────────────────────────────────
+// Cada sucursal aísla su propia operación (clientes, préstamos, pagos, etc.).
+// La configuración (tipos de préstamo, plazos, mora) es global a todas.
+@Entity('sucursales')
+export class Sucursal {
+  @PrimaryGeneratedColumn('uuid')
+  id: string;
+
+  @Column({ name: 'nombre', length: 150 })
+  name: string;
+
+  @Column({ name: 'codigo', length: 30, unique: true, nullable: true })
+  code: string;
+
+  @Column({ name: 'direccion', length: 255, nullable: true })
+  address: string;
+
+  @Column({ name: 'telefono', length: 30, nullable: true })
+  phone: string;
+
+  // La sucursal matriz es la que contiene los datos históricos previos a la
+  // separación por sucursales. Solo debería existir una.
+  @Column({ name: 'es_matriz', type: 'tinyint', width: 1, default: 0,
+    transformer: { to: (v: boolean) => v ? 1 : 0, from: (v: any) => Boolean(v) } })
+  isMatriz: boolean;
+
+  @Column({ name: 'activo', type: 'tinyint', width: 1, default: 1,
+    transformer: { to: (v: boolean) => v ? 1 : 0, from: (v: any) => Boolean(v) } })
+  isActive: boolean;
+
+  @CreateDateColumn({ name: 'creado_en' })
+  createdAt: Date;
+
+  @UpdateDateColumn({ name: 'actualizado_en' })
+  updatedAt: Date;
+}
+
 // ─── ROL ──────────────────────────────────────────────────────
 @Entity('roles')
 export class Role {
@@ -137,6 +174,20 @@ export class User {
   @JoinColumn({ name: 'rol_id' })
   roleEntity: Role;
 
+  // Sucursal a la que pertenece el usuario. Un super-admin (isAdmin en su rol,
+  // o esGlobal) puede no tener sucursal fija y ver todas.
+  @Column({ name: 'sucursal_id', nullable: true })
+  sucursalId: string;
+
+  @ManyToOne(() => Sucursal, { nullable: true })
+  @JoinColumn({ name: 'sucursal_id' })
+  sucursal: Sucursal;
+
+  // Marca a un usuario como global (ve/administra todas las sucursales).
+  @Column({ name: 'es_global', type: 'tinyint', width: 1, default: 0,
+    transformer: { to: (v: boolean) => v ? 1 : 0, from: (v: any) => Boolean(v) } })
+  isGlobal: boolean;
+
   @Column({ name: 'activo', type: 'tinyint', width: 1, default: 1,
     transformer: { to: (v: boolean) => v ? 1 : 0, from: (v: any) => Boolean(v) } })
   isActive: boolean;
@@ -198,6 +249,10 @@ export class Municipality {
 export class Customer {
   @PrimaryGeneratedColumn('uuid')
   id: string;
+
+  // Sucursal propietaria del cliente (aislamiento multi-sucursal).
+  @Column({ name: 'sucursal_id', nullable: true })
+  sucursalId: string;
 
   @Column({ name: 'curp', length: 18, unique: true })
   curp: string;
@@ -409,6 +464,10 @@ export class Loan {
   @PrimaryGeneratedColumn('uuid')
   id: string;
 
+  // Sucursal propietaria del préstamo (aislamiento multi-sucursal).
+  @Column({ name: 'sucursal_id', nullable: true })
+  sucursalId: string;
+
   @ManyToOne(() => Customer, (c) => c.loans)
   @JoinColumn({ name: 'cliente_id' })
   customer: Customer;
@@ -561,6 +620,10 @@ export class CashSession {
   @PrimaryGeneratedColumn('uuid')
   id: string;
 
+  // Sucursal propietaria (aislamiento multi-sucursal).
+  @Column({ name: 'sucursal_id', nullable: true })
+  sucursalId: string;
+
   @Column({ name: 'cajero_id' })
   cashierId: string;
 
@@ -588,6 +651,10 @@ export class CashSession {
 export class Payment {
   @PrimaryGeneratedColumn('uuid')
   id: string;
+
+  // Sucursal propietaria (aislamiento multi-sucursal).
+  @Column({ name: 'sucursal_id', nullable: true })
+  sucursalId: string;
 
   @ManyToOne(() => Loan, (l) => l.payments)
   @JoinColumn({ name: 'prestamo_id' })
@@ -664,6 +731,10 @@ export class CollectionVisit {
   @PrimaryGeneratedColumn('uuid')
   id: string;
 
+  // Sucursal propietaria (aislamiento multi-sucursal).
+  @Column({ name: 'sucursal_id', nullable: true })
+  sucursalId: string;
+
   @Column({ name: 'prestamo_id' })
   loanId: string;
 
@@ -694,6 +765,10 @@ export class CollectionVisit {
 export class CollectorAssignment {
   @PrimaryGeneratedColumn('uuid')
   id: string;
+
+  // Sucursal propietaria (aislamiento multi-sucursal).
+  @Column({ name: 'sucursal_id', nullable: true })
+  sucursalId: string;
 
   @Column({ name: 'cobrador_id' })
   collectorId: string;
@@ -862,6 +937,10 @@ export class ExpenseCategory {
 export class Expense {
   @PrimaryGeneratedColumn('uuid')
   id: string;
+
+  // Sucursal propietaria (aislamiento multi-sucursal).
+  @Column({ name: 'sucursal_id', nullable: true })
+  sucursalId: string;
 
   @ManyToOne(() => ExpenseCategory, (c) => c.expenses)
   @JoinColumn({ name: 'categoria_id' })

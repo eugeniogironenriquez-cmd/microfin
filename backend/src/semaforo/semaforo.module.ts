@@ -10,7 +10,7 @@ import {
   ConfigSemaforo, HistorialComportamiento,
   LoanStatus, ScheduleStatus,
 } from '../common/entities';
-import { Auth, AuthPermission } from '../common/guards/roles.guard';
+import { Auth, AuthPermission, CurrentUser } from '../common/guards/roles.guard';
 
 export type SemaforoLevel = 'VERDE' | 'AMARILLO' | 'ROJO';
 
@@ -116,12 +116,17 @@ export class SemaforoService implements OnModuleInit {
   // ── MONITOR DE CARTERA ───────────────────────────────────────
   // Devuelve todos los créditos activos/vencidos con su nivel de semáforo.
   // Si se pasa 'nivel', filtra por ese nivel (lo usa la vista del gestor).
-  async getMonitor(filters: { nivel?: SemaforoLevel; search?: string } = {}) {
+  async getMonitor(filters: { nivel?: SemaforoLevel; search?: string; sucursalId?: string; isGlobal?: boolean } = {}) {
     const cfg = await this.getConfig();
 
     const qb = this.loanRepo.createQueryBuilder('l')
       .leftJoinAndSelect('l.customer', 'c')
       .where('l.status IN (:...st)', { st: [LoanStatus.ACTIVO, LoanStatus.VENCIDO, LoanStatus.ATRASADO] });
+
+    // Aislamiento por sucursal.
+    if (!filters.isGlobal && filters.sucursalId) {
+      qb.andWhere('l.sucursal_id = :suc', { suc: filters.sucursalId });
+    }
 
     if (filters.search) {
       qb.andWhere('(c.fullName LIKE :s OR c.phone LIKE :s)', { s: `%${filters.search}%` });
@@ -235,14 +240,22 @@ export class SemaforoController {
 
   // Monitor de cartera completo (todos los niveles)
   @Get('monitor') @AuthPermission('cartera.semaforo')
-  monitor(@Query() q: any) {
-    return this.svc.getMonitor({ nivel: q.nivel, search: q.search });
+  monitor(
+    @Query() q: any,
+    @CurrentUser('sucursalId') sucursalId: string,
+    @CurrentUser('isGlobal') isGlobal: boolean,
+  ) {
+    return this.svc.getMonitor({ nivel: q.nivel, search: q.search, sucursalId, isGlobal });
   }
 
   // Vista del gestor de cobranza: solo los rojos
   @Get('gestor') @AuthPermission('cobranza.gestor')
-  gestor(@Query() q: any) {
-    return this.svc.getMonitor({ nivel: 'ROJO', search: q.search });
+  gestor(
+    @Query() q: any,
+    @CurrentUser('sucursalId') sucursalId: string,
+    @CurrentUser('isGlobal') isGlobal: boolean,
+  ) {
+    return this.svc.getMonitor({ nivel: 'ROJO', search: q.search, sucursalId, isGlobal });
   }
 
   // Historial de comportamiento de un cliente

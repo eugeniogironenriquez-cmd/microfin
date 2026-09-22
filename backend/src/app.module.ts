@@ -10,7 +10,7 @@ import {
   State, Municipality, Guarantor, ExpenseCategory, Expense,
   Role, Permiso, PlazoCredito, ConfigMora,
   ConfigSemaforo, HistorialComportamiento,
-  CustomerCreditBalance,
+  CustomerCreditBalance, Sucursal,
 } from './common/entities';
 import { AuthModule }        from './auth/auth.module';
 import { UsersModule }       from './users/users.module';
@@ -38,6 +38,7 @@ import { ImportLoansModule } from './import-loans/import-loans.module';
 import { VisitasModule, Visita } from './visitas/visitas.module';
 import { AnalyticsModule } from './analytics/analytics.module';
 import { PrintingModule } from './printing/printing.module';
+import { SucursalesModule } from './sucursales/sucursales.module';
 
 
 @Module({
@@ -59,7 +60,8 @@ import { PrintingModule } from './printing/printing.module';
           CashSession, AuditLog, CompanySettings, LateFeeRule,
           State, Municipality, Guarantor, ExpenseCategory, Expense,
           Role, Permiso, PlazoCredito, ConfigMora,
-          ConfigSemaforo, HistorialComportamiento,Visita,CustomerCreditBalance
+          ConfigSemaforo, HistorialComportamiento,Visita,CustomerCreditBalance,
+          Sucursal,
         ],
         synchronize: false,
         logging: config.get('NODE_ENV') === 'development',
@@ -70,7 +72,7 @@ import { PrintingModule } from './printing/printing.module';
     CompanyModule, LateFeeRulesModule, LocationModule, GuarantorModule,
     DisbursementModule, ExpensesModule, OverdueJobModule, LoanDocumentsModule,
     PlazosCreditoModule, ConfigMoraModule, SemaforoModule, ImportLoansModule, VisitasModule, PrintingModule,
-    AnalyticsModule
+    AnalyticsModule, SucursalesModule
   ],
 })
 export class AppModule implements OnApplicationBootstrap, NestModule {
