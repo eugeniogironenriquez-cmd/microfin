@@ -832,12 +832,11 @@ export class PdfGeneratorService {
 
     let y = this.drawHeader(
       doc,
-      data.companyName || "Microcapital-Ixtepec",
+      data.companyName || data.sucursalNombre,
       titulo,
       `Folio: ${data.loan.id.toUpperCase()}`,
       data.logoPath,
-      addr,
-      data.sucursalNombre,
+      addr
     );
 
     // Aviso destacado del tipo de operación (solo convenio / reestructura).
