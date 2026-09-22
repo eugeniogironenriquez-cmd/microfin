@@ -1359,7 +1359,7 @@ export class LoansService {
   async getConvenioPdf(loanId: string, res: Response): Promise<void> {
     const loan = await this.loanRepo.findOne({
       where: { id: loanId },
-      relations: ["customer", "paymentSchedules"],
+      relations: ["customer", "paymentSchedules", "sucursal"],
     });
     if (!loan) throw new NotFoundException("Convenio no encontrado");
     if (!loan.isConvenio)
@@ -1513,7 +1513,7 @@ export class LoansService {
   async generateControlCard(id: string, res: Response): Promise<void> {
     const loan = await this.loanRepo.findOne({
       where: { id },
-      relations: ["customer", "loanType"],
+      relations: ["customer", "loanType", "sucursal"],
     });
     if (!loan) throw new NotFoundException("Préstamo no encontrado");
     if (!loan.disbursedAt)
@@ -1573,6 +1573,7 @@ export class LoansService {
         customerName: dto.customerName,
         generatedAt: new Date(),
         companyName: company?.name,
+        sucursalNombre: (loan as any)?.sucursal?.name || null,
         legalFooter: company?.legalFooter,
       },
       res,
@@ -1586,7 +1587,7 @@ export class LoansService {
   async generateSchedulePdf(id: string, res: Response): Promise<void> {
     const loan = await this.loanRepo.findOne({
       where: { id },
-      relations: ["customer", "loanType", "paymentSchedules"],
+      relations: ["customer", "loanType", "paymentSchedules", "sucursal"],
     });
     if (!loan) throw new NotFoundException("Préstamo no encontrado");
 
@@ -1617,6 +1618,7 @@ export class LoansService {
         customerName: loan.customer?.fullName,
         generatedAt: new Date(),
         companyName: company?.name,
+        sucursalNombre: (loan as any)?.sucursal?.name || null,
         legalFooter: company?.legalFooter,
         logoPath: (company as any)?.logoPath,
       },
@@ -1627,7 +1629,7 @@ export class LoansService {
   async generateLoanPdf(id: string, res: Response): Promise<void> {
     const loan = await this.loanRepo.findOne({
       where: { id },
-      relations: ["customer", "loanType", "paymentSchedules"],
+      relations: ["customer", "loanType", "paymentSchedules", "sucursal"],
     });
     if (!loan) throw new NotFoundException("Préstamo no encontrado");
     if (!loan.disbursedAt)
@@ -1680,11 +1682,13 @@ export class LoansService {
             }
           : undefined,
         companyName: company?.name,
+        sucursalNombre: (loan as any)?.sucursal?.name || null,
         legalFooter: company?.legalFooter,
         logoPath: company?.logoPath,
         companyAddress: [company.address, company.city, company.state]
           .filter(Boolean)
           .join(", "),
+        sucursalNombre: (loan as any).sucursal?.name || null,
       },
       res,
     );

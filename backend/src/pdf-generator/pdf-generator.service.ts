@@ -801,6 +801,7 @@ export class PdfGeneratorService {
       "Documento informativo, no constituye contrato",
       data.logoPath,
       addr,
+      data.sucursalNombre,
     );
     y = this.drawSummaryBox(doc, y, data);
     this.drawScheduleTable(doc, y, data.schedule);
@@ -836,6 +837,7 @@ export class PdfGeneratorService {
       `Folio: ${data.loan.id.toUpperCase()}`,
       data.logoPath,
       addr,
+      data.sucursalNombre,
     );
 
     // Aviso destacado del tipo de operación (solo convenio / reestructura).
@@ -926,6 +928,7 @@ export class PdfGeneratorService {
     sub: string,
     logoPath?: string,
     address?: string,
+    sucursalNombre?: string,
   ): number {
     doc.rect(0, 0, PW, 76).fill(GREEN);
 
@@ -966,6 +969,16 @@ export class PdfGeneratorService {
         .fontSize(7)
         .fillColor("rgba(255,255,255,0.65)")
         .text(address, nameX, 38, { lineBreak: false });
+    }
+    // Nombre de la sucursal, debajo de la dirección (o en su lugar si no hay).
+    if (sucursalNombre) {
+      doc
+        .font(BB)
+        .fontSize(8)
+        .fillColor("rgba(255,255,255,0.9)")
+        .text(`Sucursal: ${sucursalNombre}`, nameX, address ? 50 : 38, {
+          lineBreak: false,
+        });
     }
     doc
       .font(BB)
@@ -1706,6 +1719,7 @@ const LGRAY  = '#ffffff';*/
       data.folio ? `Folio: ${data.folio}` : "",
       data.logoPath,
       data.companyAddress,
+      data.sucursalNombre,
     );
     // Contenido comienza debajo del encabezado.
     doc.y = 110;

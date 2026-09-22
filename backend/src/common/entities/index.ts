@@ -468,6 +468,10 @@ export class Loan {
   @Column({ name: 'sucursal_id', nullable: true })
   sucursalId: string;
 
+  @ManyToOne(() => Sucursal, { nullable: true })
+  @JoinColumn({ name: 'sucursal_id' })
+  sucursal: Sucursal;
+
   @ManyToOne(() => Customer, (c) => c.loans)
   @JoinColumn({ name: 'cliente_id' })
   customer: Customer;
