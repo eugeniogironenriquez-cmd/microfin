@@ -1573,7 +1573,6 @@ export class LoansService {
         customerName: dto.customerName,
         generatedAt: new Date(),
         companyName: company?.name,
-        sucursalNombre: (loan as any)?.sucursal?.name || null,
         legalFooter: company?.legalFooter,
       },
       res,
@@ -1688,7 +1687,6 @@ export class LoansService {
         companyAddress: [company.address, company.city, company.state]
           .filter(Boolean)
           .join(", "),
-        sucursalNombre: (loan as any).sucursal?.name || null,
       },
       res,
     );
