@@ -945,7 +945,7 @@ const liquidado = nuevoEstado === LoanStatus.LIQUIDADO;
   }
 
   // Pagos con geolocalización para el monitor web (mapa de cobranza)
-  async getGeoPayments(date?: string) {
+  async getGeoPayments(date?: string, sucursalId?: string, isGlobal?: boolean) {
     // Los paymentDate están en hora de México. Construimos los límites del día
     // en hora de México para que el filtro cubra el día-calendario correcto.
     let day: Date;
@@ -968,15 +968,18 @@ const liquidado = nuevoEstado === LoanStatus.LIQUIDADO;
     }
     const next = new Date(day);
     next.setUTCDate(next.getUTCDate() + 1);
-    const rows = await this.paymentRepo
+    const qbGeo = this.paymentRepo
       .createQueryBuilder("p")
       .leftJoinAndSelect("p.loan", "l")
       .leftJoinAndSelect("l.customer", "c")
       .where("p.paymentDate >= :day", { day })
       .andWhere("p.paymentDate < :next", { next })
       .andWhere("p.lat IS NOT NULL")
-      .orderBy("p.paymentDate", "DESC")
-      .getMany();
+      .orderBy("p.paymentDate", "DESC");
+    // Aislamiento por sucursal.
+    if (!isGlobal && sucursalId)
+      qbGeo.andWhere("p.sucursal_id = :suc", { suc: sucursalId });
+    const rows = await qbGeo.getMany();
 
     // Resolver nombres de cobradores en una sola consulta
     const collectorIds = [
@@ -1187,8 +1190,12 @@ export class PaymentsController {
 
   @Get("geo")
   @Auth()
-  geo(@Query("date") date?: string) {
-    return this.paymentsService.getGeoPayments(date);
+  geo(
+    @Query("date") date: string,
+    @CurrentUser("sucursalId") sucursalId: string,
+    @CurrentUser("isGlobal") isGlobal: boolean,
+  ) {
+    return this.paymentsService.getGeoPayments(date, sucursalId, isGlobal);
   }
 
   @Get("history/:loanId")

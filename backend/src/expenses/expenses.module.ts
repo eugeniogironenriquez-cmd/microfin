@@ -145,7 +145,15 @@ export class ExpenseService {
     await this.expenseRepo.delete(id);
   }
 
-  async getIncomeExpenseReport(startDate: string, endDate: string) {
+  async getIncomeExpenseReport(startDate: string, endDate: string, sucursalId?: string, isGlobal?: boolean) {
+    // Aislamiento por sucursal: se añade el filtro solo si el usuario no es global.
+    const filtroPagos = (!isGlobal && sucursalId) ? 'AND sucursal_id = ?' : '';
+    const filtroGastos = (!isGlobal && sucursalId) ? 'AND g.sucursal_id = ?' : '';
+    const pIng: any[] = [startDate, endDate];
+    if (filtroPagos) pIng.push(sucursalId);
+    const pGas: any[] = [startDate, endDate];
+    if (filtroGastos) pGas.push(sucursalId);
+
     const [ingresoResult] = await this.dataSource.query(`
       SELECT
         COALESCE(SUM(monto_pagado), 0)       AS total_ingresos,
@@ -153,15 +161,15 @@ export class ExpenseService {
         COALESCE(SUM(interes_aplicado), 0)   AS total_intereses,
         COALESCE(SUM(moratorio_aplicado), 0) AS total_moratorios,
         COUNT(*)                              AS num_pagos
-      FROM pagos WHERE fecha_pago BETWEEN ? AND ?
-    `, [startDate, endDate]);
+      FROM pagos WHERE fecha_pago BETWEEN ? AND ? ${filtroPagos}
+    `, pIng);
 
     const gastoResult = await this.dataSource.query(`
       SELECT c.nombre AS categoria, COALESCE(SUM(g.monto), 0) AS subtotal, COUNT(*) AS num_gastos
       FROM gastos g LEFT JOIN categorias_gasto c ON c.id = g.categoria_id
-      WHERE g.fecha_gasto BETWEEN ? AND ?
+      WHERE g.fecha_gasto BETWEEN ? AND ? ${filtroGastos}
       GROUP BY g.categoria_id, c.nombre ORDER BY subtotal DESC
-    `, [startDate, endDate]);
+    `, pGas);
 
     const totalGastos = gastoResult.reduce((s: number, r: any) => s + Number(r.subtotal), 0);
     return {
@@ -228,8 +236,13 @@ export class ExpenseController {
   remove(@Param('id') id: string) { return this.svc.remove(id); }
 
   @Get('report/income-expense') @Auth()
-  report(@Query('startDate') startDate: string, @Query('endDate') endDate: string) {
-    return this.svc.getIncomeExpenseReport(startDate, endDate);
+  report(
+    @Query('startDate') startDate: string,
+    @Query('endDate') endDate: string,
+    @CurrentUser('sucursalId') sucursalId: string,
+    @CurrentUser('isGlobal') isGlobal: boolean,
+  ) {
+    return this.svc.getIncomeExpenseReport(startDate, endDate, sucursalId, isGlobal);
   }
 }
 
