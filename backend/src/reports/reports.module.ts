@@ -3,7 +3,7 @@ import { TypeOrmModule } from '@nestjs/typeorm';
 import { DataSource } from 'typeorm';
 import { ApiTags, ApiBearerAuth } from '@nestjs/swagger';
 import { Loan, Payment, Customer, PaymentSchedule } from '../common/entities';
-import { Auth } from '../common/guards/roles.guard';
+import { Auth, CurrentUser } from '../common/guards/roles.guard';
 import { Response } from 'express';
 import * as ExcelJS from 'exceljs';
 import { CompanyModule } from '../company/company.module';
@@ -13,7 +13,12 @@ import { ClientHistoryService, ClientHistoryController } from './client-history.
 export class ReportsService {
   constructor(private dataSource: DataSource) {}
 
-  async getPortfolioSummary() {
+  async getPortfolioSummary(sucursalId?: string, isGlobal?: boolean) {
+    // Aislamiento por sucursal: si el usuario no es global, se filtra por la suya.
+    const fSuc = (!isGlobal && sucursalId) ? 'AND sucursal_id = ?' : '';
+    const fSucP = (!isGlobal && sucursalId) ? 'AND p.sucursal_id = ?' : '';
+    const p1: any[] = (!isGlobal && sucursalId) ? [sucursalId] : [];
+
     const [result] = await this.dataSource.query(`
       SELECT
         COUNT(*) AS total,
@@ -23,7 +28,8 @@ export class ReportsService {
         SUM(CASE WHEN estatus = 'REESTRUCTURADO' THEN 1 ELSE 0 END) AS restructured,
         SUM(CASE WHEN estatus = 'LIQUIDADO' THEN 1 ELSE 0 END) AS settled
       FROM prestamos
-    `);
+      WHERE 1=1 ${fSuc}
+    `, [...p1]);
 
     // Saldo pendiente por recuperar: suma de saldo_adeudado de las cuotas
     // NO liquidadas (capital + interés, sin mora), para créditos vigentes,
@@ -34,7 +40,8 @@ export class ReportsService {
       JOIN prestamos p ON p.id = cp.prestamo_id
       WHERE p.estatus IN ('ACTIVO','ATRASADO','VENCIDO')
         AND cp.estatus <> 'PAGADO'
-    `);
+        ${fSucP}
+    `, [...p1]);
 
     const out = result || {};
     // Vencidos "para KPI" = atrasados + vencidos, sin perder el detalle individual.
@@ -47,10 +54,17 @@ export class ReportsService {
     startDate?: string; endDate?: string;
     status?: string; stateId?: string; municipalityId?: string;
     page?: number; limit?: number;
+    sucursalId?: string; isGlobal?: boolean;
   }) {
     const { page = 1, limit = 50 } = filters;
     let where = '1=1';
     const params: any[] = [];
+
+    // Aislamiento por sucursal.
+    if (!filters.isGlobal && filters.sucursalId) {
+      where += ' AND p.sucursal_id = ?';
+      params.push(filters.sucursalId);
+    }
 
     if (filters.startDate) { where += ' AND p.creado_en >= ?'; params.push(filters.startDate); }
     if (filters.endDate)   { where += ' AND p.creado_en <= ?'; params.push(filters.endDate); }
@@ -143,16 +157,28 @@ export class ReportsController {
 
   @Get('portfolio')
   @Auth()
-  portfolioSummary() { return this.reportsService.getPortfolioSummary(); }
+  portfolioSummary(
+    @CurrentUser('sucursalId') sucursalId: string,
+    @CurrentUser('isGlobal') isGlobal: boolean,
+  ) { return this.reportsService.getPortfolioSummary(sucursalId, isGlobal); }
 
   @Get('loans')
   @Auth()
-  loansReport(@Query() q: any) { return this.reportsService.getLoansReport(q); }
+  loansReport(
+    @Query() q: any,
+    @CurrentUser('sucursalId') sucursalId: string,
+    @CurrentUser('isGlobal') isGlobal: boolean,
+  ) { return this.reportsService.getLoansReport({ ...q, sucursalId, isGlobal }); }
 
   @Get('export/location')
   @Auth()
-  async exportLocation(@Query() q: any, @Res() res: Response) {
-    const data = await this.reportsService.getLoansReport({ ...q, limit: 10000 });
+  async exportLocation(
+    @Query() q: any,
+    @CurrentUser('sucursalId') sucursalId: string,
+    @CurrentUser('isGlobal') isGlobal: boolean,
+    @Res() res: Response,
+  ) {
+    const data = await this.reportsService.getLoansReport({ ...q, sucursalId, isGlobal, limit: 10000 });
     res.setHeader('Content-Type', 'application/json');
     res.json(data);
   }
@@ -160,8 +186,13 @@ export class ReportsController {
   // Excel de cartera vigente: todos los créditos activos con sus datos.
   @Get('export/portfolio')
   @Auth()
-  async exportPortfolio(@Query() q: any, @Res() res: Response) {
-    const result = await this.reportsService.getLoansReport({ ...q, limit: 100000 });
+  async exportPortfolio(
+    @Query() q: any,
+    @CurrentUser('sucursalId') sucursalId: string,
+    @CurrentUser('isGlobal') isGlobal: boolean,
+    @Res() res: Response,
+  ) {
+    const result = await this.reportsService.getLoansReport({ ...q, sucursalId, isGlobal, limit: 100000 });
     const rows = result.data || [];
 
     const wb = new ExcelJS.Workbook();

@@ -31,6 +31,8 @@ export const routes: Routes = [
       { path: 'plazos', loadComponent: () => import('./features/settings/plazos-config.component').then(m => m.PlazosConfigComponent), canActivate: [permissionGuard(['config.editar'])] },
       { path: 'config-mora', loadComponent: () => import('./features/settings/mora-config.component').then(m => m.MoraConfigComponent), canActivate: [permissionGuard(['config.editar'])] },
       { path: 'users', loadChildren: () => import('./features/users/users.routes').then((m) => m.usersRoutes), canActivate: [permissionGuard(['usuarios.ver'])] },
+      // Gestión de sucursales (multi-sucursal)
+      { path: 'sucursales', loadComponent: () => import('./features/sucursales/sucursales.component').then(m => m.SucursalesComponent), canActivate: [permissionGuard(['usuarios.ver'])] },
       // Gestión de roles y permisos
       { path: 'roles', loadChildren: () => import('./features/roles/roles.routes').then((m) => m.ROLES_ROUTES), canActivate: [permissionGuard(['roles.ver'])] },
       // Nuevas rutas — DENTRO del shell para conservar el sidebar

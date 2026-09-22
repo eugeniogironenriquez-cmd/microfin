@@ -209,6 +209,7 @@ export class ShellComponent {
       label: 'Administración', icon: 'admin_panel_settings',
       children: [
         { label: 'Usuarios',         icon: 'manage_accounts',      route: '/users', perm: 'usuarios.ver' },
+        { label: 'Sucursales',       icon: 'store',                route: '/sucursales', perm: 'usuarios.ver' },
         { label: 'Roles y permisos', icon: 'admin_panel_settings', route: '/roles', perm: 'roles.ver' },
       ],
     },
