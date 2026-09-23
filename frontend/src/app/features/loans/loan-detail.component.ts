@@ -629,8 +629,10 @@ export class LoanDetailComponent implements OnInit {
     const l = this.loan();
     if (!l) return;
     // Siempre genera el plan de pagos con el endpoint de simulación,
-    // usando los datos del crédito (monto, plazo, cuota y cliente).
+    // usando los datos del crédito. Se envía el loanId para que el PDF
+    // incluya el logo y la dirección de la sucursal del crédito.
     this.pdfSvc.downloadPost('/loans/simulate/pdf', 'plan-pagos-' + l.id.substring(0,8) + '.pdf', {
+      loanId:          l.id,
       principalAmount: l.principalAmount,
       days:            l.termWeeks,
       customPayment:   l.periodicPayment,

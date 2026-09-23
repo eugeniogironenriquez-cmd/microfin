@@ -136,11 +136,17 @@ export class VisitasService {
 
   // Visitas con geolocalización para el monitor web (por día)
   // Incluye nombre del cliente y del cobrador/gestor que registró.
-  async geoDelDia(date?: string) {
+  async geoDelDia(date?: string, sucursalId?: string, isGlobal?: boolean) {
     const day = date ? new Date(date) : new Date();
     day.setHours(0, 0, 0, 0);
     const next = new Date(day);
     next.setDate(next.getDate() + 1);
+
+    // Aislamiento por sucursal: se filtra por la sucursal del préstamo asociado
+    // (ya está en el join). Solo se aplica si el usuario no es global.
+    const filtroSuc = (!isGlobal && sucursalId) ? 'AND p.sucursal_id = ?' : '';
+    const params: any[] = [day, next];
+    if (filtroSuc) params.push(sucursalId);
 
     // Join manual por SQL para traer nombres (cliente y usuario que registró)
     const rows = await this.repo.query(
@@ -154,8 +160,9 @@ export class VisitasService {
        LEFT JOIN clientes  c ON c.id = p.cliente_id
        LEFT JOIN usuarios  u ON u.id = v.registrado_por
        WHERE v.creado_en >= ? AND v.creado_en < ? AND v.lat IS NOT NULL
+         ${filtroSuc}
        ORDER BY v.creado_en DESC`,
-      [day, next],
+      params,
     );
 
     return rows.map((v: any) => ({
@@ -206,8 +213,12 @@ export class VisitasController {
   // Geolocalización de visitas para el monitor web
   @Get("geo")
   @Auth()
-  geo(@Query("date") date?: string) {
-    return this.svc.geoDelDia(date);
+  geo(
+    @Query("date") date: string,
+    @CurrentUser("sucursalId") sucursalId: string,
+    @CurrentUser("isGlobal") isGlobal: boolean,
+  ) {
+    return this.svc.geoDelDia(date, sucursalId, isGlobal);
   }
 }
 
