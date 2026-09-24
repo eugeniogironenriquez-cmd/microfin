@@ -579,6 +579,8 @@ export class LoansService {
         totalAmount: total,
         notes: dto.notes || "Crédito cargado manualmente (sistema anterior)",
         createdBy: userId,
+        // Hereda la sucursal del cliente (aislamiento multi-sucursal).
+        sucursalId: (customer as any)?.sucursalId ?? null,
       } as any);
       const saved: Loan = await qr.manager.save(loan as any);
       savedLoanId = saved.id;
@@ -844,6 +846,8 @@ export class LoansService {
         restructureCount: (loan.restructureCount || 0) + 1,
         restructureReason: dto.restructureReason,
         createdBy: userId,
+        // Hereda la sucursal del crédito original.
+        sucursalId: (loan as any)?.sucursalId ?? null,
       } as any);
       const saved = await qr.manager.save(newLoan as any);
 
@@ -1105,6 +1109,8 @@ export class LoansService {
             ? `${dto.notes ? dto.notes + " | " : ""}Renovación: se liquidó saldo anterior de $${saldoLiquidado.toFixed(2)} (capital+interés $${saldoCapitalPrev.toFixed(2)}, mora $${moraPendientePrev.toFixed(2)}). Monto entregado al cliente: $${montoEntregado.toFixed(2)}.`
             : dto.notes,
         createdBy: userId,
+        // Hereda la sucursal del crédito anterior.
+        sucursalId: (prev as any)?.sucursalId ?? null,
       } as any);
       const saved: Loan = await qr.manager.save(newLoan as any);
 
@@ -1307,6 +1313,8 @@ export class LoansService {
         restructureReason: dto.notes || "Convenio de pago",
         isConvenio: true,
         createdBy: userId,
+        // Hereda la sucursal del crédito anterior.
+        sucursalId: (prev as any)?.sucursalId ?? null,
       } as any);
       const saved: Loan = await qr.manager.save(convenioLoan as any);
 
